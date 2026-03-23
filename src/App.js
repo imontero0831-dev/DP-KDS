@@ -2,9 +2,8 @@ import { useState, useEffect } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, doc, onSnapshot,
-  addDoc, updateDoc, deleteDoc, query, orderBy, serverTimestamp
+  addDoc, updateDoc, deleteDoc, getDoc, query, orderBy, serverTimestamp
 } from "firebase/firestore";
-
 // ============================================================
 // FIREBASE CONFIG — Dona Patys KDS
 // ============================================================
@@ -229,13 +228,18 @@ async function updateOrderStatus(orderId, status) {
   if (status === "in_progress") updates.startedAt = now;
   if (status === "done") {
     updates.completedAt = now;
-    // Move to history collection then delete from orders
+    updates.duration = now - (updates.startedAt || now);
     setTimeout(async () => {
-      await deleteDoc(orderRef);
+      const snap = await getDoc(orderRef);
+      if (snap.exists()) {
+        await addDoc(collection(db, "completedOrders"), snap.data());
+        await deleteDoc(orderRef);
+      }
     }, 1500);
   }
   await updateDoc(orderRef, updates);
 }
+
 
 // ============================================================
 // UTILS
