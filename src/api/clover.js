@@ -1,3 +1,4 @@
+cat > /Users/israel/restaurant-kds/api/clover.js << 'EOF'
 export default async function handler(req, res) {
   const MERCHANT_ID = process.env.CLOVER_MERCHANT_ID;
   const API_TOKEN = process.env.CLOVER_API_TOKEN;
@@ -25,3 +26,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message });
   }
 }
+EOF
