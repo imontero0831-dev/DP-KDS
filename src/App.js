@@ -137,7 +137,103 @@ const T = {
 };
 
 // ============================================================
-// MOCK MENU — replace with Clover API later
+// CLOVER API HELPER
+// ============================================================
+async function cloverRequest(endpoint, method = "GET", body = null) {
+  const res = await fetch("/api/clover", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint, method, body }),
+  });
+  if (!res.ok) throw new Error(`Clover API error: ${res.status}`);
+  return res.json();
+}
+
+// ============================================================
+// CLOVER MENU FETCH — falls back to MOCK_MENU on error
+// ============================================================
+async function fetchMenuFromClover() {
+  try {
+    const [itemsRes, catsRes] = await Promise.all([
+      cloverRequest("items?expand=categories&limit=200"),
+      cloverRequest("categories?limit=100"),
+    ]);
+
+    const categories = (catsRes.elements || []).map(cat => ({
+      id: cat.id,
+      name: { es: cat.name, en: cat.name },
+    }));
+
+    const items = (itemsRes.elements || [])
+      .filter(item => item.available !== false)
+      .map(item => ({
+        id: item.id,
+        categoryId: item.categories?.elements?.[0]?.id || "uncategorized",
+        name: item.name,
+        price: item.price || 0,
+        emoji: "🍽️",
+      }));
+
+    // If no categories from Clover, group all items under one
+    if (categories.length === 0) {
+      return {
+        categories: [{ id: "uncategorized", name: { es: "Menú", en: "Menu" } }],
+        items,
+      };
+    }
+
+    return { categories, items };
+  } catch (err) {
+    console.warn("⚠️ Clover menu fetch failed, using mock menu:", err.message);
+    return MOCK_MENU;
+  }
+}
+
+// ============================================================
+// CLOVER ORDER PUSH
+// ============================================================
+async function sendOrderToClover(order) {
+  try {
+    // 1. Create the order
+    const cloverOrder = await cloverRequest("orders", "POST", {
+      title: order.isToGo ? `Para Llevar - ${order.toGoName}` : `Mesa ${order.table}`,
+      note: order.note || "",
+      orderType: { id: order.isToGo ? "togo" : "dine_in" },
+    });
+
+    const cloverOrderId = cloverOrder.id;
+
+    // 2. Add line items
+    await Promise.all(
+      order.items.map(item =>
+        cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
+          item: { id: item.id },
+          unitQty: item.qty,
+        })
+      )
+    );
+
+    console.log("✅ Order sent to Clover:", cloverOrderId);
+    return cloverOrderId;
+  } catch (err) {
+    console.warn("⚠️ Clover order push failed (order saved to Firebase only):", err.message);
+  }
+}
+
+async function updateOrderInClover(order) {
+  try {
+    if (!order.cloverOrderId) return;
+    await cloverRequest(`orders/${order.cloverOrderId}`, "PUT", {
+      note: order.note || "",
+    });
+    console.log("✅ Clover order updated:", order.cloverOrderId);
+  } catch (err) {
+    console.warn("⚠️ Clover order update failed:", err.message);
+  }
+}
+
+// ============================================================
+// MOCK MENU — fallback if Clover is unreachable
 // ============================================================
 const MOCK_MENU = {
   categories: [
@@ -162,10 +258,6 @@ const MOCK_MENU = {
     { id: "i13", categoryId: "cat4", name: "Brownie con Helado", price: 849, emoji: "🍫" },
   ],
 };
-
-async function fetchMenuFromClover() { return MOCK_MENU; }
-async function sendOrderToClover(order) { console.log("📤 [Clover] New order:", order); }
-async function updateOrderInClover(order) { console.log("📝 [Clover] Order updated:", order); }
 
 // ============================================================
 // DIFF HELPER
@@ -209,7 +301,7 @@ async function editKitchenOrder(orderId, oldItems, newItems, newNote) {
     modified: true,
     lastModified: Date.now(),
     latestDiff: diff,
-    editHistory: [], // simplified — full history in a subcollection would be ideal later
+    editHistory: [],
   });
 }
 
@@ -239,7 +331,6 @@ async function updateOrderStatus(orderId, status) {
   }
   await updateDoc(orderRef, updates);
 }
-
 
 // ============================================================
 // UTILS
@@ -549,8 +640,8 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
         items: cart, note, total: cartTotal,
         timestamp: Date.now(), status: "new", editHistory: [],
       };
-      await sendOrderToClover(order);
-      await pushOrderToKitchen(order);
+      const cloverOrderId = await sendOrderToClover(order);
+      await pushOrderToKitchen({ ...order, cloverOrderId: cloverOrderId || null });
       setSending(false); setSent(true);
       onOrderSent?.(order);
       setTimeout(() => { setCart([]); setTableNum(""); setToGoName(""); setNote(""); setSent(false); }, 2000);
@@ -681,7 +772,7 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
 }
 
 // ============================================================
-// HISTORY SCREEN — reads from Firestore completed collection
+// HISTORY SCREEN
 // ============================================================
 function HistoryScreen({ lang }) {
   const t = T[lang];
