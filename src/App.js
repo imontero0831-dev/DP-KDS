@@ -194,21 +194,21 @@ async function fetchMenuFromClover() {
 // ============================================================
 async function sendOrderToClover(order) {
   try {
-    // 1. Create the order
     const cloverOrder = await cloverRequest("orders", "POST", {
-      title: order.isToGo ? `Para Llevar - ${order.toGoName}` : `Mesa ${order.table}`,
-      note: order.note || "",
-      orderType: { id: order.isToGo ? "togo" : "dine_in" },
+      note: order.isToGo
+        ? `Para Llevar: ${order.toGoName}${order.note ? " | " + order.note : ""}`
+        : `Mesa ${order.table}${order.note ? " | " + order.note : ""}`,
     });
 
     const cloverOrderId = cloverOrder.id;
+    if (!cloverOrderId) throw new Error("No order ID returned from Clover");
 
-    // 2. Add line items
     await Promise.all(
       order.items.map(item =>
         cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
-          item: { id: item.id },
-          unitQty: item.qty,
+          name: item.name,
+          price: item.price,
+          unitQty: item.qty * 1000,
         })
       )
     );
@@ -219,6 +219,7 @@ async function sendOrderToClover(order) {
     console.warn("⚠️ Clover order push failed (order saved to Firebase only):", err.message);
   }
 }
+
 
 async function updateOrderInClover(order) {
   try {

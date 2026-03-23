@@ -21,20 +21,25 @@ export default async function handler(req, res) {
   }
 
   const url = `https://api.clover.com/v3/merchants/${MERCHANT_ID}/${endpoint}`;
-  console.log("Clover request:", method, url);
+  console.log("Clover request:", method, url, body ? JSON.stringify(body) : "");
 
   try {
-    const response = await fetch(url, {
+    const fetchOptions = {
       method,
       headers: {
         Authorization: `Bearer ${API_TOKEN}`,
         "Content-Type": "application/json",
+        "Accept": "application/json",
       },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
+    };
 
+    if (body && method !== "GET") {
+      fetchOptions.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url, fetchOptions);
     const text = await response.text();
-    console.log("Clover response:", response.status, text.slice(0, 200));
+    console.log("Clover response:", response.status, text.slice(0, 500));
 
     try {
       return res.status(response.status).json(JSON.parse(text));
