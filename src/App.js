@@ -192,85 +192,42 @@ async function fetchMenuFromClover() {
 // ============================================================
 // CLOVER ORDER PUSH
 // ============================================================
-const CLOVER_ORDER_TYPES = {
-  dineIn: "HC7A7MP3VH9C0",
-  takeOut: "RFE2M1R5QRJWR",
-};
 
-const CLOVER_TAKE_OUT_TABLES = [
-  "FXGAEZSM0KARJ", // take out 1
-  "TDMVACK024YKE", // take out 2
-  "4A98ZXVYVYJAA", // take out 3
-  "5Z1GXQFAJF660", // take out 4
-  "99WW5BP0CSPD0", // take out 5
-  "2KHFBTPMNCKXT", // take out 6
-  "WTQVT56J3WRYY", // take out 7
-  "56VCTY44T9GTW", // take out 8
-  "0B81R2ZRBYHY4", // take out 9
-  "XQR551CTSR6E8", // take out 10
-  "HZTKEM73NFABA", // take out 11
-  "7H06ZP1NS0N2A", // take out 12
-];
 
-const CLOVER_DINE_IN_TABLES = {
-  "1": "HGQ7YM4EWD256",
-  "2": "RVVNBP9F1D95C",
-  "3": "8VTG1NVWVW66Y",
-  "4": "BHP95MKJTHRXM",
-  "5": "RDF85RK3AXKA0",
-  "6": "Y3T74ZJSYTNJG",
-  "7": "BNY0Q8XFA9VGA",
-  "8": "E4WF2DA3YEA1W",
-  "9": "PKTP77CWQ77RE",
-  "10": "4NQA1AEMFVYDR",
-  "11": "P5FRWN4CMEK70",
-  "12": "028A3WG8KYB0T",
-  "13": "2C7715ABAGCCW",
-  "14": "JAK559HNNV9KE",
-  "15": "VWMWWWRB26J62",
-  "16": "5QPC6NGDGTT1T",
-  "17": "WZSWBRZK49N4G",
-};
 
 async function sendOrderToClover(order) {
   try {
     const orderTypeId = order.isToGo ? CLOVER_ORDER_TYPES.takeOut : CLOVER_ORDER_TYPES.dineIn;
 
-    let tableId = null;
-    if (order.isToGo) {
-      tableId = CLOVER_TAKE_OUT_TABLES[0];
-    } else {
-      tableId = CLOVER_DINE_IN_TABLES[String(order.table)] || null;
-    }
-
-    // Step 1: Create the order
     const orderPayload = {
       orderType: { id: orderTypeId },
       note: order.isToGo
-        ? `Para Llevar: ${order.toGoName}${order.note ? " | " + order.note : ""}`
-        : `Mesa ${order.table}${order.note ? " | " + order.note : ""}`,
+        ? `🥡 PARA LLEVAR: ${order.toGoName}${order.note ? " | " + order.note : ""}`
+        : `🪑 MESA ${order.table}${order.note ? " | " + order.note : ""}`,
       state: "open",
     };
 
-    console.log("Step 1 — Creating order:", JSON.stringify(orderPayload));
+    console.log("Creating Clover order:", JSON.stringify(orderPayload));
     const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
     const cloverOrderId = cloverOrder.id;
     if (!cloverOrderId) throw new Error("No order ID returned from Clover");
-    console.log("✅ Order created:", cloverOrderId);
 
-    // Step 2: Assign table by POSTing to tables/{tableId}/orders
-    if (tableId) {
-      console.log("Step 2 — Assigning table via tables endpoint:", tableId);
-      try {
-        await cloverRequest(`tables/${tableId}/orders`, "POST", {
-          id: cloverOrderId,
-        });
-        console.log("✅ Table assigned:", tableId);
-      } catch (tableErr) {
-        console.warn("⚠️ Table assignment failed (order still created):", tableErr.message);
-      }
-    }
+    await Promise.all(
+      order.items.map(item =>
+        cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
+          name: item.name,
+          price: item.price,
+          unitQty: item.qty * 1000,
+        })
+      )
+    );
 
+    console.log("✅ Order sent to Clover:", cloverOrderId, "| Type:", order.isToGo ? "Take Out" : "Dine In");
+    return cloverOrderId;
+  } catch (err) {
+    console.warn("⚠️ Clover order push failed (saved to Firebase only):", err.message);
+  }
+}
     // Step 3: Add line items
     console.log("Step 3 — Adding line items...");
     await Promise.all(
@@ -300,25 +257,7 @@ async function updateOrderInClover(order) {
     console.warn("⚠️ Clover order update failed:", err.message);
   }
 }
-// TEMP DEBUG — remove after fixing
-async function debugCloverDining() {
-  try {
-    const orderTypes = await cloverRequest("order_types?limit=20");
-    console.log("ORDER TYPES:", JSON.stringify(orderTypes, null, 2));
 
-    for (const ot of orderTypes.elements || []) {
-      console.log(`\n--- Order Type: ${ot.label} (${ot.id}) ---`);
-      try {
-        const tables = await cloverRequest(`order_types/${ot.id}/tables?limit=50`);
-        console.log("TABLES:", JSON.stringify(tables, null, 2));
-      } catch (e) {
-        console.log("Tables error:", e.message);
-      }
-    }
-  } catch (e) {
-    console.log("DEBUG ERROR:", e.message);
-  }
-}
 // ============================================================
 // MOCK MENU — fallback if Clover is unreachable
 // ============================================================
