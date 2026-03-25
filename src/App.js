@@ -238,11 +238,12 @@ async function sendOrderToClover(order) {
 
     let tableId = null;
     if (order.isToGo) {
-      tableId = CLOVER_TAKE_OUT_TABLES[0]; // always take out 1 for now
+      tableId = CLOVER_TAKE_OUT_TABLES[0];
     } else {
       tableId = CLOVER_DINE_IN_TABLES[String(order.table)] || null;
     }
 
+    // Step 1: Create the order
     const orderPayload = {
       orderType: { id: orderTypeId },
       note: order.isToGo
@@ -251,16 +252,27 @@ async function sendOrderToClover(order) {
       state: "open",
     };
 
-    if (tableId) {
-      orderPayload.table = { id: tableId };
-    }
-
-    console.log("Sending order payload:", JSON.stringify(orderPayload));
-
+    console.log("Step 1 — Creating order:", JSON.stringify(orderPayload));
     const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
     const cloverOrderId = cloverOrder.id;
     if (!cloverOrderId) throw new Error("No order ID returned from Clover");
+    console.log("✅ Order created:", cloverOrderId);
 
+    // Step 2: Assign table by POSTing to tables/{tableId}/orders
+    if (tableId) {
+      console.log("Step 2 — Assigning table via tables endpoint:", tableId);
+      try {
+        await cloverRequest(`tables/${tableId}/orders`, "POST", {
+          id: cloverOrderId,
+        });
+        console.log("✅ Table assigned:", tableId);
+      } catch (tableErr) {
+        console.warn("⚠️ Table assignment failed (order still created):", tableErr.message);
+      }
+    }
+
+    // Step 3: Add line items
+    console.log("Step 3 — Adding line items...");
     await Promise.all(
       order.items.map(item =>
         cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
@@ -271,10 +283,10 @@ async function sendOrderToClover(order) {
       )
     );
 
-    console.log("✅ Order sent to Clover:", cloverOrderId, "| Type:", order.isToGo ? "Take Out" : "Dine In", "| Table:", tableId);
+    console.log("✅ Fully sent — Order:", cloverOrderId, "| Table:", tableId);
     return cloverOrderId;
   } catch (err) {
-    console.warn("⚠️ Clover order push failed (order saved to Firebase only):", err.message);
+    console.warn("⚠️ Clover order push failed (saved to Firebase only):", err.message);
   }
 }
 async function updateOrderInClover(order) {
