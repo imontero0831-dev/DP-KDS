@@ -232,29 +232,14 @@ const CLOVER_DINE_IN_TABLES = {
   "17": "WZSWBRZK49N4G",
 };
 
-async function getOccupiedTableIds() {
-  try {
-    const res = await cloverRequest("orders?filter=status%3Dopen&limit=50&expand=table");
-    const orders = res.elements || [];
-    return orders.map(o => o.table?.id).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
 async function sendOrderToClover(order) {
   try {
     const orderTypeId = order.isToGo ? CLOVER_ORDER_TYPES.takeOut : CLOVER_ORDER_TYPES.dineIn;
 
-    // Find available table
-    const occupiedIds = await getOccupiedTableIds();
     let tableId = null;
-
     if (order.isToGo) {
-      // Pick first unoccupied take out slot
-      tableId = CLOVER_TAKE_OUT_TABLES.find(id => !occupiedIds.includes(id)) || CLOVER_TAKE_OUT_TABLES[0];
+      tableId = CLOVER_TAKE_OUT_TABLES[0]; // always take out 1 for now
     } else {
-      // Match table number to Clover table ID
       tableId = CLOVER_DINE_IN_TABLES[String(order.table)] || null;
     }
 
@@ -269,6 +254,8 @@ async function sendOrderToClover(order) {
     if (tableId) {
       orderPayload.table = { id: tableId };
     }
+
+    console.log("Sending order payload:", JSON.stringify(orderPayload));
 
     const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
     const cloverOrderId = cloverOrder.id;
@@ -290,7 +277,6 @@ async function sendOrderToClover(order) {
     console.warn("⚠️ Clover order push failed (order saved to Firebase only):", err.message);
   }
 }
-
 async function updateOrderInClover(order) {
   try {
     if (!order.cloverOrderId) return;
