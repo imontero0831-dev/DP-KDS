@@ -197,9 +197,66 @@ const CLOVER_ORDER_TYPES = {
   takeOut: "RFE2M1R5QRJWR",
 };
 
+const CLOVER_TAKE_OUT_TABLES = [
+  "FXGAEZSM0KARJ", // take out 1
+  "TDMVACK024YKE", // take out 2
+  "4A98ZXVYVYJAA", // take out 3
+  "5Z1GXQFAJF660", // take out 4
+  "99WW5BP0CSPD0", // take out 5
+  "2KHFBTPMNCKXT", // take out 6
+  "WTQVT56J3WRYY", // take out 7
+  "56VCTY44T9GTW", // take out 8
+  "0B81R2ZRBYHY4", // take out 9
+  "XQR551CTSR6E8", // take out 10
+  "HZTKEM73NFABA", // take out 11
+  "7H06ZP1NS0N2A", // take out 12
+];
+
+const CLOVER_DINE_IN_TABLES = {
+  "1": "HGQ7YM4EWD256",
+  "2": "RVVNBP9F1D95C",
+  "3": "8VTG1NVWVW66Y",
+  "4": "BHP95MKJTHRXM",
+  "5": "RDF85RK3AXKA0",
+  "6": "Y3T74ZJSYTNJG",
+  "7": "BNY0Q8XFA9VGA",
+  "8": "E4WF2DA3YEA1W",
+  "9": "PKTP77CWQ77RE",
+  "10": "4NQA1AEMFVYDR",
+  "11": "P5FRWN4CMEK70",
+  "12": "028A3WG8KYB0T",
+  "13": "2C7715ABAGCCW",
+  "14": "JAK559HNNV9KE",
+  "15": "VWMWWWRB26J62",
+  "16": "5QPC6NGDGTT1T",
+  "17": "WZSWBRZK49N4G",
+};
+
+async function getOccupiedTableIds() {
+  try {
+    const res = await cloverRequest("orders?filter=status%3Dopen&limit=50&expand=table");
+    const orders = res.elements || [];
+    return orders.map(o => o.table?.id).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 async function sendOrderToClover(order) {
   try {
     const orderTypeId = order.isToGo ? CLOVER_ORDER_TYPES.takeOut : CLOVER_ORDER_TYPES.dineIn;
+
+    // Find available table
+    const occupiedIds = await getOccupiedTableIds();
+    let tableId = null;
+
+    if (order.isToGo) {
+      // Pick first unoccupied take out slot
+      tableId = CLOVER_TAKE_OUT_TABLES.find(id => !occupiedIds.includes(id)) || CLOVER_TAKE_OUT_TABLES[0];
+    } else {
+      // Match table number to Clover table ID
+      tableId = CLOVER_DINE_IN_TABLES[String(order.table)] || null;
+    }
 
     const orderPayload = {
       orderType: { id: orderTypeId },
@@ -208,6 +265,10 @@ async function sendOrderToClover(order) {
         : `Mesa ${order.table}${order.note ? " | " + order.note : ""}`,
       state: "open",
     };
+
+    if (tableId) {
+      orderPayload.table = { id: tableId };
+    }
 
     const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
     const cloverOrderId = cloverOrder.id;
@@ -223,7 +284,7 @@ async function sendOrderToClover(order) {
       )
     );
 
-    console.log("✅ Order sent to Clover:", cloverOrderId, "| Type:", order.isToGo ? "Take Out" : "Dine In");
+    console.log("✅ Order sent to Clover:", cloverOrderId, "| Type:", order.isToGo ? "Take Out" : "Dine In", "| Table:", tableId);
     return cloverOrderId;
   } catch (err) {
     console.warn("⚠️ Clover order push failed (order saved to Firebase only):", err.message);
