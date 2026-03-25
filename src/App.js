@@ -932,7 +932,7 @@ export default function App() {
 
  useEffect(() => {
   fetchMenuFromClover().then(setMenu);
-  debugCloverDining(); // TEMP DEBUG
+  setTimeout(() => debugCloverDining(), 3000); // TEMP DEBUG — wait 3s after menu loads
 }, []);
   useEffect(() => {
     const q = query(collection(db, "orders"));
