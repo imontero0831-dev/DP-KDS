@@ -192,17 +192,66 @@ async function fetchMenuFromClover() {
 // ============================================================
 // CLOVER ORDER PUSH
 // ============================================================
+async function getCloverOrderTypes() {
+  try {
+    const res = await cloverRequest("order_types?limit=20");
+    return res.elements || [];
+  } catch {
+    return [];
+  }
+}
+
 async function sendOrderToClover(order) {
   try {
-    const cloverOrder = await cloverRequest("orders", "POST", {
+    // 1. Fetch order types
+    const orderTypes = await getCloverOrderTypes();
+
+    const diningType = orderTypes.find(t =>
+      /dining room|main dining|patio/i.test(t.label)
+    );
+    const toGoType = orderTypes.find(t =>
+      /take out|takeout|to go|togo|carry|llevar/i.test(t.label)
+    );
+
+    const matchedType = order.isToGo ? (toGoType || diningType) : (diningType || toGoType);
+
+    // 2. If dining type found, fetch its tables and pick an available one
+    let tableId = null;
+    if (matchedType?.id) {
+      try {
+        const tablesRes = await cloverRequest(`order_types/${matchedType.id}/tables?limit=50`);
+        const tables = tablesRes.elements || [];
+        if (tables.length > 0) {
+          // Pick first table for now (can be made smarter later)
+          tableId = tables[0].id;
+        }
+      } catch (e) {
+        console.warn("Could not fetch tables for order type:", e.message);
+      }
+    }
+
+    // 3. Build order payload
+    const orderPayload = {
       note: order.isToGo
         ? `Para Llevar: ${order.toGoName}${order.note ? " | " + order.note : ""}`
         : `Mesa ${order.table}${order.note ? " | " + order.note : ""}`,
-    });
+      state: "open",
+    };
 
+    if (matchedType?.id) {
+      orderPayload.orderType = { id: matchedType.id };
+    }
+
+    if (tableId) {
+      orderPayload.table = { id: tableId };
+    }
+
+    // 4. Create the order
+    const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
     const cloverOrderId = cloverOrder.id;
     if (!cloverOrderId) throw new Error("No order ID returned from Clover");
 
+    // 5. Add line items
     await Promise.all(
       order.items.map(item =>
         cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
@@ -213,13 +262,17 @@ async function sendOrderToClover(order) {
       )
     );
 
-    console.log("✅ Order sent to Clover:", cloverOrderId);
+    // 6. Fire the order open
+    await cloverRequest(`orders/${cloverOrderId}`, "PUT", {
+      state: "open",
+    });
+
+    console.log("✅ Order sent to Clover:", cloverOrderId, "| Type:", matchedType?.label, "| Table ID:", tableId);
     return cloverOrderId;
   } catch (err) {
     console.warn("⚠️ Clover order push failed (order saved to Firebase only):", err.message);
   }
 }
-
 
 async function updateOrderInClover(order) {
   try {
@@ -232,7 +285,25 @@ async function updateOrderInClover(order) {
     console.warn("⚠️ Clover order update failed:", err.message);
   }
 }
+// TEMP DEBUG — remove after fixing
+async function debugCloverDining() {
+  try {
+    const orderTypes = await cloverRequest("order_types?limit=20");
+    console.log("ORDER TYPES:", JSON.stringify(orderTypes, null, 2));
 
+    for (const ot of orderTypes.elements || []) {
+      console.log(`\n--- Order Type: ${ot.label} (${ot.id}) ---`);
+      try {
+        const tables = await cloverRequest(`order_types/${ot.id}/tables?limit=50`);
+        console.log("TABLES:", JSON.stringify(tables, null, 2));
+      } catch (e) {
+        console.log("Tables error:", e.message);
+      }
+    }
+  } catch (e) {
+    console.log("DEBUG ERROR:", e.message);
+  }
+}
 // ============================================================
 // MOCK MENU — fallback if Clover is unreachable
 // ============================================================
@@ -859,7 +930,10 @@ export default function App() {
   const [activeOrders, setActiveOrders] = useState(0);
   const t = T[lang];
 
-  useEffect(() => { fetchMenuFromClover().then(setMenu); }, []);
+ useEffect(() => {
+  fetchMenuFromClover().then(setMenu);
+  debugCloverDining(); // TEMP DEBUG
+}, []);
   useEffect(() => {
     const q = query(collection(db, "orders"));
     const unsub = onSnapshot(q, (snapshot) => {
