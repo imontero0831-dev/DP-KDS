@@ -241,8 +241,8 @@ const orderPayload = {
         ? `${order.toGoName}`
         : `Mesa ${order.table}`,
       note: order.isToGo
-        ? `🥡 PARA LLEVAR: ${order.toGoName}${order.note ? " | " + order.note : ""}`
-        : `🪑 MESA ${order.table}${order.note ? " | " + order.note : ""}`,
+        ? `PARA LLEVAR: ${order.toGoName}${order.note ? " | " + order.note : ""}`
+        : `MESA ${order.table}${order.note ? " | " + order.note : ""}`,
       state: "open",
     };
 
