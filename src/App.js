@@ -235,8 +235,11 @@ async function sendOrderToClover(order) {
   try {
     const orderTypeId = order.isToGo ? CLOVER_ORDER_TYPES.takeOut : CLOVER_ORDER_TYPES.dineIn;
 
-    const orderPayload = {
+const orderPayload = {
       orderType: { id: orderTypeId },
+      title: order.isToGo
+        ? `${order.toGoName}`
+        : `Mesa ${order.table}`,
       note: order.isToGo
         ? `🥡 PARA LLEVAR: ${order.toGoName}${order.note ? " | " + order.note : ""}`
         : `🪑 MESA ${order.table}${order.note ? " | " + order.note : ""}`,
