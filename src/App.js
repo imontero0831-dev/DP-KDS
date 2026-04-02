@@ -235,23 +235,40 @@ async function sendOrderToClover(order) {
   try {
     const orderTypeId = order.isToGo ? CLOVER_ORDER_TYPES.takeOut : CLOVER_ORDER_TYPES.dineIn;
 
-const orderPayload = {
+    const orderPayload = {
       orderType: { id: orderTypeId },
-      title: order.isToGo
-        ? `${order.toGoName}`
-        : `Mesa ${order.table}`,
+      title: order.isToGo ? `${order.toGoName}` : `Mesa ${order.table}`,
       note: order.isToGo
         ? `PARA LLEVAR: ${order.toGoName}${order.note ? " | " + order.note : ""}`
         : `MESA ${order.table}${order.note ? " | " + order.note : ""}`,
       state: "open",
     };
 
-for (const item of order.items) {
-  for (let i = 0; i < item.qty; i++) {
-    await cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
-      name: item.name,
-      price: item.price,
-    });
+    console.log("📦 Creating Clover order...", orderPayload);
+    const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
+    console.log("✅ Clover order created:", cloverOrder);
+
+    const cloverOrderId = cloverOrder.id;
+    if (!cloverOrderId) throw new Error("No order ID returned from Clover");
+
+    console.log("🛒 Items to send:", order.items);
+
+    for (const item of order.items) {
+      for (let i = 0; i < item.qty; i++) {
+        const lineItemPayload = {
+          name: item.name,
+          price: item.price,
+        };
+        console.log(`➡️ Posting line item [${i+1}/${item.qty}]:`, lineItemPayload);
+        const result = await cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", lineItemPayload);
+        console.log("↩️ Line item response:", result);
+      }
+    }
+
+    console.log("🎉 All line items sent to Clover:", cloverOrderId);
+    return cloverOrderId;
+  } catch (err) {
+    console.error("❌ Clover order push failed:", err.message);
   }
 }
 
