@@ -254,7 +254,7 @@ const orderPayload = {
       order.items.map(item =>
         cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
           name: item.name,
-          price: item.price,
+          unitprice: item.price,
           unitQty: item.qty,
         })
       )
