@@ -290,12 +290,21 @@ async function updateOrderInClover(order, oldItems) {
       newItems.map(item => {
         const oldItem = (oldItems || []).find(o => o.id === item.id);
         const addedQty = oldItem ? item.qty - oldItem.qty : item.qty;
-        return Array.from({ length: addedQty }, () =>
+      return Array.from({ length: addedQty }, () =>
           cloverRequest(`orders/${order.cloverOrderId}/line_items`, "POST", {
             name: item.name,
             price: item.price,
           })
         );
+      })
+    );
+  } catch (err) {
+    console.warn("⚠️ Clover order update failed:", err.message);
+  }
+}
+
+// ============================================================
+// MOCK_MENU — fallback if Clover is unreachable
 
 // ============================================================
 // MOCK MENU — fallback if Clover is unreachable
