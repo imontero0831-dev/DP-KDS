@@ -271,14 +271,6 @@ async function sendOrderToClover(order) {
     console.error("❌ Clover order push failed:", err.message);
   }
 }
-
-    console.log("✅ Order sent to Clover:", cloverOrderId);
-    return cloverOrderId;
-  } catch (err) {
-    console.warn("⚠️ Clover order push failed (saved to Firebase only):", err.message);
-  }
-}
-
 async function updateOrderInClover(order, oldItems) {
   try {
     if (!order.cloverOrderId) return;
