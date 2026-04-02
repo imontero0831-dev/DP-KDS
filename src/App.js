@@ -267,12 +267,36 @@ const orderPayload = {
   }
 }
 
-async function updateOrderInClover(order) {
+async function updateOrderInClover(order, oldItems) {
   try {
     if (!order.cloverOrderId) return;
+
+    // Update the note
     await cloverRequest(`orders/${order.cloverOrderId}`, "POST", {
       note: order.note || "",
     });
+
+    // Find newly added items (not in old order)
+    const oldIds = (oldItems || []).map(i => i.id);
+    const newItems = order.items.filter(i => {
+      const oldItem = (oldItems || []).find(o => o.id === i.id);
+      if (!oldItem) return true; // brand new item
+      return i.qty > oldItem.qty; // quantity increased
+    });
+
+    // Push new/increased items to Clover
+    await Promise.all(
+      newItems.map(item => {
+        const oldItem = (oldItems || []).find(o => o.id === item.id);
+        const addedQty = oldItem ? item.qty - oldItem.qty : item.qty;
+        return cloverRequest(`orders/${order.cloverOrderId}/line_items`, "POST", {
+          name: item.name,
+          price: item.price,
+          unitQty: addedQty * 1000,
+        });
+      })
+    );
+
     console.log("✅ Clover order updated:", order.cloverOrderId);
   } catch (err) {
     console.warn("⚠️ Clover order update failed:", err.message);
@@ -683,7 +707,7 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
         await cancelKitchenOrder(editingOrder.firestoreId);
       } else {
         await editKitchenOrder(editingOrder.firestoreId, editingOrder.items, cart, note);
-        await updateOrderInClover({ ...editingOrder, items: cart, note });
+        await updateOrderInClover({ ...editingOrder, items: cart, note }, editingOrder.items);
       }
       setSending(false); setSent(true);
       setTimeout(() => { setSent(false); cancelEdit(); }, 2000);
