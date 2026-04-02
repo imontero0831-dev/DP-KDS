@@ -246,20 +246,14 @@ const orderPayload = {
       state: "open",
     };
 
-    const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
-    const cloverOrderId = cloverOrder.id;
-    if (!cloverOrderId) throw new Error("No order ID returned from Clover");
-
-    await Promise.all(
-      order.items.flatMap(item =>
-        Array.from({ length: item.qty }, () =>
-          cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
-            name: item.name,
-            price: item.price,
-          })
-        )
-      )
-    );
+for (const item of order.items) {
+  for (let i = 0; i < item.qty; i++) {
+    await cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
+      name: item.name,
+      price: item.price,
+    });
+  }
+}
 
     console.log("✅ Order sent to Clover:", cloverOrderId);
     return cloverOrderId;
