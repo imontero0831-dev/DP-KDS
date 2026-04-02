@@ -255,7 +255,7 @@ const orderPayload = {
         cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
           name: item.name,
           price: item.price,
-          unitQty: item.qty * 1000,
+          unitQty: item.qty,
         })
       )
     );
@@ -292,7 +292,7 @@ async function updateOrderInClover(order, oldItems) {
         return cloverRequest(`orders/${order.cloverOrderId}/line_items`, "POST", {
           name: item.name,
           price: item.price,
-          unitQty: addedQty * 1000,
+          unitQty: addedQty,
         });
       })
     );
