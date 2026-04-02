@@ -251,12 +251,13 @@ const orderPayload = {
     if (!cloverOrderId) throw new Error("No order ID returned from Clover");
 
     await Promise.all(
-      order.items.map(item =>
-        cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
-          name: item.name,
-          unitprice: item.price,
-          unitQty: item.qty,
-        })
+      order.items.flatMap(item =>
+        Array.from({ length: item.qty }, () =>
+          cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
+            name: item.name,
+            price: item.price,
+          })
+        )
       )
     );
 
@@ -289,19 +290,12 @@ async function updateOrderInClover(order, oldItems) {
       newItems.map(item => {
         const oldItem = (oldItems || []).find(o => o.id === item.id);
         const addedQty = oldItem ? item.qty - oldItem.qty : item.qty;
-        return cloverRequest(`orders/${order.cloverOrderId}/line_items`, "POST", {
-          name: item.name,
-          price: item.price,
-          unitQty: addedQty,
-        });
-      })
-    );
-
-    console.log("✅ Clover order updated:", order.cloverOrderId);
-  } catch (err) {
-    console.warn("⚠️ Clover order update failed:", err.message);
-  }
-}
+        return Array.from({ length: addedQty }, () =>
+          cloverRequest(`orders/${order.cloverOrderId}/line_items`, "POST", {
+            name: item.name,
+            price: item.price,
+          })
+        );
 
 // ============================================================
 // MOCK MENU — fallback if Clover is unreachable
