@@ -1228,6 +1228,7 @@ export default function App() {
     });
   }, []);
 
+
   useEffect(() => {
     if (!menu) return;
     if (lang === "es") {
@@ -1238,11 +1239,7 @@ export default function App() {
         items: prev.items.map(item => ({ ...item, nameEs: item.nameEs || null })),
       }));
     }
-// The one that calls applyTranslations — add lang:
-}, [lang]);
-
-// The one that checks menu — add menu:
-}, [menu]);
+  }, [menu]);
 
   async function applyTranslations(currentMenu) {
     const needsTranslation = currentMenu.items.filter(
