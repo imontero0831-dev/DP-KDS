@@ -1226,7 +1226,7 @@ export default function App() {
         await applyTranslations(rawMenu);
       }
     });
-  }, []);
+  }, [lang]);
 
 
   useEffect(() => {
@@ -1239,7 +1239,7 @@ export default function App() {
         items: prev.items.map(item => ({ ...item, nameEs: item.nameEs || null })),
       }));
     }
-  }, [menu]);
+  }, [lang, menu]);
 
   async function applyTranslations(currentMenu) {
     const needsTranslation = currentMenu.items.filter(
