@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, doc, onSnapshot,
@@ -177,7 +177,7 @@ async function cloverRequest(endpoint, method = "GET", body = null) {
 // ============================================================
 // All modifier groups loaded once at startup
 let ALL_MODIFIER_GROUPS = [];
-
+// eslint-disable-next-line no-unused-vars
 async function fetchAllModifierGroups() {
   try {
     const data = await cloverRequest("modifier_groups?expand=modifiers&limit=100");
@@ -484,7 +484,7 @@ useEffect(() => {
   groups.forEach(g => { init[g.id] = new Set(); });
   setSelections(init);
   setLoading(false);
-}, [item.id]);
+}, [item.id, item.name]);
 
   function toggle(group, modId) {
     setSelections(prev => {
@@ -1238,7 +1238,11 @@ export default function App() {
         items: prev.items.map(item => ({ ...item, nameEs: item.nameEs || null })),
       }));
     }
-  }, [lang]);
+// The one that calls applyTranslations — add lang:
+}, [lang]);
+
+// The one that checks menu — add menu:
+}, [menu]);
 
   async function applyTranslations(currentMenu) {
     const needsTranslation = currentMenu.items.filter(
