@@ -1226,7 +1226,7 @@ export default function App() {
         await applyTranslations(rawMenu);
       }
     });
-  }, [lang]);
+  }, []);
 
 
   useEffect(() => {
