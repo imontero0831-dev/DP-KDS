@@ -194,8 +194,7 @@ async function fetchAllModifierGroups() {
     }));
     console.log("✅ Loaded modifier groups:", ALL_MODIFIER_GROUPS.length);
   } catch (err) {
-    console.warn("⚠️ Could not fetch modifier groups:", err.message);
-  }
+console.error("❌ fetchAllModifierGroups FAILED:", err.message, err);  }
 }
 
 function getModifierGroupsForItem(itemName) {
