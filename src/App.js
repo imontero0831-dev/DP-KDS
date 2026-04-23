@@ -202,11 +202,12 @@ function getModifierGroupsForItem(itemName) {
   if (!itemName || ALL_MODIFIER_GROUPS.length === 0) return [];
   const name = itemName.toLowerCase();
 
-  // Match modifier groups whose prefix matches the item name
-  // e.g. item "Taco de Asada" matches "Tacos - Add-ons", "Tacos - Removals"
   return ALL_MODIFIER_GROUPS.filter(group => {
     const groupPrefix = group.name.split(" - ")[0].toLowerCase().trim();
-    return name.includes(groupPrefix) || groupPrefix.includes(name.split(" ")[0]);
+    // Remove trailing 's' from both to handle singular/plural
+    const normalizedGroup = groupPrefix.replace(/s$/, "");
+    const normalizedName = name.replace(/s$/, "");
+    return normalizedName.includes(normalizedGroup) || normalizedGroup.includes(normalizedName.split(" ")[0].replace(/s$/, ""));
   });
 }
 // ============================================================
@@ -1226,7 +1227,7 @@ export default function App() {
         await applyTranslations(rawMenu);
       }
     });
-}, []); // eslint-disable-line react-hooks/exhaustive-deps
+}, []);
 
 
   useEffect(() => {
