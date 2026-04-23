@@ -1227,7 +1227,7 @@ export default function App() {
         await applyTranslations(rawMenu);
       }
     });
-}, []);
+}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   useEffect(() => {
