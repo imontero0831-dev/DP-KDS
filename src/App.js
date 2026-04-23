@@ -181,6 +181,7 @@ let ALL_MODIFIER_GROUPS = [];
 async function fetchAllModifierGroups() {
   try {
     const data = await cloverRequest("modifier_groups?expand=modifiers&limit=100");
+    console.log("🧪 Raw modifier_groups response:", JSON.stringify(data)); // 👈 add this
     ALL_MODIFIER_GROUPS = (data.elements || []).map(group => ({
       id: group.id,
       name: group.name,
