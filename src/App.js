@@ -1227,6 +1227,7 @@ export default function App() {
   const t = T[lang];
 
   useEffect(() => {
+    fetchAllModifierGroups();
     fetchMenuFromClover().then(async (rawMenu) => {
       setMenu(rawMenu);
       if (lang === "es") {
