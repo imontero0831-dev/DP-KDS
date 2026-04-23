@@ -199,15 +199,21 @@ async function fetchAllModifierGroups() {
 }
 
 function getModifierGroupsForItem(itemName) {
-  if (!itemName || ALL_MODIFIER_GROUPS.length === 0) return [];
+  if (!itemName || ALL_MODIFIER_GROUPS.length === 0) {
+    console.log("⚠️ No groups loaded, ALL_MODIFIER_GROUPS length:", ALL_MODIFIER_GROUPS.length);
+    return [];
+  }
   const name = itemName.toLowerCase();
+  console.log("🔍 Matching item:", name);
+  console.log("📋 Available groups:", ALL_MODIFIER_GROUPS.map(g => g.name));
 
   return ALL_MODIFIER_GROUPS.filter(group => {
     const groupPrefix = group.name.split(" - ")[0].toLowerCase().trim();
-    // Remove trailing 's' from both to handle singular/plural
     const normalizedGroup = groupPrefix.replace(/s$/, "");
     const normalizedName = name.replace(/s$/, "");
-    return normalizedName.includes(normalizedGroup) || normalizedGroup.includes(normalizedName.split(" ")[0].replace(/s$/, ""));
+    const match = normalizedName.includes(normalizedGroup) || normalizedGroup.includes(normalizedName.split(" ")[0].replace(/s$/, ""));
+    console.log(`  group "${group.name}" → prefix "${normalizedGroup}" → match: ${match}`);
+    return match;
   });
 }
 // ============================================================
