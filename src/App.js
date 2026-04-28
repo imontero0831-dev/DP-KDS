@@ -221,24 +221,14 @@ function getModifierGroupsForItem(itemName) {
 // ============================================================
 async function translateMenuItemsToSpanish(items) {
   const names = items.map(i => i.name);
-  const prompt = `Translate the following restaurant menu item names from English to Mexican Spanish. 
-Return ONLY a JSON array of translated strings in the same order. No extra text, no markdown, no explanations.
-Items: ${JSON.stringify(names)}`;
-
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("/api/clover", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        messages: [{ role: "user", content: prompt }],
-      }),
+      body: JSON.stringify({ type: "translate", items: names }),
     });
     const data = await response.json();
-    const text = data.content?.[0]?.text || "[]";
-    const cleaned = text.replace(/```json|```/g, "").trim();
-    const translated = JSON.parse(cleaned);
+    const translated = data.translated;
     if (!Array.isArray(translated) || translated.length !== names.length) return null;
     return translated;
   } catch (err) {
@@ -493,7 +483,7 @@ function levenshtein(a, b) {
 }
 
 function fuzzyMatchesTrigger(word, triggers) {
-  return triggers.some(t => levenshtein(word.toLowerCase(), t) <= 1);
+  return triggers.some(t => levenshtein(word.toLowerCase(), t) <= 2);
 }
 
 function parseSpecialNote(note) {
