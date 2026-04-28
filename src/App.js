@@ -482,6 +482,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose }) {
   const [loading, setLoading] = useState(true);
   // selections: { [groupId]: Set of modifierId }
   const [selections, setSelections] = useState({});
+const [specialNote, setSpecialNote] = useState("");
 
 useEffect(() => {
   // Use item name to match modifier groups instead of API call
@@ -522,14 +523,13 @@ useEffect(() => {
   const canConfirm = missingGroups.length === 0;
 
   function handleConfirm() {
-    // Flatten selected modifiers into a flat array
     const selectedMods = [];
     groups.forEach(group => {
       group.modifiers.forEach(mod => {
         if (selections[group.id]?.has(mod.id)) selectedMods.push(mod);
       });
     });
-    onConfirm(selectedMods);
+    onConfirm(selectedMods, specialNote.trim());
   }
 
   // Total modifier price add-on
@@ -617,6 +617,27 @@ useEffect(() => {
               );
             })
           )}
+
+          {/* Free-text special note */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#1A1A1A", marginBottom: 6 }}>
+              ✏️ Nota especial
+            </div>
+            <textarea
+              style={{
+                width: "100%", background: "#F5F3F0", border: "2px solid #E5E0D8",
+                borderRadius: 10, color: "#333", fontSize: 14, padding: "10px 12px",
+                resize: "none", outline: "none", boxSizing: "border-box",
+                fontFamily: "inherit", transition: "border-color 0.15s",
+              }}
+              onFocus={e => e.target.style.borderColor = "#BE202E"}
+              onBlur={e => e.target.style.borderColor = "#E5E0D8"}
+              placeholder="Sin cebolla, extra jalapeños, bien cocido..."
+              value={specialNote}
+              onChange={e => setSpecialNote(e.target.value)}
+              rows={2}
+            />
+          </div>
         </div>
 
         {/* Footer */}
@@ -742,6 +763,11 @@ function GuestCheckTicket({ order, t, isQueue }) {
                     {item.modifiers.map((mod, mi) => (
                       <span key={mi} style={S.ticketModifierChip}>+ {mod.name}</span>
                     ))}
+                  </div>
+                )}
+                {item.specialNote && (
+                  <div style={S.ticketSpecialNote}>
+                    ✏️ {item.specialNote}
                   </div>
                 )}
               </div>
@@ -914,20 +940,20 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
   }
 
   // Called when worker confirms modifiers in modal
-  function handleModifierConfirm(selectedMods) {
+  function handleModifierConfirm(selectedMods, specialNote) {
     const item = modModalItem;
     setModModalItem(null);
     setCart(prev => {
       const existing = prev.find(c => c.id === item.id);
       if (existing) {
-        // Increment qty; modifiers from the new tap won't be merged (keep first selection)
         return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
       }
       return [...prev, {
         ...item,
         displayName: getItemDisplayName(item),
         qty: 1,
-        modifiers: selectedMods, // flat array of { id, name, price }
+        modifiers: selectedMods,
+        specialNote: specialNote || null,
       }];
     });
   }
@@ -1093,6 +1119,9 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
                         <span key={mi} style={S.cartModChip}>+ {mod.name}{mod.price > 0 ? ` (${fmt(mod.price)})` : ""}</span>
                       ))}
                     </div>
+                  )}
+                  {item.specialNote && (
+                    <div style={S.cartSpecialNote}>✏️ {item.specialNote}</div>
                   )}
                 </div>
                 <div style={S.cartQtyRow}>
@@ -1369,10 +1398,12 @@ const S = {
   // TICKET MODIFIER DISPLAY
   ticketModifiers: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 },
   ticketModifierChip: { fontSize: 13, color: "#6B7280", fontStyle: "italic" },
+  ticketSpecialNote: { fontSize: 14, color: "#BE202E", fontStyle: "italic", fontWeight: 700, marginTop: 4 },
 
   // CART MODIFIER DISPLAY
   cartModifiers: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 },
   cartModChip: { fontSize: 11, color: "#6B7280", background: "#F0EDE8", borderRadius: 4, padding: "1px 6px" },
+  cartSpecialNote: { fontSize: 11, color: "#BE202E", fontStyle: "italic", marginTop: 3 },
 
   // KITCHEN
   kitchenRoot: { flex: 1, display: "flex", flexDirection: "column", background: "#F5F3F0", minHeight: "calc(100vh - 53px)" },
