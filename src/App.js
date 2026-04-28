@@ -476,7 +476,7 @@ const STATUS_COLORS = { new: "#BE202E", in_progress: "#D97706", done: "#15803D" 
 // ============================================================
 // SPECIAL NOTE PARSER
 // ============================================================
-const ADD_TRIGGERS = ["extra", "add", "agregar", "agrega", "adicional", "más", "mas"];
+const ADD_TRIGGERS = ["con", "extra", "add", "agregar", "agrega", "adicional", "más", "mas"];
 const REMOVE_TRIGGERS = ["sin", "without", "remove", "quitar", "quita", "no"];
 const NO_IGNORE_LIST = ["muy", "hay", "sé", "se", "tan", "favor", "más", "mas", "olvidar", "puede"];
 
