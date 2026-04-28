@@ -474,6 +474,51 @@ const elapsed = (ts) => {
 const STATUS_COLORS = { new: "#BE202E", in_progress: "#D97706", done: "#15803D" };
 
 // ============================================================
+// SPECIAL NOTE PARSER
+// ============================================================
+const ADD_TRIGGERS = ["extra", "add", "agregar", "agrega", "adicional", "más", "mas"];
+const REMOVE_TRIGGERS = ["sin", "without", "remove", "quitar", "quita", "no"];
+const NO_IGNORE_LIST = ["muy", "hay", "sé", "se", "tan", "favor", "más", "mas", "olvidar", "puede"];
+
+function levenshtein(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i][j] = a[i-1] === b[j-1]
+        ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[a.length][b.length];
+}
+
+function fuzzyMatchesTrigger(word, triggers) {
+  return triggers.some(t => levenshtein(word.toLowerCase(), t) <= 1);
+}
+
+function parseSpecialNote(note) {
+  if (!note) return [];
+  return note.split(",").map(chunk => {
+    const trimmed = chunk.trim();
+    if (!trimmed) return null;
+    const words = trimmed.split(/\s+/);
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i].toLowerCase();
+      if (fuzzyMatchesTrigger(w, REMOVE_TRIGGERS)) {
+        if (w === "no" && words[i + 1] && NO_IGNORE_LIST.includes(words[i + 1].toLowerCase())) {
+          continue;
+        }
+        return { type: "remove", text: trimmed.toUpperCase() };
+      }
+      if (fuzzyMatchesTrigger(w, ADD_TRIGGERS)) {
+        return { type: "add", text: trimmed.toUpperCase() };
+      }
+    }
+    return { type: "neutral", text: trimmed.toUpperCase() };
+  }).filter(Boolean);
+}
+
+// ============================================================
 // MODIFIER MODAL
 // ============================================================
 function ModifierModal({ item, displayName, lang, onConfirm, onClose }) {
@@ -760,14 +805,37 @@ function GuestCheckTicket({ order, t, isQueue }) {
                 {/* Show modifiers on ticket */}
                 {item.modifiers && item.modifiers.length > 0 && (
                   <div style={S.ticketModifiers}>
-                    {item.modifiers.map((mod, mi) => (
-                      <span key={mi} style={S.ticketModifierChip}>+ {mod.name}</span>
-                    ))}
+                    {item.modifiers.map((mod, mi) => {
+                      const isRemoval = REMOVE_TRIGGERS.some(w =>
+                        mod.name.toLowerCase().includes(w)
+                      );
+                      return (
+                        <span key={mi} style={{
+                          ...S.ticketModifierChip,
+                          color: isRemoval ? "#BE202E" : "#15803D",
+                          fontWeight: 800,
+                          textTransform: "uppercase",
+                        }}>
+                          {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
                 {item.specialNote && (
-                  <div style={S.ticketSpecialNote}>
-                    ✏️ {item.specialNote}
+                  <div style={S.ticketSpecialNoteBlock}>
+                    {parseSpecialNote(item.specialNote).map((seg, si) => (
+                      <div key={si} style={{
+                        ...S.ticketSpecialNoteLine,
+                        color: seg.type === "add" ? "#15803D"
+                             : seg.type === "remove" ? "#BE202E"
+                             : "#1A1A1A",
+                      }}>
+                        {seg.type === "add" ? "+ "
+                       : seg.type === "remove" ? "− "
+                       : ""}{seg.text}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1115,13 +1183,37 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
                   {/* Show chosen modifiers under item name in cart */}
                   {item.modifiers && item.modifiers.length > 0 && (
                     <div style={S.cartModifiers}>
-                      {item.modifiers.map((mod, mi) => (
-                        <span key={mi} style={S.cartModChip}>+ {mod.name}{mod.price > 0 ? ` (${fmt(mod.price)})` : ""}</span>
-                      ))}
+                      {item.modifiers.map((mod, mi) => {
+                        const isRemoval = REMOVE_TRIGGERS.some(w =>
+                          mod.name.toLowerCase().includes(w)
+                        );
+                        return (
+                          <span key={mi} style={{
+                            ...S.cartModChip,
+                            color: isRemoval ? "#BE202E" : "#15803D",
+                            fontWeight: 800,
+                          }}>
+                            {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}{mod.price > 0 ? ` (${fmt(mod.price)})` : ""}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                   {item.specialNote && (
-                    <div style={S.cartSpecialNote}>✏️ {item.specialNote}</div>
+                    <div style={S.cartSpecialNoteBlock}>
+                      {parseSpecialNote(item.specialNote).map((seg, si) => (
+                        <div key={si} style={{
+                          ...S.cartSpecialNoteLine,
+                          color: seg.type === "add" ? "#15803D"
+                               : seg.type === "remove" ? "#BE202E"
+                               : "#1A1A1A",
+                        }}>
+                          {seg.type === "add" ? "+ "
+                         : seg.type === "remove" ? "− "
+                         : ""}{seg.text}
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
                 <div style={S.cartQtyRow}>
@@ -1397,13 +1489,15 @@ const S = {
 
   // TICKET MODIFIER DISPLAY
   ticketModifiers: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 },
-  ticketModifierChip: { fontSize: 13, color: "#6B7280", fontStyle: "italic" },
-  ticketSpecialNote: { fontSize: 14, color: "#BE202E", fontStyle: "italic", fontWeight: 700, marginTop: 4 },
+  ticketModifierChip: { fontSize: 13, fontStyle: "normal" },
+  ticketSpecialNoteBlock: { display: "flex", flexDirection: "column", gap: 2, marginTop: 4 },
+  ticketSpecialNoteLine: { fontSize: 14, fontWeight: 800, letterSpacing: "0.02em" },
 
   // CART MODIFIER DISPLAY
   cartModifiers: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 },
-  cartModChip: { fontSize: 11, color: "#6B7280", background: "#F0EDE8", borderRadius: 4, padding: "1px 6px" },
-  cartSpecialNote: { fontSize: 11, color: "#BE202E", fontStyle: "italic", marginTop: 3 },
+  cartModChip: { fontSize: 11, background: "#F0EDE8", borderRadius: 4, padding: "1px 6px" },
+  cartSpecialNoteBlock: { display: "flex", flexDirection: "column", gap: 2, marginTop: 4 },
+  cartSpecialNoteLine: { fontSize: 11, fontWeight: 800 },
 
   // KITCHEN
   kitchenRoot: { flex: 1, display: "flex", flexDirection: "column", background: "#F5F3F0", minHeight: "calc(100vh - 53px)" },
