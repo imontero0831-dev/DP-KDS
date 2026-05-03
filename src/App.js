@@ -80,6 +80,12 @@ const T = {
     qty: "CANT",
     item: "ARTÍCULO",
     translating: "Traduciendo menú...",
+    keyboardMode: "Modo Control",
+    shortcutAdvance: "Avanzar",
+    shortcutUndo: "Deshacer",
+    shortcutNavigate: "Navegar",
+    shortcutJump: "Saltar a orden",
+    shortcutReset: "Reiniciar",
     customizeItem: "Personalizar",
     addToOrder: "Agregar a Orden",
     required: "Requerido",
@@ -146,6 +152,12 @@ const T = {
     qty: "QTY",
     item: "ITEM",
     translating: "Translating menu...",
+    keyboardMode: "Control Mode",
+    shortcutAdvance: "Advance",
+    shortcutUndo: "Undo",
+    shortcutNavigate: "Navigate",
+    shortcutJump: "Jump to order",
+    shortcutReset: "Reset",
     customizeItem: "Customize",
     addToOrder: "Add to Order",
     required: "Required",
@@ -662,8 +674,8 @@ function GuestCheckTicket({ order, t, isQueue, isFocused }) {
       {isFocused && !isQueue && (
         <div style={S.keyboardHintBar}>
           <span style={S.keyboardHint}>⌨️ <strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
-          <span style={S.keyboardHint}><strong>BKSP</strong> = Undo</span>
-          <span style={S.keyboardHint}><strong>← →</strong> = Navegar</span>
+          <span style={S.keyboardHint}><strong>BKSP</strong> = {t.shortcutUndo}</span>
+          <span style={S.keyboardHint}><strong>← →</strong> = {t.shortcutNavigate}</span>
         </div>
       )}
 
@@ -910,7 +922,7 @@ function KitchenScreen({ lang }) {
           <span style={S.kitchenTitle}>👨‍🍳 {t.kitchenDisplay}</span>
           {queued.length > 0 && <span style={S.queuePill}>+{queued.length} {t.inQueue}</span>}
           {/* Keyboard mode indicator */}
-          <span style={S.keyboardModePill}>⌨️ Modo Control</span>
+          <span style={S.keyboardModePill}>⌨️ {t.keyboardMode}</span>
         </div>
         <div style={S.kitchenStats}>
           <span style={S.statPillRed}>{active.length} {t.active}</span>
@@ -927,11 +939,11 @@ function KitchenScreen({ lang }) {
 
       {/* Keyboard shortcut legend — always visible at bottom of header */}
       <div style={S.shortcutBar}>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>ENTER</kbd> Avanzar</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>BKSP</kbd> Deshacer</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>← →</kbd> Navegar</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>1–9</kbd> Saltar a orden</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>ESC</kbd> Reiniciar</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>ENTER</kbd> {t.shortcutAdvance}</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>BKSP</kbd> {t.shortcutUndo}</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>← →</kbd> {t.shortcutNavigate}</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>1–9</kbd> {t.shortcutJump}</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>ESC</kbd> {t.shortcutReset}</span>
       </div>
 
       {active.length === 0 ? (
