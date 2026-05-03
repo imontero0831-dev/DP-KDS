@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, doc, onSnapshot,
@@ -80,7 +80,6 @@ const T = {
     qty: "CANT",
     item: "ARTÍCULO",
     translating: "Traduciendo menú...",
-    // Modifier modal
     customizeItem: "Personalizar",
     addToOrder: "Agregar a Orden",
     required: "Requerido",
@@ -147,7 +146,6 @@ const T = {
     qty: "QTY",
     item: "ITEM",
     translating: "Translating menu...",
-    // Modifier modal
     customizeItem: "Customize",
     addToOrder: "Add to Order",
     required: "Required",
@@ -177,11 +175,9 @@ async function cloverRequest(endpoint, method = "GET", body = null) {
 // ============================================================
 // All modifier groups loaded once at startup
 let ALL_MODIFIER_GROUPS = [];
-// eslint-disable-next-line no-unused-vars
 async function fetchAllModifierGroups() {
   try {
     const data = await cloverRequest("modifier_groups?expand=modifiers&limit=100");
-    console.log("🧪 Raw modifier_groups response:", JSON.stringify(data)); // 👈 add this
     ALL_MODIFIER_GROUPS = (data.elements || []).map(group => ({
       id: group.id,
       name: group.name,
@@ -193,29 +189,22 @@ async function fetchAllModifierGroups() {
         price: m.price || 0,
       })),
     }));
-    console.log("✅ Loaded modifier groups:", ALL_MODIFIER_GROUPS.length);
   } catch (err) {
-console.error("❌ fetchAllModifierGroups FAILED:", err.message, err);  }
+    console.error("❌ fetchAllModifierGroups FAILED:", err.message, err);
+  }
 }
 
 function getModifierGroupsForItem(itemName) {
-  if (!itemName || ALL_MODIFIER_GROUPS.length === 0) {
-    console.log("⚠️ No groups loaded, ALL_MODIFIER_GROUPS length:", ALL_MODIFIER_GROUPS.length);
-    return [];
-  }
+  if (!itemName || ALL_MODIFIER_GROUPS.length === 0) return [];
   const name = itemName.toLowerCase();
-  console.log("🔍 Matching item:", name);
-  console.log("📋 Available groups:", ALL_MODIFIER_GROUPS.map(g => g.name));
-
   return ALL_MODIFIER_GROUPS.filter(group => {
     const groupPrefix = group.name.split(" - ")[0].toLowerCase().trim();
     const normalizedGroup = groupPrefix.replace(/s$/, "");
     const normalizedName = name.replace(/s$/, "");
-    const match = normalizedName.includes(normalizedGroup) || normalizedGroup.includes(normalizedName.split(" ")[0].replace(/s$/, ""));
-    console.log(`  group "${group.name}" → prefix "${normalizedGroup}" → match: ${match}`);
-    return match;
+    return normalizedName.includes(normalizedGroup) || normalizedGroup.includes(normalizedName.split(" ")[0].replace(/s$/, ""));
   });
 }
+
 // ============================================================
 // AI MENU TRANSLATION via Anthropic API
 // ============================================================
@@ -238,7 +227,7 @@ async function translateMenuItemsToSpanish(items) {
 }
 
 // ============================================================
-// CLOVER MENU FETCH — falls back to MOCK_MENU on error
+// CLOVER MENU FETCH
 // ============================================================
 async function fetchMenuFromClover() {
   try {
@@ -246,12 +235,10 @@ async function fetchMenuFromClover() {
       cloverRequest("items?expand=categories&limit=200"),
       cloverRequest("categories?limit=100"),
     ]);
-
     const categories = (catsRes.elements || []).map(cat => ({
       id: cat.id,
       name: { es: cat.name, en: cat.name },
     }));
-
     const items = (itemsRes.elements || [])
       .filter(item => item.available !== false)
       .map(item => ({
@@ -262,14 +249,9 @@ async function fetchMenuFromClover() {
         price: item.price || 0,
         emoji: "🍽️",
       }));
-
     if (categories.length === 0) {
-      return {
-        categories: [{ id: "uncategorized", name: { es: "Menú", en: "Menu" } }],
-        items,
-      };
+      return { categories: [{ id: "uncategorized", name: { es: "Menú", en: "Menu" } }], items };
     }
-
     return { categories, items };
   } catch (err) {
     console.warn("⚠️ Clover menu fetch failed, using mock menu:", err.message);
@@ -288,7 +270,6 @@ const CLOVER_ORDER_TYPES = {
 async function sendOrderToClover(order) {
   try {
     const orderTypeId = order.isToGo ? CLOVER_ORDER_TYPES.takeOut : CLOVER_ORDER_TYPES.dineIn;
-
     const orderPayload = {
       orderType: { id: orderTypeId },
       note: order.isToGo
@@ -296,27 +277,17 @@ async function sendOrderToClover(order) {
         : `🪑 MESA ${order.table}${order.note ? " | " + order.note : ""}`,
       state: "open",
     };
-
-    console.log("📦 Creating Clover order...", orderPayload);
     const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
     const cloverOrderId = cloverOrder.id;
     if (!cloverOrderId) throw new Error("No order ID returned from Clover");
-    console.log("✅ Clover order created:", cloverOrderId);
-
-    // Send line items sequentially to avoid race conditions
     for (const item of order.items) {
-      console.log(`🛒 Adding line item: ${item.name}`);
       const lineItem = await cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
         name: item.name,
         price: item.price,
         unitQty: item.qty * 1000,
       });
-      console.log(`➡️ Line item created:`, lineItem.id);
-
-      // Apply modifiers to this line item if any
       if (item.modifiers && item.modifiers.length > 0) {
         for (const mod of item.modifiers) {
-          console.log(`  ↩️ Adding modifier: ${mod.name}`);
           await cloverRequest(
             `orders/${cloverOrderId}/line_items/${lineItem.id}/modifications`,
             "POST",
@@ -325,8 +296,6 @@ async function sendOrderToClover(order) {
         }
       }
     }
-
-    console.log("🎉 Order fully sent to Clover:", cloverOrderId);
     return cloverOrderId;
   } catch (err) {
     console.warn("⚠️ Clover order push failed (saved to Firebase only):", err.message);
@@ -336,17 +305,14 @@ async function sendOrderToClover(order) {
 async function updateOrderInClover(order) {
   try {
     if (!order.cloverOrderId) return;
-    await cloverRequest(`orders/${order.cloverOrderId}`, "POST", {
-      note: order.note || "",
-    });
-    console.log("✅ Clover order updated:", order.cloverOrderId);
+    await cloverRequest(`orders/${order.cloverOrderId}`, "POST", { note: order.note || "" });
   } catch (err) {
     console.warn("⚠️ Clover order update failed:", err.message);
   }
 }
 
 // ============================================================
-// MOCK MENU — fallback if Clover is unreachable
+// MOCK MENU
 // ============================================================
 const MOCK_MENU = {
   categories: [
@@ -495,14 +461,10 @@ function parseSpecialNote(note) {
     for (let i = 0; i < words.length; i++) {
       const w = words[i].toLowerCase();
       if (fuzzyMatchesTrigger(w, REMOVE_TRIGGERS)) {
-        if (w === "no" && words[i + 1] && NO_IGNORE_LIST.includes(words[i + 1].toLowerCase())) {
-          continue;
-        }
+        if (w === "no" && words[i + 1] && NO_IGNORE_LIST.includes(words[i + 1].toLowerCase())) continue;
         return { type: "remove", text: trimmed.toUpperCase() };
       }
-      if (fuzzyMatchesTrigger(w, ADD_TRIGGERS)) {
-        return { type: "add", text: trimmed.toUpperCase() };
-      }
+      if (fuzzyMatchesTrigger(w, ADD_TRIGGERS)) return { type: "add", text: trimmed.toUpperCase() };
     }
     return { type: "neutral", text: trimmed.toUpperCase() };
   }).filter(Boolean);
@@ -515,19 +477,17 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose }) {
   const t = T[lang];
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
-  // selections: { [groupId]: Set of modifierId }
   const [selections, setSelections] = useState({});
-const [specialNote, setSpecialNote] = useState("");
+  const [specialNote, setSpecialNote] = useState("");
 
-useEffect(() => {
-  // Use item name to match modifier groups instead of API call
-  const groups = getModifierGroupsForItem(item.name);
-  setGroups(groups);
-  const init = {};
-  groups.forEach(g => { init[g.id] = new Set(); });
-  setSelections(init);
-  setLoading(false);
-}, [item.id, item.name]);
+  useEffect(() => {
+    const groups = getModifierGroupsForItem(item.name);
+    setGroups(groups);
+    const init = {};
+    groups.forEach(g => { init[g.id] = new Set(); });
+    setSelections(init);
+    setLoading(false);
+  }, [item.id, item.name]);
 
   function toggle(group, modId) {
     setSelections(prev => {
@@ -535,10 +495,8 @@ useEffect(() => {
       const current = new Set(prev[group.id]);
       const isSingle = group.maxAllowed === 1;
       if (isSingle) {
-        // Radio behaviour
         next[group.id] = current.has(modId) ? new Set() : new Set([modId]);
       } else {
-        // Checkbox behaviour — respect maxAllowed
         if (current.has(modId)) {
           current.delete(modId);
           next[group.id] = current;
@@ -551,10 +509,7 @@ useEffect(() => {
     });
   }
 
-  // Validate: every required group has at least minRequired selections
-  const missingGroups = groups.filter(g =>
-    g.minRequired > 0 && (selections[g.id]?.size ?? 0) < g.minRequired
-  );
+  const missingGroups = groups.filter(g => g.minRequired > 0 && (selections[g.id]?.size ?? 0) < g.minRequired);
   const canConfirm = missingGroups.length === 0;
 
   function handleConfirm() {
@@ -567,17 +522,13 @@ useEffect(() => {
     onConfirm(selectedMods, specialNote.trim());
   }
 
-  // Total modifier price add-on
   const modTotal = groups.reduce((sum, group) => {
-    return sum + group.modifiers
-      .filter(m => selections[group.id]?.has(m.id))
-      .reduce((s, m) => s + m.price, 0);
+    return sum + group.modifiers.filter(m => selections[group.id]?.has(m.id)).reduce((s, m) => s + m.price, 0);
   }, 0);
 
   return (
     <div style={S.modalOverlay} onClick={onClose}>
       <div style={S.modalBox} onClick={e => e.stopPropagation()}>
-        {/* Header */}
         <div style={S.modalHeader}>
           <div>
             <div style={S.modalTitle}>{item.emoji} {displayName}</div>
@@ -585,8 +536,6 @@ useEffect(() => {
           </div>
           <button style={S.modalCloseBtn} onClick={onClose}>✕</button>
         </div>
-
-        {/* Body */}
         <div style={S.modalBody}>
           {loading ? (
             <div style={S.modalLoading}>
@@ -601,49 +550,25 @@ useEffect(() => {
               const isSingle = group.maxAllowed === 1;
               const selected = selections[group.id] ?? new Set();
               const isSatisfied = !isRequired || selected.size >= group.minRequired;
-
               return (
                 <div key={group.id} style={S.modGroup}>
                   <div style={S.modGroupHeader}>
                     <span style={S.modGroupName}>{group.name}</span>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <span style={{
-                        ...S.modGroupBadge,
-                        background: isRequired
-                          ? (isSatisfied ? "#15803D" : "#BE202E")
-                          : "#6B7280",
-                      }}>
+                      <span style={{ ...S.modGroupBadge, background: isRequired ? (isSatisfied ? "#15803D" : "#BE202E") : "#6B7280" }}>
                         {isRequired ? t.required : t.optional}
                       </span>
-                      <span style={S.modGroupHint}>
-                        {isSingle
-                          ? t.chooseOne
-                          : `${t.chooseUp} ${group.maxAllowed}`}
-                      </span>
+                      <span style={S.modGroupHint}>{isSingle ? t.chooseOne : `${t.chooseUp} ${group.maxAllowed}`}</span>
                     </div>
                   </div>
-
                   <div style={S.modOptions}>
                     {group.modifiers.map(mod => {
                       const isSelected = selected.has(mod.id);
                       return (
-                        <button
-                          key={mod.id}
-                          style={{
-                            ...S.modOption,
-                            ...(isSelected ? S.modOptionSelected : {}),
-                          }}
-                          onClick={() => toggle(group, mod.id)}
-                        >
-                          <span style={S.modOptionIndicator}>
-                            {isSingle
-                              ? (isSelected ? "●" : "○")
-                              : (isSelected ? "☑" : "☐")}
-                          </span>
+                        <button key={mod.id} style={{ ...S.modOption, ...(isSelected ? S.modOptionSelected : {}) }} onClick={() => toggle(group, mod.id)}>
+                          <span style={S.modOptionIndicator}>{isSingle ? (isSelected ? "●" : "○") : (isSelected ? "☑" : "☐")}</span>
                           <span style={S.modOptionName}>{mod.name}</span>
-                          <span style={S.modOptionPrice}>
-                            {mod.price > 0 ? `+${fmt(mod.price)}` : t.free}
-                          </span>
+                          <span style={S.modOptionPrice}>{mod.price > 0 ? `+${fmt(mod.price)}` : t.free}</span>
                         </button>
                       );
                     })}
@@ -652,19 +577,10 @@ useEffect(() => {
               );
             })
           )}
-
-          {/* Free-text special note */}
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#1A1A1A", marginBottom: 6 }}>
-              ✏️ Nota especial
-            </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#1A1A1A", marginBottom: 6 }}>✏️ Nota especial</div>
             <textarea
-              style={{
-                width: "100%", background: "#F5F3F0", border: "2px solid #E5E0D8",
-                borderRadius: 10, color: "#333", fontSize: 14, padding: "10px 12px",
-                resize: "none", outline: "none", boxSizing: "border-box",
-                fontFamily: "inherit", transition: "border-color 0.15s",
-              }}
+              style={{ width: "100%", background: "#F5F3F0", border: "2px solid #E5E0D8", borderRadius: 10, color: "#333", fontSize: 14, padding: "10px 12px", resize: "none", outline: "none", boxSizing: "border-box", fontFamily: "inherit", transition: "border-color 0.15s" }}
               onFocus={e => e.target.style.borderColor = "#BE202E"}
               onBlur={e => e.target.style.borderColor = "#E5E0D8"}
               placeholder="Sin cebolla, extra jalapeños, bien cocido..."
@@ -674,30 +590,17 @@ useEffect(() => {
             />
           </div>
         </div>
-
-        {/* Footer */}
         {!loading && (
           <div style={S.modalFooter}>
             {!canConfirm && (
-              <div style={S.modalValidationMsg}>
-                ⚠️ {t.selectRequired}: {missingGroups.map(g => g.name).join(", ")}
-              </div>
+              <div style={S.modalValidationMsg}>⚠️ {t.selectRequired}: {missingGroups.map(g => g.name).join(", ")}</div>
             )}
             <div style={S.modalFooterRow}>
               <div style={S.modalPriceBreakdown}>
                 <span style={S.modalBasePrice}>{fmt(item.price)}</span>
-                {modTotal > 0 && (
-                  <span style={S.modalModPrice}> + {fmt(modTotal)}</span>
-                )}
+                {modTotal > 0 && <span style={S.modalModPrice}> + {fmt(modTotal)}</span>}
               </div>
-              <button
-                style={{
-                  ...S.modalConfirmBtn,
-                  ...(!canConfirm ? S.modalConfirmBtnDisabled : {}),
-                }}
-                onClick={handleConfirm}
-                disabled={!canConfirm}
-              >
+              <button style={{ ...S.modalConfirmBtn, ...(!canConfirm ? S.modalConfirmBtnDisabled : {}) }} onClick={handleConfirm} disabled={!canConfirm}>
                 {t.addToOrder} — {fmt(item.price + modTotal)}
               </button>
             </div>
@@ -711,7 +614,7 @@ useEffect(() => {
 // ============================================================
 // GUEST CHECK TICKET COMPONENT
 // ============================================================
-function GuestCheckTicket({ order, t, isQueue }) {
+function GuestCheckTicket({ order, t, isQueue, isFocused }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick(n => n + 1), 1000);
@@ -738,10 +641,31 @@ function GuestCheckTicket({ order, t, isQueue }) {
   };
 
   return (
-    <div style={{ ...S.ticket, opacity: isQueue ? 0.55 : 1, transform: isQueue ? "scale(0.97)" : "scale(1)" }}>
+    <div style={{
+      ...S.ticket,
+      opacity: isQueue ? 0.55 : 1,
+      transform: isQueue ? "scale(0.97)" : "scale(1)",
+      // ── KEYBOARD FOCUS HIGHLIGHT ──────────────────────────────
+      // When this ticket is focused via keyboard/numpad, show a
+      // bright blue ring around it so the cook knows it's selected
+      outline: isFocused ? "4px solid #2563EB" : "none",
+      outlineOffset: isFocused ? "3px" : "0",
+      boxShadow: isFocused
+        ? "0 0 0 4px rgba(37,99,235,0.25), 0 2px 10px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)"
+        : "0 2px 10px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
+    }}>
       {order.cancelled && <div style={S.cancelledBanner}>{t.cancelled}</div>}
       {order.isToGo && <div style={S.toGoBanner}>🥡 {t.toGoLabel} — {order.toGoName}</div>}
       {order.modified && !order.cancelled && <div style={S.modifiedBanner}>⚡ {t.modified}</div>}
+
+      {/* Keyboard shortcut hint — only shown on focused ticket */}
+      {isFocused && !isQueue && (
+        <div style={S.keyboardHintBar}>
+          <span style={S.keyboardHint}>⌨️ <strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
+          <span style={S.keyboardHint}><strong>BKSP</strong> = Undo</span>
+          <span style={S.keyboardHint}><strong>← →</strong> = Navegar</span>
+        </div>
+      )}
 
       <div style={S.ticketTop}>
         <div style={S.ticketTopLeft}>
@@ -772,40 +696,19 @@ function GuestCheckTicket({ order, t, isQueue }) {
           const cs = changeStyle(item.changeType);
           const isRemoved = item.changeType === "removed";
           return (
-            <div key={idx} style={{
-              ...S.itemRow,
-              background: order.cancelled ? "#FFF1F2" : cs.bg,
-              borderBottom: idx < items.length - 1 ? "1px solid #E5DFD0" : "none",
-            }}>
-              <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : cs.color }}>
-                {item.qty}
-              </span>
+            <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : cs.bg, borderBottom: idx < items.length - 1 ? "1px solid #E5DFD0" : "none" }}>
+              <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : cs.color }}>{item.qty}</span>
               <div style={{ flex: 1 }}>
-                <span style={{
-                  ...S.itemName,
-                  color: order.cancelled ? "#BE202E" : cs.color,
-                  textDecoration: order.cancelled || isRemoved ? "line-through" : "none",
-                  fontWeight: item.changeType !== "unchanged" ? 900 : 700,
-                }}>
+                <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
                   {item.name}
-                  {cs.tagBg && !order.cancelled && (
-                    <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>
-                  )}
+                  {cs.tagBg && !order.cancelled && <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>}
                 </span>
-                {/* Show modifiers on ticket */}
                 {item.modifiers && item.modifiers.length > 0 && (
                   <div style={S.ticketModifiers}>
                     {item.modifiers.map((mod, mi) => {
-                      const isRemoval = REMOVE_TRIGGERS.some(w =>
-                        mod.name.toLowerCase().includes(w)
-                      );
+                      const isRemoval = REMOVE_TRIGGERS.some(w => mod.name.toLowerCase().includes(w));
                       return (
-                        <span key={mi} style={{
-                          ...S.ticketModifierChip,
-                          color: isRemoval ? "#BE202E" : "#15803D",
-                          fontWeight: 800,
-                          textTransform: "uppercase",
-                        }}>
+                        <span key={mi} style={{ ...S.ticketModifierChip, color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800, textTransform: "uppercase" }}>
                           {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}
                         </span>
                       );
@@ -815,15 +718,8 @@ function GuestCheckTicket({ order, t, isQueue }) {
                 {item.specialNote && (
                   <div style={S.ticketSpecialNoteBlock}>
                     {parseSpecialNote(item.specialNote).map((seg, si) => (
-                      <div key={si} style={{
-                        ...S.ticketSpecialNoteLine,
-                        color: seg.type === "add" ? "#15803D"
-                             : seg.type === "remove" ? "#BE202E"
-                             : "#1A1A1A",
-                      }}>
-                        {seg.type === "add" ? "+ "
-                       : seg.type === "remove" ? "− "
-                       : ""}{seg.text}
+                      <div key={si} style={{ ...S.ticketSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
+                        {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
                       </div>
                     ))}
                   </div>
@@ -847,11 +743,7 @@ function GuestCheckTicket({ order, t, isQueue }) {
       <div style={{ ...S.ruledLine, borderColor: "#B8A88A", borderWidth: 2 }} />
 
       <div style={S.ticketFooter}>
-        <div style={{
-          ...S.statusStamp,
-          borderColor: order.cancelled ? "#BE202E" : order.modified ? "#7C3AED" : STATUS_COLORS[order.status],
-          color: order.cancelled ? "#BE202E" : order.modified ? "#7C3AED" : STATUS_COLORS[order.status],
-        }}>
+        <div style={{ ...S.statusStamp, borderColor: order.cancelled ? "#BE202E" : order.modified ? "#7C3AED" : STATUS_COLORS[order.status], color: order.cancelled ? "#BE202E" : order.modified ? "#7C3AED" : STATUS_COLORS[order.status] }}>
           {order.cancelled ? "🚫 CANCELLED" : order.modified ? `⚡ ${t.modified}` : order.status === "new" ? t.new : t.inProgress}
         </div>
         {!isQueue && !order.cancelled && (
@@ -874,13 +766,16 @@ function GuestCheckTicket({ order, t, isQueue }) {
 }
 
 // ============================================================
-// KITCHEN SCREEN
+// KITCHEN SCREEN — with keyboard / numpad controller support
 // ============================================================
 function KitchenScreen({ lang }) {
   const t = T[lang];
   const [orders, setOrders] = useState([]);
+  const [focusedIndex, setFocusedIndex] = useState(0); // which ticket is keyboard-focused
+  const [actionFlash, setActionFlash] = useState(null); // brief visual feedback on keypress
   const MAX_VISIBLE = 3;
 
+  // ── Live orders from Firebase ──────────────────────────────
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
     const unsub = onSnapshot(q, (snapshot) => {
@@ -895,17 +790,148 @@ function KitchenScreen({ lang }) {
   const queued = active.slice(MAX_VISIBLE);
   const doneCount = orders.filter(o => o.status === "done").length;
 
+  // Keep focused index in bounds when orders change
+  useEffect(() => {
+    if (focusedIndex >= visible.length && visible.length > 0) {
+      setFocusedIndex(visible.length - 1);
+    }
+  }, [visible.length, focusedIndex]);
+
+  // ── Flash feedback helper ──────────────────────────────────
+  function flash(msg, color = "#15803D") {
+    setActionFlash({ msg, color });
+    setTimeout(() => setActionFlash(null), 1200);
+  }
+
+  // ── Keyboard / numpad handler ──────────────────────────────
+  // All key logic lives here. The numpad USB dongle plugs into
+  // the Pi and the browser sees standard keydown events —
+  // identical to pressing keys on a laptop keyboard.
+  //
+  // NUMPAD MAPPING (what the cook presses):
+  //   Enter        → advance focused order (new→in_progress, in_progress→done)
+  //   Backspace    → undo focused order one step back
+  //   ArrowRight   → focus next ticket
+  //   ArrowLeft    → focus previous ticket
+  //   1–9          → jump to ticket by position (1=first, 2=second, etc.)
+  //   0            → jump to last ticket
+  //   Escape       → clear focus back to first ticket
+  //
+  const handleKeyDown = useCallback((e) => {
+    // Don't steal keys when user is typing in an input/textarea
+    if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
+
+    const order = visible[focusedIndex];
+
+    switch (e.key) {
+      // ── ENTER: advance order status ────────────────────────
+      case "Enter":
+      case "NumpadEnter": {
+        e.preventDefault();
+        if (!order || order.cancelled) return;
+        if (order.status === "new") {
+          updateOrderStatus(order.firestoreId, "in_progress");
+          flash("🔥 Empezando...", "#D97706");
+        } else if (order.status === "in_progress") {
+          updateOrderStatus(order.firestoreId, "done");
+          flash("✓ Listo!", "#15803D");
+        }
+        break;
+      }
+
+      // ── BACKSPACE / DELETE: undo one step ──────────────────
+      case "Backspace":
+      case "Delete": {
+        e.preventDefault();
+        if (!order || order.cancelled) return;
+        if (order.status === "in_progress") {
+          updateOrderStatus(order.firestoreId, "new");
+          flash("↩ Deshecho", "#D97706");
+        } else if (order.status === "done") {
+          updateOrderStatus(order.firestoreId, "in_progress");
+          flash("↩ Deshecho", "#D97706");
+        }
+        break;
+      }
+
+      // ── ARROW RIGHT: next ticket ───────────────────────────
+      case "ArrowRight":
+      case "Tab": {
+        e.preventDefault();
+        setFocusedIndex(i => Math.min(i + 1, visible.length - 1));
+        break;
+      }
+
+      // ── ARROW LEFT: previous ticket ────────────────────────
+      case "ArrowLeft": {
+        e.preventDefault();
+        setFocusedIndex(i => Math.max(i - 1, 0));
+        break;
+      }
+
+      // ── NUMBER KEYS 1–9: jump to ticket by position ────────
+      case "1": case "2": case "3": case "4": case "5":
+      case "6": case "7": case "8": case "9": {
+        e.preventDefault();
+        const idx = parseInt(e.key, 10) - 1;
+        if (idx < visible.length) setFocusedIndex(idx);
+        break;
+      }
+
+      // ── 0: jump to last ticket ─────────────────────────────
+      case "0": {
+        e.preventDefault();
+        if (visible.length > 0) setFocusedIndex(visible.length - 1);
+        break;
+      }
+
+      // ── ESCAPE: reset focus to first ──────────────────────
+      case "Escape": {
+        e.preventDefault();
+        setFocusedIndex(0);
+        break;
+      }
+
+      default:
+        break;
+    }
+  }, [focusedIndex, visible]);
+
+  // Attach and clean up the global keydown listener
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
   return (
     <div style={S.kitchenRoot}>
       <div style={S.kitchenHeader}>
         <div style={S.kitchenHeaderLeft}>
           <span style={S.kitchenTitle}>👨‍🍳 {t.kitchenDisplay}</span>
           {queued.length > 0 && <span style={S.queuePill}>+{queued.length} {t.inQueue}</span>}
+          {/* Keyboard mode indicator */}
+          <span style={S.keyboardModePill}>⌨️ Modo Control</span>
         </div>
         <div style={S.kitchenStats}>
           <span style={S.statPillRed}>{active.length} {t.active}</span>
           <span style={S.statPillGreen}>{doneCount} {t.done}</span>
         </div>
+      </div>
+
+      {/* Action flash feedback — big centered overlay so cooks can see it from far away */}
+      {actionFlash && (
+        <div style={{ ...S.actionFlash, background: actionFlash.color }}>
+          {actionFlash.msg}
+        </div>
+      )}
+
+      {/* Keyboard shortcut legend — always visible at bottom of header */}
+      <div style={S.shortcutBar}>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>ENTER</kbd> Avanzar</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>BKSP</kbd> Deshacer</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>← →</kbd> Navegar</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>1–9</kbd> Saltar a orden</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>ESC</kbd> Reiniciar</span>
       </div>
 
       {active.length === 0 ? (
@@ -920,12 +946,16 @@ function KitchenScreen({ lang }) {
           </div>
         </div>
       ) : (
-        <div style={{
-          ...S.ticketGrid,
-          gridTemplateColumns: `repeat(${Math.min(visible.length, MAX_VISIBLE)}, minmax(0, 1fr))`,
-        }}>
-          {visible.map(order => (
-            <GuestCheckTicket key={order.firestoreId} order={order} t={t} isQueue={false} />
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: `repeat(${Math.min(visible.length, MAX_VISIBLE)}, minmax(0, 1fr))` }}>
+          {visible.map((order, idx) => (
+            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer" }}>
+              <GuestCheckTicket
+                order={order}
+                t={t}
+                isQueue={false}
+                isFocused={idx === focusedIndex}
+              />
+            </div>
           ))}
         </div>
       )}
@@ -936,12 +966,8 @@ function KitchenScreen({ lang }) {
           {queued.map(order => (
             <div key={order.firestoreId} style={S.queueItem}>
               <span style={S.queueOrderId}>#{order.id}</span>
-              <span style={S.queueOrderTable}>
-                {order.isToGo ? `🥡 ${order.toGoName}` : `${t.table2} ${order.table}`}
-              </span>
-              <span style={S.queueOrderItems}>
-                {order.items.map(i => `${i.qty}× ${i.name}`).join(", ")}
-              </span>
+              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : `${t.table2} ${order.table}`}</span>
+              <span style={S.queueOrderItems}>{order.items.map(i => `${i.qty}× ${i.name}`).join(", ")}</span>
               <span style={S.queueOrderTime}>{elapsed(order.timestamp)}</span>
             </div>
           ))}
@@ -967,9 +993,7 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
   const [editingOrder, setEditingOrder] = useState(null);
   const [activeOrders, setActiveOrders] = useState([]);
   const [showActiveOrders, setShowActiveOrders] = useState(false);
-
-  // Modifier modal state
-  const [modModalItem, setModModalItem] = useState(null); // menu item pending modifier selection
+  const [modModalItem, setModModalItem] = useState(null);
 
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
@@ -992,27 +1016,15 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
     return item.name;
   }
 
-  // Tapping a menu item opens the modifier modal
-  function handleItemTap(item) {
-    setModModalItem(item);
-  }
+  function handleItemTap(item) { setModModalItem(item); }
 
-  // Called when worker confirms modifiers in modal
   function handleModifierConfirm(selectedMods, specialNote) {
     const item = modModalItem;
     setModModalItem(null);
     setCart(prev => {
       const existing = prev.find(c => c.id === item.id);
-      if (existing) {
-        return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
-      }
-      return [...prev, {
-        ...item,
-        displayName: getItemDisplayName(item),
-        qty: 1,
-        modifiers: selectedMods,
-        specialNote: specialNote || null,
-      }];
+      if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
+      return [...prev, { ...item, displayName: getItemDisplayName(item), qty: 1, modifiers: selectedMods, specialNote: specialNote || null }];
     });
   }
 
@@ -1038,11 +1050,7 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
   }
 
   function cancelEdit() {
-    setEditingOrder(null);
-    setCart([]);
-    setNote("");
-    setTableNum("");
-    setToGoName("");
+    setEditingOrder(null); setCart([]); setNote(""); setTableNum(""); setToGoName("");
   }
 
   async function handleSend() {
@@ -1060,12 +1068,9 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
       setTimeout(() => { setSent(false); cancelEdit(); }, 2000);
     } else {
       const order = {
-        id: genId(),
-        table: orderType === "table" ? tableNum : null,
-        isToGo: orderType === "togo",
-        toGoName: orderType === "togo" ? toGoName : null,
-        items: cart.map(i => ({ ...i, name: i.name })),
-        note, total: cartTotal,
+        id: genId(), table: orderType === "table" ? tableNum : null,
+        isToGo: orderType === "togo", toGoName: orderType === "togo" ? toGoName : null,
+        items: cart.map(i => ({ ...i, name: i.name })), note, total: cartTotal,
         timestamp: Date.now(), status: "new", editHistory: [],
       };
       const cloverOrderId = await sendOrderToClover(order);
@@ -1078,17 +1083,9 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
 
   return (
     <div style={S.waiterRoot}>
-      {/* Modifier modal */}
       {modModalItem && (
-        <ModifierModal
-          item={modModalItem}
-          displayName={getItemDisplayName(modModalItem)}
-          lang={lang}
-          onConfirm={handleModifierConfirm}
-          onClose={() => setModModalItem(null)}
-        />
+        <ModifierModal item={modModalItem} displayName={getItemDisplayName(modModalItem)} lang={lang} onConfirm={handleModifierConfirm} onClose={() => setModModalItem(null)} />
       )}
-
       <div style={S.waiterHeader}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span style={S.waiterLogo}>🍽️ {t.orderStation}</span>
@@ -1105,9 +1102,7 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
             <button style={{ ...S.typeBtn, ...(orderType === "togo" ? S.typeBtnToGo : {}) }} onClick={() => setOrderType("togo")}>🥡 {t.toGo}</button>
           </div>
           <div style={{ ...S.tableInput, ...(orderType === "togo" ? S.tableInputToGo : {}) }}>
-            <span style={{ ...S.tableLabel, ...(orderType === "togo" ? { color: "#0369A1" } : {}) }}>
-              {orderType === "togo" ? "🥡" : t.table}
-            </span>
+            <span style={{ ...S.tableLabel, ...(orderType === "togo" ? { color: "#0369A1" } : {}) }}>{orderType === "togo" ? "🥡" : t.table}</span>
             <input
               style={{ ...S.tableField, width: orderType === "togo" ? 130 : 48 }}
               value={orderType === "togo" ? toGoName : tableNum}
@@ -1118,22 +1113,18 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
           </div>
         </div>
       </div>
-
       {showActiveOrders && (
         <div style={S.activeOrdersDropdown}>
           <div style={S.dropdownTitle}>{t.activeOrders} — {t.editOrder}</div>
           {activeOrders.map(order => (
             <button key={order.firestoreId} style={S.activeOrderRow} onClick={() => loadOrderForEdit(order)}>
-              <span style={order.isToGo ? S.toGoChipSmall : S.tableChipSmall}>
-                {order.isToGo ? `🥡 ${order.toGoName}` : `${t.table2} ${order.table}`}
-              </span>
+              <span style={order.isToGo ? S.toGoChipSmall : S.tableChipSmall}>{order.isToGo ? `🥡 ${order.toGoName}` : `${t.table2} ${order.table}`}</span>
               <span style={S.activeOrderItems}>{order.items.map(i => `${i.emoji}×${i.qty}`).join(" ")}</span>
               <span style={S.activeOrderEdit}>✏️ {t.editOrder}</span>
             </button>
           ))}
         </div>
       )}
-
       <div style={S.waiterBody}>
         <div style={S.catRow}>
           {menu.categories.map(cat => (
@@ -1157,7 +1148,6 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
           })}
         </div>
       </div>
-
       <div style={S.cartPanel}>
         <div style={S.cartTitle}>{t.orderSummary}</div>
         {cart.filter(i => i.qty > 0).length === 0 && isEditing ? (
@@ -1170,19 +1160,12 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
               <div key={item.id} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none" }}>
                 <div style={{ flex: 1 }}>
                   <span style={S.cartName}>{item.emoji} {item.displayName || item.name}</span>
-                  {/* Show chosen modifiers under item name in cart */}
                   {item.modifiers && item.modifiers.length > 0 && (
                     <div style={S.cartModifiers}>
                       {item.modifiers.map((mod, mi) => {
-                        const isRemoval = REMOVE_TRIGGERS.some(w =>
-                          mod.name.toLowerCase().includes(w)
-                        );
+                        const isRemoval = REMOVE_TRIGGERS.some(w => mod.name.toLowerCase().includes(w));
                         return (
-                          <span key={mi} style={{
-                            ...S.cartModChip,
-                            color: isRemoval ? "#BE202E" : "#15803D",
-                            fontWeight: 800,
-                          }}>
+                          <span key={mi} style={{ ...S.cartModChip, color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800 }}>
                             {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}{mod.price > 0 ? ` (${fmt(mod.price)})` : ""}
                           </span>
                         );
@@ -1192,15 +1175,8 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
                   {item.specialNote && (
                     <div style={S.cartSpecialNoteBlock}>
                       {parseSpecialNote(item.specialNote).map((seg, si) => (
-                        <div key={si} style={{
-                          ...S.cartSpecialNoteLine,
-                          color: seg.type === "add" ? "#15803D"
-                               : seg.type === "remove" ? "#BE202E"
-                               : "#1A1A1A",
-                        }}>
-                          {seg.type === "add" ? "+ "
-                         : seg.type === "remove" ? "− "
-                         : ""}{seg.text}
+                        <div key={si} style={{ ...S.cartSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
+                          {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
                         </div>
                       ))}
                     </div>
@@ -1221,25 +1197,12 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
           <span style={S.cartTotal}>{fmt(cartTotal)}</span>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {isEditing && <button style={S.cancelBtn} onClick={cancelEdit}>{t.cancelEdit}</button>}
-            {isEditing && (
-              <button style={S.cancelOrderBtn} onClick={() => setCart(cart.map(i => ({ ...i, qty: 0 })))}>
-                🚫 Cancel Order
-              </button>
-            )}
+            {isEditing && <button style={S.cancelOrderBtn} onClick={() => setCart(cart.map(i => ({ ...i, qty: 0 })))}>🚫 Cancel Order</button>}
             <button
-              style={{
-                ...S.sendBtn,
-                ...(isCancellingOrder ? S.sendBtnCancel : isEditing ? S.sendBtnEdit : {}),
-                ...(sent ? S.sendBtnSent : {}),
-                ...(!canSend ? S.sendBtnDisabled : {}),
-              }}
+              style={{ ...S.sendBtn, ...(isCancellingOrder ? S.sendBtnCancel : isEditing ? S.sendBtnEdit : {}), ...(sent ? S.sendBtnSent : {}), ...(!canSend ? S.sendBtnDisabled : {}) }}
               onClick={handleSend} disabled={sending || !canSend}
             >
-              {sent ? (isEditing ? t.updated : t.sent)
-                : sending ? t.sending
-                : isCancellingOrder ? "🚫 Confirm Cancel"
-                : isEditing ? t.updateOrder
-                : t.sendToKitchen}
+              {sent ? (isEditing ? t.updated : t.sent) : sending ? t.sending : isCancellingOrder ? "🚫 Confirm Cancel" : isEditing ? t.updateOrder : t.sendToKitchen}
             </button>
           </div>
         </div>
@@ -1266,7 +1229,6 @@ function HistoryScreen({ lang }) {
 
   const totalRevenue = history.reduce((sum, o) => sum + o.total, 0);
   const avgDuration = history.length ? history.reduce((sum, o) => sum + (o.duration || 0), 0) / history.length : 0;
-
   const itemStats = {};
   history.forEach(order => {
     order.items?.forEach(item => {
@@ -1275,9 +1237,7 @@ function HistoryScreen({ lang }) {
       itemStats[item.name].totalTime += order.duration || 0;
     });
   });
-  const itemList = Object.entries(itemStats)
-    .map(([name, s]) => ({ name, ...s, avgTime: s.totalTime / s.count }))
-    .sort((a, b) => b.count - a.count);
+  const itemList = Object.entries(itemStats).map(([name, s]) => ({ name, ...s, avgTime: s.totalTime / s.count })).sort((a, b) => b.count - a.count);
 
   return (
     <div style={S.historyRoot}>
@@ -1341,54 +1301,27 @@ export default function App() {
     fetchAllModifierGroups();
     fetchMenuFromClover().then(async (rawMenu) => {
       setMenu(rawMenu);
-      if (lang === "es") {
-        await applyTranslations(rawMenu);
-      }
+      if (lang === "es") await applyTranslations(rawMenu);
     });
-}, []); // eslint-disable-line react-hooks/exhaustive-deps
-
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!menu) return;
-    if (lang === "es") {
-      applyTranslations(menu);
-    } else {
-      setMenu(prev => ({
-        ...prev,
-        items: prev.items.map(item => ({ ...item, nameEs: item.nameEs || null })),
-      }));
-    }
+    if (lang === "es") applyTranslations(menu);
+    else setMenu(prev => ({ ...prev, items: prev.items.map(item => ({ ...item, nameEs: item.nameEs || null })) }));
   }, [lang, menu]);
 
   async function applyTranslations(currentMenu) {
-    const needsTranslation = currentMenu.items.filter(
-      item => !translationCache.current[item.id] && !item.nameEs
-    );
+    const needsTranslation = currentMenu.items.filter(item => !translationCache.current[item.id] && !item.nameEs);
     if (needsTranslation.length === 0) {
-      setMenu(prev => ({
-        ...prev,
-        items: prev.items.map(item => ({
-          ...item,
-          nameEs: translationCache.current[item.id] || item.nameEs || item.name,
-        })),
-      }));
+      setMenu(prev => ({ ...prev, items: prev.items.map(item => ({ ...item, nameEs: translationCache.current[item.id] || item.nameEs || item.name })) }));
       return;
     }
     setTranslating(true);
     const translated = await translateMenuItemsToSpanish(needsTranslation);
-    if (translated) {
-      needsTranslation.forEach((item, idx) => {
-        translationCache.current[item.id] = translated[idx];
-      });
-    }
+    if (translated) needsTranslation.forEach((item, idx) => { translationCache.current[item.id] = translated[idx]; });
     setTranslating(false);
-    setMenu(prev => ({
-      ...prev,
-      items: prev.items.map(item => ({
-        ...item,
-        nameEs: translationCache.current[item.id] || item.nameEs || item.name,
-      })),
-    }));
+    setMenu(prev => ({ ...prev, items: prev.items.map(item => ({ ...item, nameEs: translationCache.current[item.id] || item.nameEs || item.name })) }));
   }
 
   useEffect(() => {
@@ -1419,9 +1352,7 @@ export default function App() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {translating && <span style={S.translatingPill}>🌐 {t.translating}</span>}
-          <button style={S.langBtn} onClick={() => setLang(l => l === "es" ? "en" : "es")}>
-            {lang === "es" ? "🇺🇸 EN" : "🇲🇽 ES"}
-          </button>
+          <button style={S.langBtn} onClick={() => setLang(l => l === "es" ? "en" : "es")}>{lang === "es" ? "🇺🇸 EN" : "🇲🇽 ES"}</button>
         </div>
       </div>
       {view === "waiter" && <WaiterScreen menu={menu} onOrderSent={() => {}} lang={lang} />}
@@ -1435,7 +1366,6 @@ export default function App() {
 // STYLES
 // ============================================================
 const S = {
-  // ROOT & NAV
   appRoot: { fontFamily: "'DM Sans', 'Segoe UI', sans-serif", background: "#F5F3F0", minHeight: "100vh", color: "#1A1A1A", display: "flex", flexDirection: "column" },
   nav: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "#FFFFFF", borderBottom: "2px solid #BE202E", padding: "0 12px", flexWrap: "wrap", gap: 4, boxShadow: "0 1px 4px rgba(0,0,0,0.08)" },
   navLeft: { display: "flex", flexWrap: "wrap" },
@@ -1446,6 +1376,15 @@ const S = {
   translatingPill: { background: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C", borderRadius: 20, fontSize: 11, fontWeight: 700, padding: "4px 10px", whiteSpace: "nowrap" },
   loading: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 16, background: "#F5F3F0" },
   loadingSpinner: { width: 36, height: 36, border: "3px solid #E5E0D8", borderTop: "3px solid #BE202E", borderRadius: "50%", animation: "spin 0.8s linear infinite" },
+
+  // ── KEYBOARD CONTROL UI ────────────────────────────────────
+  keyboardModePill: { background: "#EFF6FF", border: "1px solid #BFDBFE", color: "#1D4ED8", borderRadius: 20, fontSize: 11, fontWeight: 700, padding: "3px 10px" },
+  shortcutBar: { display: "flex", gap: 16, alignItems: "center", padding: "6px 16px", background: "#1E293B", flexWrap: "wrap" },
+  shortcutItem: { display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#94A3B8", fontWeight: 600 },
+  kbd: { background: "#334155", color: "#E2E8F0", border: "1px solid #475569", borderRadius: 4, padding: "1px 6px", fontSize: 11, fontFamily: "monospace", fontWeight: 700 },
+  keyboardHintBar: { display: "flex", gap: 12, background: "#1D4ED8", padding: "6px 16px", flexWrap: "wrap" },
+  keyboardHint: { fontSize: 11, color: "#BFDBFE", fontWeight: 600 },
+  actionFlash: { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", color: "#fff", fontSize: 36, fontWeight: 900, padding: "20px 40px", borderRadius: 16, zIndex: 9999, pointerEvents: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.3)", letterSpacing: "-0.01em" },
 
   // MODAL
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 },
@@ -1482,8 +1421,6 @@ const S = {
   ticketModifierChip: { fontSize: 13, fontStyle: "normal" },
   ticketSpecialNoteBlock: { display: "flex", flexDirection: "column", gap: 2, marginTop: 4 },
   ticketSpecialNoteLine: { fontSize: 14, fontWeight: 800, letterSpacing: "0.02em" },
-
-  // CART MODIFIER DISPLAY
   cartModifiers: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 },
   cartModChip: { fontSize: 11, background: "#F0EDE8", borderRadius: 4, padding: "1px 6px" },
   cartSpecialNoteBlock: { display: "flex", flexDirection: "column", gap: 2, marginTop: 4 },
@@ -1508,7 +1445,7 @@ const S = {
   ticketGrid: { flex: 1, display: "grid", gap: 16, padding: "16px", alignItems: "start" },
 
   // TICKET
-  ticket: { background: "#FFFDF7", border: "1px solid #E0D8C4", borderRadius: 3, boxShadow: "0 2px 10px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)", overflow: "hidden", transition: "all 0.3s", fontFamily: "'DM Sans', 'Segoe UI', sans-serif" },
+  ticket: { background: "#FFFDF7", border: "1px solid #E0D8C4", borderRadius: 3, overflow: "hidden", transition: "all 0.3s", fontFamily: "'DM Sans', 'Segoe UI', sans-serif" },
   cancelledBanner: { background: "#BE202E", color: "#fff", fontWeight: 900, fontSize: 20, padding: "12px 16px", textAlign: "center", letterSpacing: "0.08em" },
   toGoBanner: { background: "#0369A1", color: "#fff", fontWeight: 900, fontSize: 16, padding: "8px 16px", textAlign: "center", letterSpacing: "0.05em" },
   modifiedBanner: { background: "#7C3AED", color: "#fff", fontWeight: 900, fontSize: 13, padding: "6px 16px", textAlign: "center", letterSpacing: "0.05em" },
