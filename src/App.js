@@ -1301,7 +1301,7 @@ function HistoryScreen({ lang }) {
 // ROOT APP
 // ============================================================
 export default function App() {
-  const [view, setView] = useState("waiter");
+  const [view, setView] = useState(() => {   const params = new URLSearchParams(window.location.search);   return params.get("screen") || "waiter"; });
   const [menu, setMenu] = useState(null);
   const [lang, setLang] = useState("es");
   const [activeOrders, setActiveOrders] = useState(0);
