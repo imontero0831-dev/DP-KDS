@@ -84,8 +84,10 @@ const T = {
     shortcutAdvance: "Avanzar",
     shortcutUndo: "Deshacer",
     shortcutNavigate: "Navegar",
+    shortcutNext: "Siguiente",
+    shortcutPrev: "Anterior",
     shortcutJump: "Saltar a orden",
-    shortcutReset: "Reiniciar",
+    shortcutReset: "Primero",
     customizeItem: "Personalizar",
     addToOrder: "Agregar a Orden",
     required: "Requerido",
@@ -156,8 +158,10 @@ const T = {
     shortcutAdvance: "Advance",
     shortcutUndo: "Undo",
     shortcutNavigate: "Navigate",
+    shortcutNext: "Next",
+    shortcutPrev: "Prev",
     shortcutJump: "Jump to order",
-    shortcutReset: "Reset",
+    shortcutReset: "First",
     customizeItem: "Customize",
     addToOrder: "Add to Order",
     required: "Required",
@@ -673,9 +677,10 @@ function GuestCheckTicket({ order, t, isQueue, isFocused }) {
       {/* Keyboard shortcut hint — only shown on focused ticket */}
       {isFocused && !isQueue && (
         <div style={S.keyboardHintBar}>
-          <span style={S.keyboardHint}>⌨️ <strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
-          <span style={S.keyboardHint}><strong>BKSP</strong> = {t.shortcutUndo}</span>
-          <span style={S.keyboardHint}><strong>← →</strong> = {t.shortcutNavigate}</span>
+          <span style={S.keyboardHint}>🔢 <strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
+          <span style={S.keyboardHint}><strong>+</strong> = {t.shortcutNext}</span>
+          <span style={S.keyboardHint}><strong>−</strong> = {t.shortcutPrev}</span>
+          <span style={S.keyboardHint}><strong>*</strong> = {t.shortcutUndo}</span>
         </div>
       )}
 
@@ -822,12 +827,13 @@ function KitchenScreen({ lang }) {
   //
   // NUMPAD MAPPING (what the cook presses):
   //   Enter        → advance focused order (new→in_progress, in_progress→done)
-  //   Backspace    → undo focused order one step back
-  //   ArrowRight   → focus next ticket
-  //   ArrowLeft    → focus previous ticket
-  //   1–9          → jump to ticket by position (1=first, 2=second, etc.)
-  //   0            → jump to last ticket
-  //   Escape       → clear focus back to first ticket
+  //   +            → focus next ticket
+  //   -            → focus previous ticket
+  //   *            → undo focused order one step back (hard to press accidentally)
+  //   1–9          → jump directly to ticket by position
+  //   0            → reset focus to first ticket
+  //
+  //   Full keyboard fallbacks: ArrowRight/Left, Backspace, Escape also work.
   //
   const handleKeyDown = useCallback((e) => {
     // Don't steal keys when user is typing in an input/textarea
@@ -837,8 +843,7 @@ function KitchenScreen({ lang }) {
 
     switch (e.key) {
       // ── ENTER: advance order status ────────────────────────
-      case "Enter":
-      case "NumpadEnter": {
+      case "Enter": {
         e.preventDefault();
         if (!order || order.cancelled) return;
         if (order.status === "new") {
@@ -851,9 +856,22 @@ function KitchenScreen({ lang }) {
         break;
       }
 
-      // ── BACKSPACE / DELETE: undo one step ──────────────────
-      case "Backspace":
-      case "Delete": {
+      // ── + (NumpadAdd): next ticket ─────────────────────────
+      case "+": {
+        e.preventDefault();
+        setFocusedIndex(i => Math.min(i + 1, visible.length - 1));
+        break;
+      }
+
+      // ── - (NumpadSubtract): previous ticket ───────────────
+      case "-": {
+        e.preventDefault();
+        setFocusedIndex(i => Math.max(i - 1, 0));
+        break;
+      }
+
+      // ── * (NumpadMultiply): undo one step ──────────────────
+      case "*": {
         e.preventDefault();
         if (!order || order.cancelled) return;
         if (order.status === "in_progress") {
@@ -866,21 +884,6 @@ function KitchenScreen({ lang }) {
         break;
       }
 
-      // ── ARROW RIGHT: next ticket ───────────────────────────
-      case "ArrowRight":
-      case "Tab": {
-        e.preventDefault();
-        setFocusedIndex(i => Math.min(i + 1, visible.length - 1));
-        break;
-      }
-
-      // ── ARROW LEFT: previous ticket ────────────────────────
-      case "ArrowLeft": {
-        e.preventDefault();
-        setFocusedIndex(i => Math.max(i - 1, 0));
-        break;
-      }
-
       // ── NUMBER KEYS 1–9: jump to ticket by position ────────
       case "1": case "2": case "3": case "4": case "5":
       case "6": case "7": case "8": case "9": {
@@ -890,19 +893,26 @@ function KitchenScreen({ lang }) {
         break;
       }
 
-      // ── 0: jump to last ticket ─────────────────────────────
+      // ── 0: reset focus to first ticket ────────────────────
       case "0": {
-        e.preventDefault();
-        if (visible.length > 0) setFocusedIndex(visible.length - 1);
-        break;
-      }
-
-      // ── ESCAPE: reset focus to first ──────────────────────
-      case "Escape": {
         e.preventDefault();
         setFocusedIndex(0);
         break;
       }
+
+      // ── Full-keyboard fallbacks ────────────────────────────
+      case "ArrowRight":
+      case "Tab":      { e.preventDefault(); setFocusedIndex(i => Math.min(i + 1, visible.length - 1)); break; }
+      case "ArrowLeft":{ e.preventDefault(); setFocusedIndex(i => Math.max(i - 1, 0)); break; }
+      case "Backspace":
+      case "Delete": {
+        e.preventDefault();
+        if (!order || order.cancelled) return;
+        if (order.status === "in_progress") { updateOrderStatus(order.firestoreId, "new"); flash("↩ Deshecho", "#D97706"); }
+        else if (order.status === "done")   { updateOrderStatus(order.firestoreId, "in_progress"); flash("↩ Deshecho", "#D97706"); }
+        break;
+      }
+      case "Escape":   { e.preventDefault(); setFocusedIndex(0); break; }
 
       default:
         break;
@@ -937,13 +947,14 @@ function KitchenScreen({ lang }) {
         </div>
       )}
 
-      {/* Keyboard shortcut legend — always visible at bottom of header */}
+      {/* Numpad shortcut legend — always visible at bottom of header */}
       <div style={S.shortcutBar}>
         <span style={S.shortcutItem}><kbd style={S.kbd}>ENTER</kbd> {t.shortcutAdvance}</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>BKSP</kbd> {t.shortcutUndo}</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>← →</kbd> {t.shortcutNavigate}</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>+</kbd> {t.shortcutNext}</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>−</kbd> {t.shortcutPrev}</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>*</kbd> {t.shortcutUndo}</span>
         <span style={S.shortcutItem}><kbd style={S.kbd}>1–9</kbd> {t.shortcutJump}</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>ESC</kbd> {t.shortcutReset}</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>0</kbd> {t.shortcutReset}</span>
       </div>
 
       {active.length === 0 ? (
