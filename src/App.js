@@ -841,7 +841,14 @@ function KitchenScreen({ lang }) {
 
     const order = visible[focusedIndex];
 
-    switch (e.key) {
+    // Normalize numpad keys — e.code is the physical key, e.key varies by OS/NumLock
+    let key = e.key;
+    if (e.code === "NumpadEnter")    key = "Enter";
+    if (e.code === "NumpadAdd")      key = "+";
+    if (e.code === "NumpadSubtract") key = "-";
+    if (e.code === "NumpadMultiply") key = "*";
+
+    switch (key) {
       // ── ENTER: advance order status ────────────────────────
       case "Enter": {
         e.preventDefault();
@@ -888,7 +895,7 @@ function KitchenScreen({ lang }) {
       case "1": case "2": case "3": case "4": case "5":
       case "6": case "7": case "8": case "9": {
         e.preventDefault();
-        const idx = parseInt(e.key, 10) - 1;
+        const idx = parseInt(key, 10) - 1;
         if (idx < visible.length) setFocusedIndex(idx);
         break;
       }
