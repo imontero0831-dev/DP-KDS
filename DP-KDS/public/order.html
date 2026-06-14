@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Dona Paty's — Ordenar</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #F5F3F0;
+      color: #1A1A1A;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Header ───────────────────────────────────────── */
+    .header {
+      background: #BE202E;
+      color: #fff;
+      padding: 20px 16px 16px;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 12px rgba(190,32,46,0.3);
+    }
+    .header-logo { font-size: 28px; margin-bottom: 2px; }
+    .header-title { font-size: 22px; font-weight: 900; letter-spacing: -0.02em; }
+    .header-table {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      margin-top: 6px;
+    }
+
+    /* ── Table banner ─────────────────────────────────── */
+    .table-banner {
+      background: #1A1A1A;
+      color: #fff;
+      text-align: center;
+      padding: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    .table-banner span { color: #F59E0B; font-size: 18px; }
+
+    /* ── Category tabs ────────────────────────────────── */
+    .cat-scroll {
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      overflow-x: auto;
+      background: #fff;
+      border-bottom: 1px solid #E5E0D8;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .cat-scroll::-webkit-scrollbar { display: none; }
+    .cat-btn {
+      background: #F5F3F0;
+      border: 1px solid #E5E0D8;
+      color: #666;
+      border-radius: 20px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .cat-btn.active {
+      background: #BE202E;
+      border-color: #BE202E;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    /* ── Menu grid ────────────────────────────────────── */
+    .menu-section { padding: 12px 16px; }
+    .menu-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    .menu-card {
+      background: #fff;
+      border: 2px solid #E5E0D8;
+      border-radius: 14px;
+      padding: 14px 12px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+      position: relative;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .menu-card:active { transform: scale(0.97); }
+    .menu-card.in-cart {
+      border-color: #BE202E;
+      background: #FFF1F2;
+    }
+    .menu-emoji { font-size: 32px; margin-bottom: 6px; }
+    .menu-name { font-size: 13px; font-weight: 700; color: #1A1A1A; line-height: 1.3; margin-bottom: 4px; }
+    .menu-price { font-size: 14px; color: #BE202E; font-weight: 800; }
+    .menu-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: #BE202E;
+      color: #fff;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 1px 6px;
+      min-width: 20px;
+      text-align: center;
+    }
+
+    /* ── Cart drawer ──────────────────────────────────── */
+    .cart-fab {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #BE202E;
+      color: #fff;
+      border: none;
+      border-radius: 50px;
+      padding: 16px 28px;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(190,32,46,0.45);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: inherit;
+      transition: transform 0.15s, box-shadow 0.15s;
+      z-index: 200;
+      white-space: nowrap;
+    }
+    .cart-fab:active { transform: translateX(-50%) scale(0.97); }
+    .cart-fab.hidden { display: none; }
+    .cart-fab-count {
+      background: #fff;
+      color: #BE202E;
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    /* ── Cart overlay ─────────────────────────────────── */
+    .cart-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 300;
+      display: none;
+      align-items: flex-end;
+    }
+    .cart-overlay.open { display: flex; }
+    .cart-sheet {
+      background: #fff;
+      border-radius: 20px 20px 0 0;
+      width: 100%;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .cart-handle {
+      width: 40px;
+      height: 4px;
+      background: #E5E0D8;
+      border-radius: 2px;
+      margin: 12px auto 0;
+    }
+    .cart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid #F0EDE8;
+    }
+    .cart-title { font-size: 18px; font-weight: 900; }
+    .cart-close {
+      background: #F5F3F0;
+      border: none;
+      border-radius: 8px;
+      width: 32px;
+      height: 32px;
+      font-size: 18px;
+      cursor: pointer;
+      color: #666;
+      font-family: inherit;
+    }
+    .cart-body { flex: 1; overflow-y: auto; padding: 12px 20px; }
+    .cart-empty { color: #BBB; text-align: center; padding: 32px 0; font-size: 15px; }
+    .cart-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid #F0EDE8;
+    }
+    .cart-item-emoji { font-size: 22px; flex-shrink: 0; }
+    .cart-item-info { flex: 1; }
+    .cart-item-name { font-size: 14px; font-weight: 700; color: #1A1A1A; }
+    .cart-item-price { font-size: 13px; color: #BE202E; font-weight: 700; }
+    .cart-qty-row { display: flex; align-items: center; gap: 8px; }
+    .qty-btn {
+      background: #F5F3F0;
+      border: 1px solid #DDD;
+      color: #444;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: inherit;
+    }
+    .cart-qty { font-size: 15px; font-weight: 800; min-width: 24px; text-align: center; }
+
+    /* ── Note field ───────────────────────────────────── */
+    .note-section { padding: 0 20px 12px; }
+    .note-label { font-size: 12px; font-weight: 800; color: #AAA; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+    .note-field {
+      width: 100%;
+      background: #F5F3F0;
+      border: 1px solid #E5E0D8;
+      border-radius: 10px;
+      color: #333;
+      font-size: 14px;
+      padding: 10px 12px;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+    }
+    .note-field:focus { border-color: #BE202E; }
+
+    /* ── Cart footer ──────────────────────────────────── */
+    .cart-footer {
+      padding: 16px 20px;
+      border-top: 2px solid #F0EDE8;
+      background: #fff;
+    }
+    .cart-total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .cart-total-label { font-size: 14px; color: #888; font-weight: 600; }
+    .cart-total-amt { font-size: 24px; font-weight: 900; color: #1A1A1A; }
+    .send-btn {
+      width: 100%;
+      background: #BE202E;
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      padding: 16px;
+      font-size: 17px;
+      font-weight: 800;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    .send-btn:disabled { background: #E5E0D8; color: #AAA; cursor: not-allowed; }
+    .send-btn.success { background: #15803D; }
+
+    /* ── Success screen ───────────────────────────────── */
+    .success-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      padding: 32px 24px;
+      text-align: center;
+    }
+    .success-screen.show { display: flex; }
+    .success-icon { font-size: 80px; margin-bottom: 16px; }
+    .success-title { font-size: 28px; font-weight: 900; color: #15803D; margin-bottom: 8px; }
+    .success-sub { font-size: 16px; color: #666; margin-bottom: 24px; line-height: 1.5; }
+    .success-order-id {
+      background: #F0FDF4;
+      border: 2px solid #86EFAC;
+      border-radius: 12px;
+      padding: 12px 24px;
+      font-size: 20px;
+      font-weight: 900;
+      color: #15803D;
+      letter-spacing: 0.1em;
+      margin-bottom: 24px;
+    }
+    .order-again-btn {
+      background: #BE202E;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 14px 28px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    /* ── Loading ──────────────────────────────────────── */
+    .loading-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      gap: 16px;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #E5E0D8;
+      border-top-color: #BE202E;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Bottom safe area ─────────────────────────────── */
+    .bottom-spacer { height: 100px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────── -->
+<div class="header">
+  <div class="header-logo">🍽️</div>
+  <div class="header-title">Doña Paty's</div>
+  <div class="header-table" id="table-badge">Cargando...</div>
+</div>
+
+<!-- ── Table banner ───────────────────────────────────────── -->
+<div class="table-banner" id="table-banner" style="display:none">
+  Mesa <span id="banner-table-num"></span>
+</div>
+
+<!-- ── Loading state ──────────────────────────────────────── -->
+<div class="loading-screen" id="loading-screen">
+  <div class="spinner"></div>
+  <div style="font-weight:700;color:#BE202E">Cargando menú...</div>
+</div>
+
+<!-- ── Menu (hidden until loaded) ────────────────────────── -->
+<div id="menu-root" style="display:none">
+  <div class="cat-scroll" id="cat-scroll"></div>
+  <div class="menu-section">
+    <div class="menu-grid" id="menu-grid"></div>
+  </div>
+  <div class="bottom-spacer"></div>
+</div>
+
+<!-- ── Success screen ─────────────────────────────────────── -->
+<div class="success-screen" id="success-screen">
+  <div class="success-icon">✅</div>
+  <div class="success-title">¡Orden enviada!</div>
+  <div class="success-sub">Tu orden fue enviada a la cocina.<br>Un momento por favor.</div>
+  <div class="success-order-id" id="success-order-id"></div>
+  <button class="order-again-btn" onclick="resetOrder()">Agregar algo más</button>
+</div>
+
+<!-- ── Cart FAB button ────────────────────────────────────── -->
+<button class="cart-fab hidden" id="cart-fab" onclick="openCart()">
+  🛒 Ver orden
+  <span class="cart-fab-count" id="cart-count">0</span>
+</button>
+
+<!-- ── Cart overlay ───────────────────────────────────────── -->
+<div class="cart-overlay" id="cart-overlay" onclick="handleOverlayClick(event)">
+  <div class="cart-sheet">
+    <div class="cart-handle"></div>
+    <div class="cart-header">
+      <div class="cart-title">Tu orden</div>
+      <button class="cart-close" onclick="closeCart()">✕</button>
+    </div>
+    <div class="cart-body" id="cart-body"></div>
+    <div class="note-section">
+      <div class="note-label">Instrucciones especiales</div>
+      <textarea class="note-field" id="note-field" rows="2" placeholder="Alergias, preferencias, etc..."></textarea>
+    </div>
+    <div class="cart-footer">
+      <div class="cart-total-row">
+        <span class="cart-total-label">Total estimado</span>
+        <span class="cart-total-amt" id="cart-total">$0.00</span>
+      </div>
+      <button class="send-btn" id="send-btn" onclick="sendOrder()">
+        Enviar a cocina 🔥
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Firebase SDK ───────────────────────────────────────── -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  // ── Firebase config (same project as App.js) ──────────────
+  const firebaseConfig = {
+    apiKey: "AIzaSyBQmX7bB3Of758lfRdotynqPgwt8b87rj4",
+    authDomain: "dona-patys-kds.firebaseapp.com",
+    projectId: "dona-patys-kds",
+    storageBucket: "dona-patys-kds.firebasestorage.app",
+    messagingSenderId: "861821997056",
+    appId: "1:861821997056:web:43174af9611ef2be9d08e5",
+    measurementId: "G-NZ7F00L6MQ"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // ── Read table number from URL ─────────────────────────────
+  // QR code URL format: https://your-app.com/order.html?table=5
+  const params = new URLSearchParams(window.location.search);
+  const tableNum = params.get("table") || "?";
+
+  document.getElementById("table-badge").textContent =
+    tableNum === "?" ? "Mesa desconocida" : `Mesa ${tableNum}`;
+
+  if (tableNum !== "?") {
+    document.getElementById("table-banner").style.display = "block";
+    document.getElementById("banner-table-num").textContent = tableNum;
+  }
+
+  // ── State ──────────────────────────────────────────────────
+  let menu = { categories: [], items: [] };
+  let cart = []; // [{ id, name, nameEs, emoji, price, qty }]
+  let activeCategory = null;
+
+  // ── Load menu from Clover via your existing Vercel proxy ───
+  async function loadMenu() {
+    try {
+      const [itemsRes, catsRes] = await Promise.all([
+        fetch("/api/clover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "items?expand=categories&limit=200", method: "GET" })
+        }).then(r => r.json()),
+        fetch("/api/clover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "categories?limit=100", method: "GET" })
+        }).then(r => r.json()),
+      ]);
+
+      menu.categories = (catsRes.elements || []).map(cat => ({
+        id: cat.id,
+        name: cat.name,
+      }));
+
+      menu.items = (itemsRes.elements || [])
+        .filter(item => item.available !== false)
+        .map(item => ({
+          id: item.id,
+          categoryId: item.categories?.elements?.[0]?.id || "uncategorized",
+          name: item.name,
+          emoji: "🍽️",
+          price: item.price || 0,
+        }));
+
+      // Try to translate item names to Spanish
+      await translateMenu();
+
+    } catch (err) {
+      console.warn("Menu load failed, using fallback:", err.message);
+      // Fallback mini menu so the page is still usable
+      menu = {
+        categories: [{ id: "all", name: "Menú" }],
+        items: [
+          { id: "f1", categoryId: "all", name: "Tacos", emoji: "🌮", price: 399 },
+          { id: "f2", categoryId: "all", name: "Quesadilla", emoji: "🫔", price: 599 },
+          { id: "f3", categoryId: "all", name: "Agua Fresca", emoji: "🥤", price: 299 },
+        ]
+      };
+    }
+
+    renderMenu();
+  }
+
+  async function translateMenu() {
+    try {
+      const names = menu.items.map(i => i.name);
+      const res = await fetch("/api/clover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "translate", items: names }),
+      });
+      const data = await res.json();
+      if (Array.isArray(data.translated) && data.translated.length === names.length) {
+        menu.items = menu.items.map((item, idx) => ({
+          ...item,
+          nameEs: data.translated[idx],
+        }));
+      }
+    } catch {
+      // Translation failed — English names will show
+    }
+  }
+
+  // ── Render ─────────────────────────────────────────────────
+  function renderMenu() {
+    document.getElementById("loading-screen").style.display = "none";
+    document.getElementById("menu-root").style.display = "block";
+
+    // Set first category active
+    if (menu.categories.length > 0 && !activeCategory) {
+      activeCategory = menu.categories[0].id;
+    }
+
+    // Category tabs
+    const catScroll = document.getElementById("cat-scroll");
+    catScroll.innerHTML = menu.categories.map(cat => `
+      <button class="cat-btn ${cat.id === activeCategory ? "active" : ""}"
+        onclick="setCategory('${cat.id}')">
+        ${cat.name}
+      </button>
+    `).join("");
+
+    // Menu items
+    const items = menu.items.filter(i => i.categoryId === activeCategory);
+    const grid = document.getElementById("menu-grid");
+    grid.innerHTML = items.map(item => {
+      const inCart = cart.find(c => c.id === item.id);
+      const displayName = item.nameEs || item.name;
+      return `
+        <div class="menu-card ${inCart ? "in-cart" : ""}" onclick="addToCart('${item.id}')">
+          ${inCart ? `<div class="menu-badge">×${inCart.qty}</div>` : ""}
+          <div class="menu-emoji">${item.emoji}</div>
+          <div class="menu-name">${displayName}</div>
+          <div class="menu-price">${fmt(item.price)}</div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderCart() {
+    const body = document.getElementById("cart-body");
+    const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
+    const totalItems = cart.reduce((s, i) => s + i.qty, 0);
+
+    document.getElementById("cart-total").textContent = fmt(total);
+    document.getElementById("cart-count").textContent = totalItems;
+
+    const fab = document.getElementById("cart-fab");
+    if (totalItems > 0) fab.classList.remove("hidden");
+    else fab.classList.add("hidden");
+
+    if (cart.length === 0) {
+      body.innerHTML = `<div class="cart-empty">Tu carrito está vacío 🛒</div>`;
+      return;
+    }
+
+    body.innerHTML = cart.map(item => `
+      <div class="cart-item">
+        <div class="cart-item-emoji">${item.emoji}</div>
+        <div class="cart-item-info">
+          <div class="cart-item-name">${item.nameEs || item.name}</div>
+          <div class="cart-item-price">${fmt(item.price * item.qty)}</div>
+        </div>
+        <div class="cart-qty-row">
+          <button class="qty-btn" onclick="changeQty('${item.id}', -1)">−</button>
+          <span class="cart-qty">${item.qty}</span>
+          <button class="qty-btn" onclick="changeQty('${item.id}', 1)">+</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  // ── Cart actions ───────────────────────────────────────────
+  window.setCategory = function(catId) {
+    activeCategory = catId;
+    renderMenu();
+  };
+
+  window.addToCart = function(itemId) {
+    const item = menu.items.find(i => i.id === itemId);
+    if (!item) return;
+    const existing = cart.find(c => c.id === itemId);
+    if (existing) {
+      cart = cart.map(c => c.id === itemId ? { ...c, qty: c.qty + 1 } : c);
+    } else {
+      cart = [...cart, { ...item, qty: 1 }];
+    }
+    renderCart();
+    renderMenu(); // refresh badges
+  };
+
+  window.changeQty = function(itemId, delta) {
+    cart = cart
+      .map(c => c.id === itemId ? { ...c, qty: c.qty + delta } : c)
+      .filter(c => c.qty > 0);
+    renderCart();
+    renderMenu();
+  };
+
+  // ── Cart overlay ───────────────────────────────────────────
+  window.openCart = function() {
+    renderCart();
+    document.getElementById("cart-overlay").classList.add("open");
+  };
+
+  window.closeCart = function() {
+    document.getElementById("cart-overlay").classList.remove("open");
+  };
+
+  window.handleOverlayClick = function(e) {
+    if (e.target === document.getElementById("cart-overlay")) closeCart();
+  };
+
+  // ── Send order to Firebase ─────────────────────────────────
+  window.sendOrder = async function() {
+    if (cart.length === 0) return;
+    const btn = document.getElementById("send-btn");
+    btn.disabled = true;
+    btn.textContent = "Enviando...";
+
+    const note = document.getElementById("note-field").value.trim();
+    const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
+    const orderId = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+    const order = {
+      id: orderId,
+      table: tableNum,
+      isToGo: false,
+      toGoName: null,
+      // Store both English name (for Clover) and Spanish display name
+      items: cart.map(i => ({
+        id: i.id,
+        name: i.name,          // English — sent to Clover
+        nameEs: i.nameEs || i.name,  // Spanish — shown on KDS
+        emoji: i.emoji,
+        price: i.price,
+        qty: i.qty,
+        modifiers: [],
+        specialNote: null,
+      })),
+      note: note || null,
+      total,
+      timestamp: Date.now(),
+      status: "new",
+      editHistory: [],
+      source: "qr",            // tag so kitchen knows it came from QR
+      cloverOrderId: null,
+      createdAt: serverTimestamp(),
+    };
+
+    try {
+      await addDoc(collection(db, "orders"), order);
+
+      // Show success screen
+      closeCart();
+      document.getElementById("menu-root").style.display = "none";
+      document.getElementById("cart-fab").style.display = "none";
+      document.getElementById("success-order-id").textContent = `Orden #${orderId}`;
+      document.getElementById("success-screen").classList.add("show");
+
+    } catch (err) {
+      console.error("Order failed:", err);
+      btn.disabled = false;
+      btn.textContent = "Error — intenta de nuevo";
+      setTimeout(() => {
+        btn.textContent = "Enviar a cocina 🔥";
+        btn.disabled = false;
+      }, 3000);
+    }
+  };
+
+  // ── Reset to order again ───────────────────────────────────
+  window.resetOrder = function() {
+    cart = [];
+    document.getElementById("note-field").value = "";
+    document.getElementById("success-screen").classList.remove("show");
+    document.getElementById("menu-root").style.display = "block";
+    document.getElementById("cart-fab").style.display = "";
+    renderCart();
+    renderMenu();
+  };
+
+  // ── Helpers ────────────────────────────────────────────────
+  function fmt(cents) {
+    return "$" + (cents / 100).toFixed(2);
+  }
+
+  // ── Boot ───────────────────────────────────────────────────
+  loadMenu();
+</script>
+</body>
+</html>
