@@ -446,6 +446,58 @@ const elapsed = (ts) => {
 const STATUS_COLORS = { new: "#BE202E", in_progress: "#D97706", done: "#15803D" };
 
 // ============================================================
+// DRINKS / SIDES STATION — matching rules
+// ============================================================
+const DRINKS_RULES = [
+  {
+    key: "nonalcoholic",
+    color: "#7C3AED",
+    bg: "#F5F3FF",
+    label: "BEBIDA",
+    match: (name, catName = "") => {
+      const n = name.toLowerCase();
+      const c = catName.toLowerCase();
+      const hits = ["agua", "limonada", "horchata", "jamaica", "refresco", "soda",
+                    "jugo", "atole", "tepache", "bebida", "drink", "té", "te ",
+                    "cafe", "café", "chocolate", "leche", "naranjada", "aguas"];
+      const alc  = ["cerveza", "beer", "margarita", "mezcal", "tequila", "wine",
+                    "vino", "cocktail", "licor", "michelada", "vodka", "rum", "ron"];
+      return (hits.some(k => n.includes(k)) || c.includes("bebida") || c.includes("drink"))
+        && !alc.some(k => n.includes(k) || c.includes(k));
+    },
+  },
+  {
+    key: "caldo",
+    color: "#BE202E",
+    bg: "#FFF1F2",
+    label: "CALDO",
+    match: (name) => name.toLowerCase().includes("caldo"),
+  },
+  {
+    key: "guacamole",
+    color: "#15803D",
+    bg: "#F0FDF4",
+    label: "GUACAMOLE",
+    match: (name) => {
+      const n = name.toLowerCase();
+      return n.includes("guacamol") || n.includes("guac");
+    },
+  },
+];
+
+const TOGO_COLOR  = "#92400E";
+const TOGO_BG     = "#FEF3C7";
+
+function getDrinksRule(itemName, catName) {
+  return DRINKS_RULES.find(r => r.match(itemName, catName)) || null;
+}
+
+function orderHasDrinksItems(order) {
+  if (order.isToGo) return true;
+  return order.items?.some(item => getDrinksRule(item.name)) ?? false;
+}
+
+// ============================================================
 // SPECIAL NOTE PARSER
 // ============================================================
 const ADD_TRIGGERS = ["con", "extra", "add", "agregar", "agrega", "adicional", "más", "mas"];
@@ -1008,6 +1060,246 @@ function KitchenScreen({ lang }) {
 }
 
 // ============================================================
+// DRINKS / SIDES STATION TICKET
+// ============================================================
+function DrinksTicket({ order, t, catNameById, isFocused }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick(n => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const elapsedSecs = Math.floor((Date.now() - order.timestamp) / 1000);
+  const isUrgent  = elapsedSecs > 600;
+  const isWarning = elapsedSecs > 300;
+  const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
+
+  return (
+    <div style={{
+      ...S.ticket,
+      borderTop: order.isToGo ? `5px solid ${TOGO_COLOR}` : undefined,
+      outline: isFocused ? "4px solid #2563EB" : "none",
+      outlineOffset: isFocused ? "3px" : "0",
+      boxShadow: isFocused
+        ? "0 0 0 4px rgba(37,99,235,0.25), 0 2px 10px rgba(0,0,0,0.08)"
+        : "0 2px 10px rgba(0,0,0,0.08)",
+    }}>
+      {order.isToGo && (
+        <div style={{ ...S.toGoBanner, background: TOGO_COLOR }}>
+          🥡 PARA LLEVAR — {order.toGoName}
+        </div>
+      )}
+      {order.modified && !order.cancelled && <div style={S.modifiedBanner}>⚡ {t.modified}</div>}
+
+      <div style={S.ticketTop}>
+        <div style={S.ticketTopLeft}>
+          <div style={S.guestCheckTitle}>BEBIDAS / SIDES</div>
+          <div style={S.ticketMeta}>
+            {order.isToGo
+              ? <span style={{ ...S.toGoNameBig, color: TOGO_COLOR }}>{order.toGoName}</span>
+              : <span style={S.tableNumberBig}>{t.table2} {order.table}</span>}
+          </div>
+        </div>
+        <div style={S.ticketTopRight}>
+          <div style={S.checkNoLabel}>{t.checkNo}</div>
+          <div style={S.checkNoValue}>{order.id}</div>
+          <div style={{ ...S.timerBig, color: timerColor }}>⏱ {elapsed(order.timestamp)}</div>
+        </div>
+      </div>
+
+      <div style={S.ruledLine} />
+      <div style={S.colHeaders}>
+        <span style={S.colQty}>{t.qty}</span>
+        <span style={S.colItem}>{t.item}</span>
+      </div>
+      <div style={S.ruledLine} />
+
+      <div style={S.itemsList}>
+        {order.items?.map((item, idx) => {
+          const rule = getDrinksRule(item.name, catNameById?.[item.categoryId]);
+          const color = rule ? rule.color : order.isToGo ? TOGO_COLOR : "#C0B8AC";
+          const bg    = rule ? rule.bg    : order.isToGo ? TOGO_BG    : "transparent";
+          const label = rule ? rule.label : null;
+          const dimmed = !rule && !order.isToGo;
+          return (
+            <div key={idx} style={{
+              ...S.itemRow,
+              background: bg,
+              opacity: dimmed ? 0.3 : 1,
+              borderBottom: idx < order.items.length - 1 ? "1px solid #E5DFD0" : "none",
+            }}>
+              <span style={{ ...S.itemQty, color }}>{item.qty}</span>
+              <div style={{ flex: 1 }}>
+                <span style={{ ...S.itemName, color, fontWeight: rule || order.isToGo ? 900 : 700 }}>
+                  {item.name}
+                  {label && (
+                    <span style={{ ...S.changeTag, background: color, color: "#fff", marginLeft: 6 }}>
+                      {label}
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ ...S.ruledLine, borderColor: "#B8A88A", borderWidth: 2 }} />
+      <div style={S.ticketFooter}>
+        <div style={{ ...S.statusStamp, borderColor: STATUS_COLORS[order.status], color: STATUS_COLORS[order.status] }}>
+          {order.status === "new" ? t.new : t.inProgress}
+        </div>
+        {!order.cancelled && (
+          <div style={S.ticketBtns}>
+            {order.status === "new" && (
+              <button style={S.btnStart} onClick={() => updateOrderStatus(order.firestoreId, "in_progress")}>
+                🔥 {t.startCooking}
+              </button>
+            )}
+            {order.status === "in_progress" && (
+              <button style={S.btnDone} onClick={() => updateOrderStatus(order.firestoreId, "done")}>
+                ✓ {t.markDone}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// DRINKS / SIDES STATION SCREEN
+// ============================================================
+function DrinksStationScreen({ lang, menu }) {
+  const t = T[lang];
+  const [orders, setOrders]       = useState([]);
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [actionFlash, setActionFlash]   = useState(null);
+  const MAX_VISIBLE = 3;
+
+  useEffect(() => {
+    const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setOrders(snapshot.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() })));
+    });
+    return unsub;
+  }, []);
+
+  const catNameById = {};
+  if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name[lang] || c.name.en || ""; });
+
+  const active  = orders.filter(o => o.status !== "done" && orderHasDrinksItems(o));
+  const visible = active.slice(0, MAX_VISIBLE);
+  const queued  = active.slice(MAX_VISIBLE);
+
+  useEffect(() => {
+    if (focusedIndex >= visible.length && visible.length > 0) setFocusedIndex(visible.length - 1);
+  }, [visible.length, focusedIndex]);
+
+  function flash(msg, color = "#15803D") {
+    setActionFlash({ msg, color });
+    setTimeout(() => setActionFlash(null), 1200);
+  }
+
+  const handleKeyDown = useCallback((e) => {
+    if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
+    const order = visible[focusedIndex];
+    let key = e.key;
+    if (e.code === "NumpadEnter")    key = "Enter";
+    if (e.code === "NumpadAdd")      key = "+";
+    if (e.code === "NumpadSubtract") key = "-";
+    if (e.code === "NumpadMultiply") key = "*";
+    switch (key) {
+      case "Enter": {
+        e.preventDefault();
+        if (!order || order.cancelled) return;
+        if (order.status === "new") { updateOrderStatus(order.firestoreId, "in_progress"); flash("🔥 Empezando...", "#D97706"); }
+        else if (order.status === "in_progress") { updateOrderStatus(order.firestoreId, "done"); flash("✓ Listo!", "#15803D"); }
+        break;
+      }
+      case "+": { e.preventDefault(); setFocusedIndex(i => Math.min(i + 1, visible.length - 1)); break; }
+      case "-": { e.preventDefault(); setFocusedIndex(i => Math.max(i - 1, 0)); break; }
+      case "*": {
+        e.preventDefault();
+        if (!order || order.cancelled) return;
+        if (order.status === "in_progress") { updateOrderStatus(order.firestoreId, "new"); flash("↩ Deshecho", "#D97706"); }
+        break;
+      }
+      default: break;
+    }
+  }, [focusedIndex, visible]);
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
+  return (
+    <div style={S.kitchenRoot}>
+      <div style={S.kitchenHeader}>
+        <div style={S.kitchenHeaderLeft}>
+          <span style={S.kitchenTitle}>🥤 Bebidas / Sides</span>
+          {queued.length > 0 && <span style={S.queuePill}>+{queued.length} {t.inQueue}</span>}
+        </div>
+        <div style={S.kitchenStats}>
+          <span style={S.statPillRed}>{active.length} {t.active}</span>
+        </div>
+      </div>
+
+      {/* Color legend */}
+      <div style={{ display: "flex", gap: 16, padding: "6px 16px", background: "#1E293B", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, color: "#C4B5FD", fontWeight: 800 }}>🟣 BEBIDA NO ALC.</span>
+        <span style={{ fontSize: 11, color: "#FCA5A5", fontWeight: 800 }}>🔴 CALDO</span>
+        <span style={{ fontSize: 11, color: "#FCD34D", fontWeight: 800 }}>🟤 PARA LLEVAR</span>
+        <span style={{ fontSize: 11, color: "#86EFAC", fontWeight: 800 }}>🟢 GUACAMOLE</span>
+      </div>
+
+      {actionFlash && (
+        <div style={{ ...S.actionFlash, background: actionFlash.color }}>{actionFlash.msg}</div>
+      )}
+
+      {active.length === 0 ? (
+        <div style={S.kitchenEmpty}>
+          <div style={S.emptyCheck}>
+            <div style={S.emptyCheckInner}>
+              <div style={S.emptyCheckTitle}>BEBIDAS / SIDES</div>
+              <div style={S.emptyCheckmark}>✓</div>
+              <div style={S.emptyCheckSub}>{t.allCaughtUp}</div>
+              <div style={S.emptyCheckSubSmall}>{t.allCaughtUpSub}</div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: `repeat(${Math.min(visible.length, MAX_VISIBLE)}, minmax(0, 1fr))` }}>
+          {visible.map((order, idx) => (
+            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer" }}>
+              <DrinksTicket order={order} t={t} catNameById={catNameById} isFocused={idx === focusedIndex} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {queued.length > 0 && (
+        <div style={S.queueStrip}>
+          <div style={S.queueLabel}>COLA / QUEUE</div>
+          {queued.map(order => (
+            <div key={order.firestoreId} style={S.queueItem}>
+              <span style={S.queueOrderId}>#{order.id}</span>
+              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : `${t.table2} ${order.table}`}</span>
+              <span style={S.queueOrderItems}>
+                {order.items?.filter(i => getDrinksRule(i.name) || order.isToGo).map(i => `${i.qty}× ${i.name}`).join(", ")}
+              </span>
+              <span style={S.queueOrderTime}>{elapsed(order.timestamp)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // WAITER SCREEN
 // ============================================================
 function WaiterScreen({ menu, onOrderSent, lang }) {
@@ -1379,6 +1671,7 @@ export default function App() {
             {activeOrders > 0 && <span style={S.navBadge}>{activeOrders}</span>}
           </button>
           <button style={{ ...S.navBtn, ...(view === "history" ? S.navBtnActive : {}) }} onClick={() => setView("history")}>📊 {t.orderHistory}</button>
+          <button style={{ ...S.navBtn, ...(view === "drinks" ? S.navBtnActive : {}), ...(view === "drinks" ? { color: "#7C3AED", borderBottom: "3px solid #7C3AED" } : {}) }} onClick={() => setView("drinks")}>🥤 Bebidas/Sides</button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {translating && <span style={S.translatingPill}>🌐 {t.translating}</span>}
@@ -1388,6 +1681,7 @@ export default function App() {
       {view === "waiter" && <WaiterScreen menu={menu} onOrderSent={() => {}} lang={lang} />}
       {view === "kitchen" && <KitchenScreen lang={lang} />}
       {view === "history" && <HistoryScreen lang={lang} />}
+      {view === "drinks" && <DrinksStationScreen lang={lang} menu={menu} />}
     </div>
   );
 }
