@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dona Paty's — Generar Códigos QR</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: #F5F3F0; padding: 20px; color: #1A1A1A; }
+    h1 { color: #BE202E; margin-bottom: 6px; }
+    .subtitle { color: #666; margin-bottom: 20px; font-size: 14px; }
+    .controls {
+      background: #fff;
+      border: 1px solid #E5E0D8;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+      display: flex;
+      gap: 16px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+    }
+    label { font-size: 13px; font-weight: 700; color: #666; display: block; margin-bottom: 4px; }
+    input, select {
+      border: 1px solid #DDD;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .btn {
+      background: #BE202E;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-print {
+      background: #1A1A1A;
+    }
+    .qr-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .qr-card {
+      background: #fff;
+      border: 2px solid #E5E0D8;
+      border-radius: 14px;
+      padding: 20px 16px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .qr-card img { width: 160px; height: 160px; }
+    .qr-table-label {
+      font-size: 22px;
+      font-weight: 900;
+      color: #BE202E;
+      margin-top: 10px;
+    }
+    .qr-restaurant { font-size: 12px; color: #888; margin-top: 4px; }
+    .qr-scan-prompt {
+      font-size: 11px;
+      color: #AAA;
+      margin-top: 6px;
+      font-style: italic;
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .controls { display: none; }
+      h1, .subtitle { display: none; }
+      .qr-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .qr-card { border: 1px solid #DDD; page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <h1>🍽️ Generador de Códigos QR</h1>
+  <div class="subtitle">Genera e imprime los códigos QR para cada mesa de Doña Paty's</div>
+
+  <div class="controls">
+    <div>
+      <label>URL de tu app (Vercel)</label>
+      <input type="text" id="base-url" placeholder="https://tu-app.vercel.app" style="width: 300px" />
+    </div>
+    <div>
+      <label>Mesas del</label>
+      <input type="number" id="table-start" value="1" min="1" style="width: 70px" />
+    </div>
+    <div>
+      <label>al</label>
+      <input type="number" id="table-end" value="12" min="1" style="width: 70px" />
+    </div>
+    <button class="btn" onclick="generate()">Generar QR</button>
+    <button class="btn btn-print" onclick="window.print()">🖨️ Imprimir</button>
+  </div>
+
+  <div class="qr-grid" id="qr-grid"></div>
+
+  <!-- QR code library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    function generate() {
+      const baseUrl = document.getElementById("base-url").value.trim().replace(/\/$/, "");
+      const start = parseInt(document.getElementById("table-start").value);
+      const end = parseInt(document.getElementById("table-end").value);
+
+      if (!baseUrl) {
+        alert("Ingresa la URL de tu app primero");
+        return;
+      }
+      if (isNaN(start) || isNaN(end) || start > end) {
+        alert("Número de mesa inválido");
+        return;
+      }
+
+      const grid = document.getElementById("qr-grid");
+      grid.innerHTML = "";
+
+      for (let table = start; table <= end; table++) {
+        const url = `${baseUrl}/order.html?table=${table}`;
+
+        const card = document.createElement("div");
+        card.className = "qr-card";
+
+        const qrDiv = document.createElement("div");
+        card.appendChild(qrDiv);
+
+        const label = document.createElement("div");
+        label.className = "qr-table-label";
+        label.textContent = `Mesa ${table}`;
+        card.appendChild(label);
+
+        const rest = document.createElement("div");
+        rest.className = "qr-restaurant";
+        rest.textContent = "Doña Paty's";
+        card.appendChild(rest);
+
+        const prompt = document.createElement("div");
+        prompt.className = "qr-scan-prompt";
+        prompt.textContent = "Escanea para ordenar";
+        card.appendChild(prompt);
+
+        grid.appendChild(card);
+
+        new QRCode(qrDiv, {
+          text: url,
+          width: 160,
+          height: 160,
+          colorDark: "#1A1A1A",
+          colorLight: "#ffffff",
+          correctLevel: QRCode.CorrectLevel.M,
+        });
+      }
+    }
+
+    // Auto-generate if URL is in query string
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("url")) {
+      document.getElementById("base-url").value = p.get("url");
+      generate();
+    }
+  </script>
+</body>
+</html>
