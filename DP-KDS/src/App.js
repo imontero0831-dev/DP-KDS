@@ -268,7 +268,8 @@ async function fetchMenuFromClover() {
     if (categories.length === 0) {
       return { categories: [{ id: "uncategorized", name: { es: "Menú", en: "Menu" } }], items };
     }
-    return { categories, items };
+    const usedCatIds = new Set(items.map(i => i.categoryId));
+    return { categories: categories.filter(cat => usedCatIds.has(cat.id)), items };
   } catch (err) {
     console.warn("⚠️ Clover menu fetch failed, using mock menu:", err.message);
     return MOCK_MENU;
@@ -483,6 +484,13 @@ const DRINKS_RULES = [
       return n.includes("guacamol") || n.includes("guac");
     },
   },
+  {
+    key: "sides",
+    color: "#D97706",
+    bg: "#FFFBEB",
+    label: "SIDES",
+    match: (name, catName = "") => catName.toLowerCase().includes("side"),
+  },
 ];
 
 const TOGO_COLOR  = "#92400E";
@@ -494,7 +502,13 @@ function getDrinksRule(itemName, catName) {
 
 function orderHasDrinksItems(order) {
   if (order.isToGo) return true;
-  return order.items?.some(item => getDrinksRule(item.name)) ?? false;
+  return order.items?.some(item => getDrinksRule(item.name, item.catName)) ?? false;
+}
+
+// Items the kitchen doesn't cook — greyed out on kitchen tickets
+function isKitchenDimmed(itemName, catName = "") {
+  const rule = getDrinksRule(itemName, catName);
+  return rule?.key === "nonalcoholic" || rule?.key === "sides";
 }
 
 // ============================================================
@@ -682,7 +696,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose }) {
 // ============================================================
 // GUEST CHECK TICKET COMPONENT
 // ============================================================
-function GuestCheckTicket({ order, t, isQueue, isFocused }) {
+function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick(n => n + 1), 1000);
@@ -764,11 +778,12 @@ function GuestCheckTicket({ order, t, isQueue, isFocused }) {
         {items.map((item, idx) => {
           const cs = changeStyle(item.changeType);
           const isRemoved = item.changeType === "removed";
+          const dimmed = item.changeType === "unchanged" && isKitchenDimmed(item.name, catNameById[item.categoryId]);
           return (
-            <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : cs.bg, borderBottom: idx < items.length - 1 ? "1px solid #E5DFD0" : "none" }}>
-              <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : cs.color }}>{item.qty}</span>
+            <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : cs.bg, borderBottom: idx < items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: dimmed ? 0.35 : 1 }}>
+              <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color }}>{item.qty}</span>
               <div style={{ flex: 1 }}>
-                <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
+                <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
                   {item.name}
                   {cs.tagBg && !order.cancelled && <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>}
                 </span>
@@ -837,12 +852,15 @@ function GuestCheckTicket({ order, t, isQueue, isFocused }) {
 // ============================================================
 // KITCHEN SCREEN — with keyboard / numpad controller support
 // ============================================================
-function KitchenScreen({ lang }) {
+function KitchenScreen({ lang, menu }) {
   const t = T[lang];
   const [orders, setOrders] = useState([]);
   const [focusedIndex, setFocusedIndex] = useState(0); // which ticket is keyboard-focused
   const [actionFlash, setActionFlash] = useState(null); // brief visual feedback on keypress
   const MAX_VISIBLE = 3;
+
+  const catNameById = {};
+  if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name[lang] || c.name.en || ""; });
 
   // ── Live orders from Firebase ──────────────────────────────
   useEffect(() => {
@@ -1036,6 +1054,7 @@ function KitchenScreen({ lang }) {
                 t={t}
                 isQueue={false}
                 isFocused={idx === focusedIndex}
+                catNameById={catNameById}
               />
             </div>
           ))}
@@ -1679,7 +1698,7 @@ export default function App() {
         </div>
       </div>
       {view === "waiter" && <WaiterScreen menu={menu} onOrderSent={() => {}} lang={lang} />}
-      {view === "kitchen" && <KitchenScreen lang={lang} />}
+      {view === "kitchen" && <KitchenScreen lang={lang} menu={menu} />}
       {view === "history" && <HistoryScreen lang={lang} />}
       {view === "drinks" && <DrinksStationScreen lang={lang} menu={menu} />}
     </div>
