@@ -243,6 +243,37 @@ async function translateMenuItemsToSpanish(items) {
 }
 
 // ============================================================
+// CATEGORY SORT ORDER  (Drinks → Apps → Mains → Extras → Dessert)
+// ============================================================
+const CATEGORY_PRIORITY = [
+  "beverage", "bebida", "drink", "agua",
+  "happy hour",
+  "appetizer", "starter", "entrada", "picadita", "sope",
+  "sopa", "soup",
+  "taco",
+  "burrito", "torta", "tostada", "quesadilla", "huarache", "cemita",
+  "dinner", "main", "fajita",
+  "extra", "side",
+  "festival",
+  "breakfast", "desayuno",
+  "dessert", "postre",
+  "kid",
+  "beer", "liquor", "cerveza",
+];
+
+function sortCategories(cats) {
+  return [...cats].sort((a, b) => {
+    const aName = (a.name.en || a.name.es || "").toLowerCase();
+    const bName = (b.name.en || b.name.es || "").toLowerCase();
+    const rank = (name) => {
+      const i = CATEGORY_PRIORITY.findIndex(k => name.includes(k));
+      return i === -1 ? 999 : i;
+    };
+    return rank(aName) - rank(bName);
+  });
+}
+
+// ============================================================
 // CLOVER MENU FETCH
 // ============================================================
 async function fetchMenuFromClover() {
@@ -269,7 +300,7 @@ async function fetchMenuFromClover() {
       return { categories: [{ id: "uncategorized", name: { es: "Menú", en: "Menu" } }], items };
     }
     const usedCatIds = new Set(items.map(i => i.categoryId));
-    return { categories: categories.filter(cat => usedCatIds.has(cat.id)), items };
+    return { categories: sortCategories(categories.filter(cat => usedCatIds.has(cat.id))), items };
   } catch (err) {
     console.warn("⚠️ Clover menu fetch failed, using mock menu:", err.message);
     return MOCK_MENU;
@@ -426,6 +457,17 @@ async function updateOrderStatus(orderId, status) {
     }, 1500);
   }
   await updateDoc(orderRef, updates);
+}
+
+async function closeTable(tableOrders) {
+  for (const order of tableOrders) {
+    const orderRef = doc(db, "orders", order.firestoreId);
+    const snap = await getDoc(orderRef);
+    if (snap.exists()) {
+      await addDoc(collection(db, "completedOrders"), { ...snap.data(), completedAt: Date.now() });
+      await deleteDoc(orderRef);
+    }
+  }
 }
 
 // ============================================================
@@ -1319,14 +1361,102 @@ function DrinksStationScreen({ lang, menu }) {
 }
 
 // ============================================================
+// TABLE SELECT SCREEN
+// ============================================================
+const TABLES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+function TableSelectScreen({ lang, onSelectTable, onSelectToGo }) {
+  const t = T[lang];
+  const [orders, setOrders] = useState([]);
+  const [closing, setClosing] = useState(null);
+
+  useEffect(() => {
+    const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
+    const unsub = onSnapshot(q, snap => {
+      setOrders(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, []);
+
+  const activeByTable = {};
+  orders.filter(o => o.status !== "done" && !o.isToGo).forEach(o => {
+    if (!activeByTable[o.table]) activeByTable[o.table] = [];
+    activeByTable[o.table].push(o);
+  });
+  const toGoOrders = orders.filter(o => o.status !== "done" && o.isToGo);
+
+  async function handleClose(tableNum, e) {
+    e.stopPropagation();
+    setClosing(tableNum);
+    await closeTable(activeByTable[tableNum] || []);
+    setClosing(null);
+  }
+
+  return (
+    <div style={S.tableSelectRoot}>
+      <div style={S.tableSelectHeader}>
+        <span style={S.tableSelectTitle}>🍽️ Dona Paty's</span>
+        <span style={S.tableSelectSub}>Selecciona una mesa para ordenar</span>
+      </div>
+
+      <div style={S.tableGrid}>
+        {TABLES.map(num => {
+          const key = num.toString();
+          const tableOrders = activeByTable[key] || [];
+          const occupied = tableOrders.length > 0;
+          const itemCount = tableOrders.reduce((s, o) => s + (o.items?.length || 0), 0);
+          const earliest = occupied ? Math.min(...tableOrders.map(o => o.timestamp)) : null;
+          const isClosing = closing === key;
+
+          return (
+            <div
+              key={num}
+              style={{ ...S.tableCard, ...(occupied ? S.tableCardOccupied : S.tableCardFree) }}
+              onClick={() => onSelectTable(key, tableOrders)}
+            >
+              <div style={S.tableCardNum}>{num}</div>
+              <div style={{ ...S.tableCardLabel, color: occupied ? "#92400E" : "#15803D" }}>
+                {occupied ? "OCUPADA" : "LIBRE"}
+              </div>
+              {occupied && (
+                <>
+                  <div style={S.tableCardItems}>{itemCount} artículo{itemCount !== 1 ? "s" : ""}</div>
+                  <div style={S.tableCardTimer}>⏱ {elapsed(earliest)}</div>
+                  <button
+                    style={{ ...S.tableCardCloseBtn, opacity: isClosing ? 0.5 : 1 }}
+                    onClick={(e) => handleClose(key, e)}
+                    disabled={isClosing}
+                  >
+                    {isClosing ? "..." : "✓ Cerrar Mesa"}
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={S.toGoRow}>
+        <button style={S.toGoCardBtn} onClick={onSelectToGo}>
+          🥡 Para Llevar
+          {toGoOrders.length > 0 && (
+            <span style={S.toGoBadgeCount}>{toGoOrders.length} activa{toGoOrders.length !== 1 ? "s" : ""}</span>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // WAITER SCREEN
 // ============================================================
-function WaiterScreen({ menu, onOrderSent, lang }) {
+function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType, onBack }) {
   const t = T[lang];
   const [activeCategory, setActiveCategory] = useState(menu.categories[0]?.id);
   const [cart, setCart] = useState([]);
-  const [orderType, setOrderType] = useState("table");
-  const [tableNum, setTableNum] = useState("");
+  const [orderType, setOrderType] = useState(initialOrderType || "table");
+  const [tableNum, setTableNum] = useState(initialTable || "");
   const [toGoName, setToGoName] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -1420,7 +1550,11 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
       await pushOrderToKitchen({ ...order, cloverOrderId: cloverOrderId || null });
       setSending(false); setSent(true);
       onOrderSent?.(order);
-      setTimeout(() => { setCart([]); setTableNum(""); setToGoName(""); setNote(""); setSent(false); }, 2000);
+      setTimeout(() => {
+        setCart([]); setNote(""); setSent(false);
+        if (!initialTable && orderType !== "togo") { setTableNum(""); }
+        if (orderType === "togo") setToGoName("");
+      }, 2000);
     }
   }
 
@@ -1431,7 +1565,16 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
       )}
       <div style={S.waiterHeader}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={S.waiterLogo}>🍽️ {t.orderStation}</span>
+          {onBack && (
+            <button style={S.backBtn} onClick={onBack}>← Mesas</button>
+          )}
+          {initialTable ? (
+            <span style={S.waiterTableBig}>🪑 Mesa {initialTable}</span>
+          ) : initialOrderType === "togo" ? (
+            <span style={S.waiterTableBig}>🥡 Para Llevar</span>
+          ) : (
+            <span style={S.waiterLogo}>🍽️ {t.orderStation}</span>
+          )}
           {isEditing && <span style={S.editingBadge}>✏️ {t.editOrder}</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1440,20 +1583,36 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
               {t.activeOrders} <span style={S.activeOrdersBadge}>{activeOrders.length}</span>
             </button>
           )}
-          <div style={S.orderTypeToggle}>
-            <button style={{ ...S.typeBtn, ...(orderType === "table" ? S.typeBtnActive : {}) }} onClick={() => setOrderType("table")}>🪑 {t.table}</button>
-            <button style={{ ...S.typeBtn, ...(orderType === "togo" ? S.typeBtnToGo : {}) }} onClick={() => setOrderType("togo")}>🥡 {t.toGo}</button>
-          </div>
-          <div style={{ ...S.tableInput, ...(orderType === "togo" ? S.tableInputToGo : {}) }}>
-            <span style={{ ...S.tableLabel, ...(orderType === "togo" ? { color: "#0369A1" } : {}) }}>{orderType === "togo" ? "🥡" : t.table}</span>
-            <input
-              style={{ ...S.tableField, width: orderType === "togo" ? 130 : 48 }}
-              value={orderType === "togo" ? toGoName : tableNum}
-              onChange={e => orderType === "togo" ? setToGoName(e.target.value) : setTableNum(e.target.value)}
-              placeholder={orderType === "togo" ? t.toGoName : "#"}
-              maxLength={orderType === "togo" ? 30 : 3}
-            />
-          </div>
+          {!initialTable && initialOrderType !== "togo" && (
+            <div style={S.orderTypeToggle}>
+              <button style={{ ...S.typeBtn, ...(orderType === "table" ? S.typeBtnActive : {}) }} onClick={() => setOrderType("table")}>🪑 {t.table}</button>
+              <button style={{ ...S.typeBtn, ...(orderType === "togo" ? S.typeBtnToGo : {}) }} onClick={() => setOrderType("togo")}>🥡 {t.toGo}</button>
+            </div>
+          )}
+          {initialOrderType === "togo" && (
+            <div style={{ ...S.tableInput, ...S.tableInputToGo }}>
+              <span style={{ ...S.tableLabel, color: "#0369A1" }}>🥡</span>
+              <input
+                style={{ ...S.tableField, width: 130 }}
+                value={toGoName}
+                onChange={e => setToGoName(e.target.value)}
+                placeholder={t.toGoName}
+                maxLength={30}
+              />
+            </div>
+          )}
+          {!initialTable && !initialOrderType && (
+            <div style={{ ...S.tableInput, ...(orderType === "togo" ? S.tableInputToGo : {}) }}>
+              <span style={{ ...S.tableLabel, ...(orderType === "togo" ? { color: "#0369A1" } : {}) }}>{orderType === "togo" ? "🥡" : t.table}</span>
+              <input
+                style={{ ...S.tableField, width: orderType === "togo" ? 130 : 48 }}
+                value={orderType === "togo" ? toGoName : tableNum}
+                onChange={e => orderType === "togo" ? setToGoName(e.target.value) : setTableNum(e.target.value)}
+                placeholder={orderType === "togo" ? t.toGoName : "#"}
+                maxLength={orderType === "togo" ? 30 : 3}
+              />
+            </div>
+          )}
         </div>
       </div>
       {showActiveOrders && (
@@ -1632,7 +1791,12 @@ function HistoryScreen({ lang }) {
 // ROOT APP
 // ============================================================
 export default function App() {
-  const [view, setView] = useState(() => {   const params = new URLSearchParams(window.location.search);   return params.get("screen") || "waiter"; });
+  const [view, setView] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("screen");
+    return s || "tables";
+  });
+  const [orderContext, setOrderContext] = useState(null); // { table, orderType }
   const [menu, setMenu] = useState(null);
   const [lang, setLang] = useState("es");
   const [activeOrders, setActiveOrders] = useState(0);
@@ -1686,7 +1850,7 @@ export default function App() {
     <div style={S.appRoot}>
       <div style={S.nav}>
         <div style={S.navLeft}>
-          <button style={{ ...S.navBtn, ...(view === "waiter" ? S.navBtnActive : {}) }} onClick={() => setView("waiter")}>🍽️ {t.orderStation}</button>
+          <button style={{ ...S.navBtn, ...((view === "tables" || view === "waiter") ? S.navBtnActive : {}) }} onClick={() => { setOrderContext(null); setView("tables"); }}>🍽️ {t.orderStation}</button>
           <button style={{ ...S.navBtn, ...(view === "kitchen" ? S.navBtnActive : {}) }} onClick={() => setView("kitchen")}>
             👨‍🍳 {t.kitchenDisplay}
             {activeOrders > 0 && <span style={S.navBadge}>{activeOrders}</span>}
@@ -1699,7 +1863,29 @@ export default function App() {
           <button style={S.langBtn} onClick={() => setLang(l => l === "es" ? "en" : "es")}>{lang === "es" ? "🇺🇸 EN" : "🇲🇽 ES"}</button>
         </div>
       </div>
-      {view === "waiter" && <WaiterScreen menu={menu} onOrderSent={() => {}} lang={lang} />}
+      {view === "tables" && (
+        <TableSelectScreen
+          lang={lang}
+          onSelectTable={(tableNum) => {
+            setOrderContext({ table: tableNum, orderType: "table" });
+            setView("waiter");
+          }}
+          onSelectToGo={() => {
+            setOrderContext({ table: null, orderType: "togo" });
+            setView("waiter");
+          }}
+        />
+      )}
+      {view === "waiter" && (
+        <WaiterScreen
+          menu={menu}
+          onOrderSent={() => {}}
+          lang={lang}
+          initialTable={orderContext?.table}
+          initialOrderType={orderContext?.orderType}
+          onBack={() => { setOrderContext(null); setView("tables"); }}
+        />
+      )}
       {view === "kitchen" && <KitchenScreen lang={lang} menu={menu} />}
       {view === "history" && <HistoryScreen lang={lang} />}
       {view === "drinks" && <DrinksStationScreen lang={lang} menu={menu} />}
@@ -1711,6 +1897,26 @@ export default function App() {
 // STYLES
 // ============================================================
 const S = {
+  // TABLE SELECT
+  tableSelectRoot: { flex: 1, display: "flex", flexDirection: "column", background: "#F5F3F0", minHeight: "calc(100vh - 53px)", padding: "24px 20px" },
+  tableSelectHeader: { marginBottom: 24, textAlign: "center" },
+  tableSelectTitle: { fontSize: 26, fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em" },
+  tableSelectSub: { display: "block", fontSize: 13, color: "#888", marginTop: 4 },
+  tableGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, maxWidth: 540, margin: "0 auto", width: "100%" },
+  tableCard: { borderRadius: 16, padding: "20px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", border: "2px solid transparent", transition: "all 0.15s", userSelect: "none" },
+  tableCardFree: { background: "#FFFFFF", border: "2px solid #D1FAE5", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
+  tableCardOccupied: { background: "#FFFBEB", border: "2px solid #FCD34D", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" },
+  tableCardNum: { fontSize: 48, fontWeight: 900, color: "#1A1A1A", lineHeight: 1 },
+  tableCardLabel: { fontSize: 10, fontWeight: 900, letterSpacing: "0.12em" },
+  tableCardItems: { fontSize: 12, color: "#666", fontWeight: 600 },
+  tableCardTimer: { fontSize: 12, fontWeight: 700, color: "#D97706" },
+  tableCardCloseBtn: { marginTop: 6, background: "#15803D", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 11, fontWeight: 800, cursor: "pointer", letterSpacing: "0.04em" },
+  toGoRow: { maxWidth: 540, margin: "20px auto 0", width: "100%" },
+  toGoCardBtn: { width: "100%", background: "#EFF6FF", border: "2px solid #BFDBFE", borderRadius: 16, padding: "18px 24px", fontSize: 18, fontWeight: 800, color: "#1D4ED8", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 12 },
+  toGoBadgeCount: { background: "#1D4ED8", color: "#fff", borderRadius: 20, fontSize: 11, padding: "2px 10px", fontWeight: 800 },
+  backBtn: { background: "#F5F3F0", border: "1px solid #DDD", color: "#444", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
+  waiterTableBig: { fontSize: 20, fontWeight: 900, color: "#BE202E", letterSpacing: "-0.01em" },
+
   appRoot: { fontFamily: "'DM Sans', 'Segoe UI', sans-serif", background: "#F5F3F0", minHeight: "100vh", color: "#1A1A1A", display: "flex", flexDirection: "column" },
   nav: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "#FFFFFF", borderBottom: "2px solid #BE202E", padding: "0 12px", flexWrap: "wrap", gap: 4, boxShadow: "0 1px 4px rgba(0,0,0,0.08)" },
   navLeft: { display: "flex", flexWrap: "wrap" },
