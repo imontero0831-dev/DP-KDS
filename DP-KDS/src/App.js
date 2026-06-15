@@ -778,7 +778,7 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
         {items.map((item, idx) => {
           const cs = changeStyle(item.changeType);
           const isRemoved = item.changeType === "removed";
-          const dimmed = item.changeType === "unchanged" && isKitchenDimmed(item.name, catNameById[item.categoryId]);
+          const dimmed = item.changeType === "unchanged" && isKitchenDimmed(item.name, item.catName || catNameById[item.categoryId] || "");
           return (
             <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : cs.bg, borderBottom: idx < items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: dimmed ? 0.35 : 1 }}>
               <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color }}>{item.qty}</span>
@@ -1135,7 +1135,7 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
 
       <div style={S.itemsList}>
         {order.items?.map((item, idx) => {
-          const rule = getDrinksRule(item.name, catNameById?.[item.categoryId]);
+          const rule = getDrinksRule(item.name, item.catName || catNameById?.[item.categoryId] || "");
           const color = rule ? rule.color : order.isToGo ? TOGO_COLOR : "#C0B8AC";
           const bg    = rule ? rule.bg    : order.isToGo ? TOGO_BG    : "transparent";
           const label = rule ? rule.label : null;
@@ -1362,10 +1362,12 @@ function WaiterScreen({ menu, onOrderSent, lang }) {
   function handleModifierConfirm(selectedMods, specialNote) {
     const item = modModalItem;
     setModModalItem(null);
+    const cat = menu.categories.find(c => c.id === item.categoryId);
+    const catName = cat ? (cat.name.en || cat.name.es || "") : "";
     setCart(prev => {
       const existing = prev.find(c => c.id === item.id);
       if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
-      return [...prev, { ...item, displayName: getItemDisplayName(item), qty: 1, modifiers: selectedMods, specialNote: specialNote || null }];
+      return [...prev, { ...item, catName, displayName: getItemDisplayName(item), qty: 1, modifiers: selectedMods, specialNote: specialNote || null }];
     });
   }
 
