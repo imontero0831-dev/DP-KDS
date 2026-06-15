@@ -489,7 +489,7 @@ const DRINKS_RULES = [
     color: "#D97706",
     bg: "#FFFBEB",
     label: "SIDES",
-    match: (name, catName = "") => catName.toLowerCase().includes("side"),
+    match: (name, catName = "") => catName.toLowerCase().includes("extra"),
   },
 ];
 
