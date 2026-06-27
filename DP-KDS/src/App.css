@@ -29,10 +29,37 @@
 }
 
 @keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-ready {
+  0%, 100% { box-shadow: 0 4px 20px rgba(21,128,61,0.3); }
+  50% { box-shadow: 0 4px 36px rgba(21,128,61,0.65); }
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.06); }
+}
+
+.expo-ticket-ready {
+  animation: pulse-ready 1.6s ease-in-out infinite;
+}
+
+.expo-badge-pulse {
+  animation: pulse-badge 1.2s ease-in-out infinite;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
 }

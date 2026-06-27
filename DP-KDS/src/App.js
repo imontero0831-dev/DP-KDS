@@ -98,6 +98,12 @@ const T = {
     noMods: "Sin modificadores",
     selectRequired: "Selecciona las opciones requeridas",
     free: "gratis",
+    expoDisplay: "Expo / Entrega",
+    readyForPickup: "LISTO PARA ENTREGAR",
+    bumpOrder: "BUMP",
+    waitingKitchen: "Esperando Cocina...",
+    waitingDrinks: "Esperando Bebidas...",
+    waitingBoth: "Esperando Cocina y Bebidas",
   },
   en: {
     orderStation: "Order Station",
@@ -172,6 +178,12 @@ const T = {
     noMods: "No modifiers",
     selectRequired: "Please select required options",
     free: "free",
+    expoDisplay: "Expo / Delivery",
+    readyForPickup: "READY FOR PICKUP",
+    bumpOrder: "BUMP",
+    waitingKitchen: "Waiting on Kitchen...",
+    waitingDrinks: "Waiting on Drinks...",
+    waitingBoth: "Waiting on Kitchen & Drinks",
   },
 };
 
@@ -414,6 +426,9 @@ function diffItems(oldItems, newItems) {
 async function pushOrderToKitchen(order) {
   await addDoc(collection(db, "orders"), {
     ...order,
+    kitchenReady: false,
+    drinksReady: false,
+    allReady: false,
     createdAt: serverTimestamp(),
   });
 }
@@ -467,6 +482,59 @@ async function closeTable(tableOrders) {
       await addDoc(collection(db, "completedOrders"), { ...snap.data(), completedAt: Date.now() });
       await deleteDoc(orderRef);
     }
+  }
+}
+
+// ── PER-STATION COMPLETION ─────────────────────────────────────
+async function _completeOrder(orderId, startedAt, timestamp) {
+  const ref = doc(db, "orders", orderId);
+  const now = Date.now();
+  await updateDoc(ref, { allReady: true, allReadyAt: now });
+  setTimeout(async () => {
+    const snap = await getDoc(ref);
+    if (snap.exists() && snap.data().allReady) {
+      const data = snap.data();
+      const completedAt = Date.now();
+      await addDoc(collection(db, "completedOrders"), {
+        ...data,
+        completedAt,
+        duration: completedAt - (startedAt || timestamp),
+      });
+      await deleteDoc(ref);
+    }
+  }, 8000);
+}
+
+async function markKitchenReady(order) {
+  const ref = doc(db, "orders", order.firestoreId);
+  await updateDoc(ref, { kitchenReady: true });
+  const hasDrinks = orderHasDrinksItems(order);
+  if (!hasDrinks || order.drinksReady) {
+    await _completeOrder(order.firestoreId, order.startedAt, order.timestamp);
+  }
+}
+
+async function markDrinksReady(order) {
+  const ref = doc(db, "orders", order.firestoreId);
+  await updateDoc(ref, { drinksReady: true });
+  const hasKitchen = orderHasKitchenItems(order);
+  if (!hasKitchen || order.kitchenReady) {
+    await _completeOrder(order.firestoreId, order.startedAt, order.timestamp);
+  }
+}
+
+async function bumpOrder(order) {
+  const ref = doc(db, "orders", order.firestoreId);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const data = snap.data();
+    const completedAt = Date.now();
+    await addDoc(collection(db, "completedOrders"), {
+      ...data,
+      completedAt,
+      duration: completedAt - (data.startedAt || order.timestamp),
+    });
+    await deleteDoc(ref);
   }
 }
 
@@ -551,6 +619,10 @@ function orderHasDrinksItems(order) {
 function isKitchenDimmed(itemName, catName = "") {
   const rule = getDrinksRule(itemName, catName);
   return rule?.key === "nonalcoholic" || rule?.key === "sides";
+}
+
+function orderHasKitchenItems(order) {
+  return order.items?.some(i => !isKitchenDimmed(i.name, i.catName || "")) ?? false;
 }
 
 // ============================================================
@@ -880,7 +952,7 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
               </button>
             )}
             {order.status === "in_progress" && (
-              <button style={S.btnDone} onClick={() => updateOrderStatus(order.firestoreId, "done")}>
+              <button style={S.btnDone} onClick={() => markKitchenReady(order)}>
                 ✓ {t.markDone}
               </button>
             )}
@@ -914,10 +986,10 @@ function KitchenScreen({ lang, menu }) {
     return unsub;
   }, []);
 
-  const active = orders.filter(o => o.status !== "done");
+  const active = orders.filter(o => !o.kitchenReady);
   const visible = active.slice(0, MAX_VISIBLE);
   const queued = active.slice(MAX_VISIBLE);
-  const doneCount = orders.filter(o => o.status === "done").length;
+  const doneCount = orders.filter(o => o.kitchenReady).length;
 
   // Keep focused index in bounds when orders change
   useEffect(() => {
@@ -969,7 +1041,7 @@ function KitchenScreen({ lang, menu }) {
           updateOrderStatus(order.firestoreId, "in_progress");
           flash("🔥 Empezando...", "#D97706");
         } else if (order.status === "in_progress") {
-          updateOrderStatus(order.firestoreId, "done");
+          markKitchenReady(order);
           flash("✓ Listo!", "#15803D");
         }
         break;
@@ -995,9 +1067,6 @@ function KitchenScreen({ lang, menu }) {
         if (!order || order.cancelled) return;
         if (order.status === "in_progress") {
           updateOrderStatus(order.firestoreId, "new");
-          flash("↩ Deshecho", "#D97706");
-        } else if (order.status === "done") {
-          updateOrderStatus(order.firestoreId, "in_progress");
           flash("↩ Deshecho", "#D97706");
         }
         break;
@@ -1028,7 +1097,6 @@ function KitchenScreen({ lang, menu }) {
         e.preventDefault();
         if (!order || order.cancelled) return;
         if (order.status === "in_progress") { updateOrderStatus(order.firestoreId, "new"); flash("↩ Deshecho", "#D97706"); }
-        else if (order.status === "done")   { updateOrderStatus(order.firestoreId, "in_progress"); flash("↩ Deshecho", "#D97706"); }
         break;
       }
       case "Escape":   { e.preventDefault(); setFocusedIndex(0); break; }
@@ -1218,7 +1286,7 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
               </button>
             )}
             {order.status === "in_progress" && (
-              <button style={S.btnDone} onClick={() => updateOrderStatus(order.firestoreId, "done")}>
+              <button style={S.btnDone} onClick={() => markDrinksReady(order)}>
                 ✓ {t.markDone}
               </button>
             )}
@@ -1250,7 +1318,7 @@ function DrinksStationScreen({ lang, menu }) {
   const catNameById = {};
   if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name[lang] || c.name.en || ""; });
 
-  const active  = orders.filter(o => o.status !== "done" && orderHasDrinksItems(o));
+  const active  = orders.filter(o => !o.drinksReady && orderHasDrinksItems(o));
   const visible = active.slice(0, MAX_VISIBLE);
   const queued  = active.slice(MAX_VISIBLE);
 
@@ -1276,7 +1344,7 @@ function DrinksStationScreen({ lang, menu }) {
         e.preventDefault();
         if (!order || order.cancelled) return;
         if (order.status === "new") { updateOrderStatus(order.firestoreId, "in_progress"); flash("🔥 Empezando...", "#D97706"); }
-        else if (order.status === "in_progress") { updateOrderStatus(order.firestoreId, "done"); flash("✓ Listo!", "#15803D"); }
+        else if (order.status === "in_progress") { markDrinksReady(order); flash("✓ Listo!", "#15803D"); }
         break;
       }
       case "+": { e.preventDefault(); setFocusedIndex(i => Math.min(i + 1, visible.length - 1)); break; }
@@ -1353,6 +1421,219 @@ function DrinksStationScreen({ lang, menu }) {
               </span>
               <span style={S.queueOrderTime}>{elapsed(order.timestamp)}</span>
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// EXPO TICKET
+// ============================================================
+function ExpoTicket({ order, catNameById }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick(n => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const getCat = (item) => item.catName || catNameById?.[item.categoryId] || "";
+  const kitchenItems = order.items?.filter(i => !isKitchenDimmed(i.name, getCat(i))) || [];
+  const drinksItems  = order.items?.filter(i => getDrinksRule(i.name, getCat(i))) || [];
+  const hasKitchen = kitchenItems.length > 0;
+  const hasDrinks  = drinksItems.length > 0;
+  const kitchenDone = !hasKitchen || !!order.kitchenReady;
+  const drinksDone  = !hasDrinks  || !!order.drinksReady;
+  const allDone = kitchenDone && drinksDone;
+
+  const elapsedSecs = Math.floor((Date.now() - order.timestamp) / 1000);
+  const isUrgent  = elapsedSecs > 600;
+  const isWarning = elapsedSecs > 300;
+  const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
+
+  return (
+    <div
+      className={allDone ? "expo-ticket-ready" : ""}
+      style={{
+        background: "#FFFFFF",
+        border: allDone ? "3px solid #15803D" : "1.5px solid #E0D8C4",
+        borderRadius: 12,
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        transition: "border-color 0.3s, box-shadow 0.3s",
+        boxShadow: allDone ? "0 4px 20px rgba(21,128,61,0.3)" : "0 2px 8px rgba(0,0,0,0.06)",
+      }}
+    >
+      {/* Header */}
+      <div style={{ background: allDone ? "#DCFCE7" : "#F5EFE0", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.18em", textTransform: "uppercase" }}>
+            {order.isToGo ? "Para Llevar" : "Mesa"}
+          </div>
+          <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : "#1A1A1A" }}>
+            {order.isToGo ? order.toGoName : order.table}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#BE202E", letterSpacing: "0.05em" }}>#{order.id}</div>
+          <div style={{ fontSize: 14, fontWeight: 900, color: timerColor, marginTop: 2 }}>⏱ {elapsed(order.timestamp)}</div>
+        </div>
+      </div>
+
+      {order.modified && <div style={{ background: "#7C3AED", color: "#fff", fontSize: 10, fontWeight: 900, padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em" }}>⚡ MODIFICADA</div>}
+
+      {/* Station columns */}
+      <div style={{ display: "flex", flex: 1, minHeight: 100 }}>
+        {hasKitchen && (
+          <div style={{ flex: 1, padding: "10px 12px", background: order.kitchenReady ? "#F0FDF4" : "#FFFBEB", borderRight: hasDrinks ? "1px solid #E0D8C4" : "none" }}>
+            <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: order.kitchenReady ? "#15803D" : "#D97706", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              🍳 COCINA
+              {order.kitchenReady && <span>✅</span>}
+            </div>
+            {kitchenItems.map((item, i) => (
+              <div key={i} style={{ fontSize: 13, fontWeight: 700, color: order.kitchenReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.kitchenReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3 }}>
+                <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}
+              </div>
+            ))}
+            <div style={{ marginTop: 8, background: order.kitchenReady ? "#DCFCE7" : order.status === "in_progress" ? "#FEF3C7" : "#F5F3F0", color: order.kitchenReady ? "#15803D" : order.status === "in_progress" ? "#D97706" : "#9CA3AF", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 800, textAlign: "center", letterSpacing: "0.05em" }}>
+              {order.kitchenReady ? "✅ LISTO" : order.status === "in_progress" ? "🔥 COCINANDO" : "⏳ EN COLA"}
+            </div>
+          </div>
+        )}
+
+        {hasDrinks && (
+          <div style={{ flex: 1, padding: "10px 12px", background: order.drinksReady ? "#F0FDF4" : "#F5F3FF" }}>
+            <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: order.drinksReady ? "#15803D" : "#7C3AED", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              🥤 BEBIDAS
+              {order.drinksReady && <span>✅</span>}
+            </div>
+            {drinksItems.map((item, i) => (
+              <div key={i} style={{ fontSize: 13, fontWeight: 700, color: order.drinksReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.drinksReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3 }}>
+                <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}
+              </div>
+            ))}
+            <div style={{ marginTop: 8, background: order.drinksReady ? "#DCFCE7" : "#EDE9FE", color: order.drinksReady ? "#15803D" : "#7C3AED", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 800, textAlign: "center", letterSpacing: "0.05em" }}>
+              {order.drinksReady ? "✅ LISTO" : "⏳ PREPARANDO"}
+            </div>
+          </div>
+        )}
+
+        {!hasKitchen && !hasDrinks && (
+          <div style={{ flex: 1, padding: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {order.items?.map((item, i) => (
+              <div key={i} style={{ fontSize: 13, fontWeight: 700, color: "#1A1A1A", marginBottom: 3 }}>
+                {item.qty}× {item.name}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Notes */}
+      {order.note && (
+        <div style={{ padding: "5px 12px", background: "#FFFBEB", borderTop: "1px solid #E0D8C4", fontSize: 11, color: "#666", fontStyle: "italic" }}>
+          📝 {order.note}
+        </div>
+      )}
+
+      {/* Footer: status / bump */}
+      <div style={{ padding: "10px 14px", background: allDone ? "#15803D" : "#F5F3F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, borderTop: allDone ? "none" : "1px solid #E0D8C4" }}>
+        {allDone ? (
+          <>
+            <div style={{ fontSize: 13, fontWeight: 900, color: "#FFFFFF", letterSpacing: "0.04em" }}>
+              🚀 LISTO PARA ENTREGAR
+            </div>
+            <button
+              onClick={() => bumpOrder(order)}
+              style={{ background: "#FFFFFF", color: "#15803D", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 900, cursor: "pointer", letterSpacing: "0.06em", whiteSpace: "nowrap", flexShrink: 0 }}
+            >
+              BUMP ✓
+            </button>
+          </>
+        ) : (
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#9CA3AF", width: "100%", textAlign: "center" }}>
+            {!kitchenDone && !drinksDone
+              ? "Esperando Cocina y Bebidas"
+              : !kitchenDone
+              ? "Esperando Cocina..."
+              : "Esperando Bebidas..."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// EXPO SCREEN
+// ============================================================
+function ExpoScreen({ menu }) {
+  const [orders, setOrders] = useState([]);
+
+  useEffect(() => {
+    const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
+    return onSnapshot(q, snap => {
+      setOrders(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
+    });
+  }, []);
+
+  // Auto-complete orders that have been allReady for >90s but weren't bumped
+  useEffect(() => {
+    const stale = orders.filter(o => o.allReady && o.allReadyAt && Date.now() - o.allReadyAt > 90000);
+    stale.forEach(o => bumpOrder(o));
+  }, [orders]);
+
+  const catNameById = {};
+  if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name.es || c.name.en || ""; });
+
+  const isOrderReady = (o) => {
+    const hasK = orderHasKitchenItems(o);
+    const hasD = orderHasDrinksItems(o);
+    return (!hasK || !!o.kitchenReady) && (!hasD || !!o.drinksReady);
+  };
+
+  const readyOrders  = orders.filter(isOrderReady);
+  const activeOrders = orders.filter(o => !isOrderReady(o));
+  const cols = Math.min(Math.max(orders.length, 1), 4);
+
+  return (
+    <div style={S.kitchenRoot}>
+      <div style={S.kitchenHeader}>
+        <div style={S.kitchenHeaderLeft}>
+          <span style={S.kitchenTitle}>🎯 Expo / Entrega</span>
+          {readyOrders.length > 0 && (
+            <span className="expo-badge-pulse" style={{ ...S.queuePill, background: "#15803D" }}>
+              {readyOrders.length} LISTA{readyOrders.length > 1 ? "S" : ""}
+            </span>
+          )}
+        </div>
+        <div style={S.kitchenStats}>
+          <span style={S.statPillRed}>{activeOrders.length} en proceso</span>
+          <span style={S.statPillGreen}>{readyOrders.length} lista{readyOrders.length !== 1 ? "s" : ""}</span>
+        </div>
+      </div>
+
+      {orders.length === 0 ? (
+        <div style={S.kitchenEmpty}>
+          <div style={S.emptyCheck}>
+            <div style={S.emptyCheckInner}>
+              <div style={S.emptyCheckTitle}>EXPO</div>
+              <div style={S.emptyCheckmark}>✓</div>
+              <div style={S.emptyCheckSub}>Todo al día</div>
+              <div style={S.emptyCheckSubSmall}>Sin órdenes pendientes</div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 14, padding: 16, alignItems: "start", overflowY: "auto" }}>
+          {/* Ready orders first (at top) */}
+          {readyOrders.map(order => (
+            <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} />
+          ))}
+          {activeOrders.map(order => (
+            <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} />
           ))}
         </div>
       )}
@@ -1787,6 +2068,72 @@ function HistoryScreen({ lang }) {
 }
 
 // ============================================================
+// HISTORY PIN MODAL
+// ============================================================
+const HISTORY_PIN = "1234";
+
+function PinModal({ onSuccess, onClose }) {
+  const [pin, setPin] = useState("");
+  const [shaking, setShaking] = useState(false);
+
+  function handleDigit(d) {
+    if (pin.length >= 4) return;
+    const next = pin + d;
+    setPin(next);
+    if (next.length === 4) {
+      if (next === HISTORY_PIN) {
+        setTimeout(onSuccess, 200);
+      } else {
+        setShaking(true);
+        setTimeout(() => { setPin(""); setShaking(false); }, 700);
+      }
+    }
+  }
+
+  function handleBack() { setPin(p => p.slice(0, -1)); }
+
+  const KEYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, "⌫"];
+
+  return (
+    <div style={S.modalOverlay} onClick={onClose}>
+      <div style={{ background: "#1E293B", borderRadius: 20, padding: "32px 28px", width: 280, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 11, fontWeight: 900, color: "#64748B", letterSpacing: "0.2em", marginBottom: 24 }}>🔒 HISTORIAL — ACCESO RESTRINGIDO</div>
+        <div style={{ display: "flex", justifyContent: "center", gap: 14, marginBottom: 28, ...(shaking ? { animation: "shake 0.5s ease" } : {}) }}>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} style={{ width: 16, height: 16, borderRadius: "50%", background: shaking ? "#BE202E" : pin.length > i ? "#FFFFFF" : "#334155", transition: "background 0.15s" }} />
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+          {KEYS.map((k, i) => (
+            <button
+              key={i}
+              disabled={k === null}
+              onClick={() => k === "⌫" ? handleBack() : k !== null && handleDigit(String(k))}
+              style={{
+                background: k === null ? "transparent" : k === "⌫" ? "#1E293B" : "#334155",
+                border: k === "⌫" ? "1px solid #475569" : "none",
+                borderRadius: 12,
+                color: "#FFFFFF",
+                fontSize: k === "⌫" ? 18 : 22,
+                fontWeight: 700,
+                padding: "15px 0",
+                cursor: k === null ? "default" : "pointer",
+                transition: "background 0.1s",
+              }}
+            >
+              {k === null ? "" : k}
+            </button>
+          ))}
+        </div>
+        <button onClick={onClose} style={{ marginTop: 20, background: "none", border: "none", color: "#475569", fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.08em" }}>
+          CANCELAR
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // ROOT APP
 // ============================================================
 export default function App() {
@@ -1799,7 +2146,9 @@ export default function App() {
   const [menu, setMenu] = useState(null);
   const [lang, setLang] = useState("es");
   const [activeOrders, setActiveOrders] = useState(0);
+  const [readyCount, setReadyCount] = useState(0);
   const [translating, setTranslating] = useState(false);
+  const [pinOpen, setPinOpen] = useState(false);
   const translationCache = useRef({});
   const t = T[lang];
 
@@ -1833,7 +2182,13 @@ export default function App() {
   useEffect(() => {
     const q = query(collection(db, "orders"));
     const unsub = onSnapshot(q, (snapshot) => {
-      setActiveOrders(snapshot.docs.filter(d => d.data().status !== "done").length);
+      const docs = snapshot.docs.map(d => d.data());
+      setActiveOrders(docs.length);
+      setReadyCount(docs.filter(o => {
+        const hasK = o.items?.some(i => !isKitchenDimmed(i.name, i.catName || ""));
+        const hasD = orderHasDrinksItems(o);
+        return (!hasK || !!o.kitchenReady) && (!hasD || !!o.drinksReady);
+      }).length);
     });
     return unsub;
   }, []);
@@ -1847,6 +2202,7 @@ export default function App() {
 
   return (
     <div style={S.appRoot}>
+      {pinOpen && <PinModal onSuccess={() => { setPinOpen(false); setView("history"); }} onClose={() => setPinOpen(false)} />}
       <div style={S.nav}>
         <div style={S.navLeft}>
           <button style={{ ...S.navBtn, ...((view === "tables" || view === "waiter") ? S.navBtnActive : {}) }} onClick={() => { setOrderContext(null); setView("tables"); }}>🍽️ {t.orderStation}</button>
@@ -1854,11 +2210,25 @@ export default function App() {
             👨‍🍳 {t.kitchenDisplay}
             {activeOrders > 0 && <span style={S.navBadge}>{activeOrders}</span>}
           </button>
-          <button style={{ ...S.navBtn, ...(view === "history" ? S.navBtnActive : {}) }} onClick={() => setView("history")}>📊 {t.orderHistory}</button>
           <button style={{ ...S.navBtn, ...(view === "drinks" ? S.navBtnActive : {}), ...(view === "drinks" ? { color: "#7C3AED", borderBottom: "3px solid #7C3AED" } : {}) }} onClick={() => setView("drinks")}>🥤 Bebidas/Sides</button>
+          <button style={{ ...S.navBtn, ...(view === "expo" ? S.navBtnActive : {}), ...(view === "expo" ? { color: "#15803D", borderBottom: "3px solid #15803D" } : {}) }} onClick={() => setView("expo")}>
+            🎯 {t.expoDisplay}
+            {readyCount > 0 && (
+              <span className="expo-badge-pulse" style={{ ...S.navBadge, background: "#15803D" }}>
+                {readyCount}
+              </span>
+            )}
+          </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {translating && <span style={S.translatingPill}>🌐 {t.translating}</span>}
+          <button
+            style={{ ...S.langBtn, ...(view === "history" ? { background: "#BE202E", color: "#fff", border: "1px solid #BE202E" } : {}) }}
+            onClick={() => view === "history" ? setView("tables") : setPinOpen(true)}
+            title="Historial (restringido)"
+          >
+            🔒
+          </button>
           <button style={S.langBtn} onClick={() => setLang(l => l === "es" ? "en" : "es")}>{lang === "es" ? "🇺🇸 EN" : "🇲🇽 ES"}</button>
         </div>
       </div>
@@ -1888,6 +2258,7 @@ export default function App() {
       {view === "kitchen" && <KitchenScreen lang={lang} menu={menu} />}
       {view === "history" && <HistoryScreen lang={lang} />}
       {view === "drinks" && <DrinksStationScreen lang={lang} menu={menu} />}
+      {view === "expo" && <ExpoScreen menu={menu} />}
     </div>
   );
 }
