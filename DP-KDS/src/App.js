@@ -104,6 +104,9 @@ const T = {
     waitingKitchen: "Esperando Cocina...",
     waitingDrinks: "Esperando Bebidas...",
     waitingBoth: "Esperando Cocina y Bebidas",
+    tabDrinks: "Bebidas",
+    tabFood: "Comida",
+    backToCategories: "← Categorías",
   },
   en: {
     orderStation: "Order Station",
@@ -184,6 +187,9 @@ const T = {
     waitingKitchen: "Waiting on Kitchen...",
     waitingDrinks: "Waiting on Drinks...",
     waitingBoth: "Waiting on Kitchen & Drinks",
+    tabDrinks: "Drinks",
+    tabFood: "Food",
+    backToCategories: "← Categories",
   },
 };
 
@@ -1378,10 +1384,10 @@ function DrinksStationScreen({ lang, menu }) {
 
       {/* Color legend */}
       <div style={{ display: "flex", gap: 16, padding: "6px 16px", background: "#1E293B", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, color: "#C4B5FD", fontWeight: 800 }}>🟣 BEBIDA NO ALC.</span>
-        <span style={{ fontSize: 11, color: "#FCA5A5", fontWeight: 800 }}>🔴 CALDO</span>
-        <span style={{ fontSize: 11, color: "#FCD34D", fontWeight: 800 }}>🟤 PARA LLEVAR</span>
-        <span style={{ fontSize: 11, color: "#86EFAC", fontWeight: 800 }}>🟢 GUACAMOLE</span>
+        <span style={{ fontSize: 44, color: "#C4B5FD", fontWeight: 800 }}>🟣 BEBIDA NO ALC.</span>
+        <span style={{ fontSize: 44, color: "#FCA5A5", fontWeight: 800 }}>🔴 CALDO</span>
+        <span style={{ fontSize: 44, color: "#FCD34D", fontWeight: 800 }}>🟤 PARA LLEVAR</span>
+        <span style={{ fontSize: 44, color: "#86EFAC", fontWeight: 800 }}>🟢 GUACAMOLE</span>
       </div>
 
       {actionFlash && (
@@ -1469,35 +1475,35 @@ function ExpoTicket({ order, catNameById }) {
       {/* Header */}
       <div style={{ background: allDone ? "#DCFCE7" : "#F5EFE0", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <div style={{ fontSize: 9, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.18em", textTransform: "uppercase" }}>
+          <div style={{ fontSize: 36, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.18em", textTransform: "uppercase" }}>
             {order.isToGo ? "Para Llevar" : "Mesa"}
           </div>
-          <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : "#1A1A1A" }}>
+          <div style={{ fontSize: 104, fontWeight: 900, lineHeight: 1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : "#1A1A1A", textTransform: "uppercase" }}>
             {order.isToGo ? order.toGoName : order.table}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 10, fontWeight: 800, color: "#BE202E", letterSpacing: "0.05em" }}>#{order.id}</div>
-          <div style={{ fontSize: 14, fontWeight: 900, color: timerColor, marginTop: 2 }}>⏱ {elapsed(order.timestamp)}</div>
+          <div style={{ fontSize: 40, fontWeight: 800, color: "#BE202E", letterSpacing: "0.05em" }}>#{order.id}</div>
+          <div style={{ fontSize: 56, fontWeight: 900, color: timerColor, marginTop: 2 }}>⏱ {elapsed(order.timestamp)}</div>
         </div>
       </div>
 
-      {order.modified && <div style={{ background: "#7C3AED", color: "#fff", fontSize: 10, fontWeight: 900, padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em" }}>⚡ MODIFICADA</div>}
+      {order.modified && <div style={{ background: "#7C3AED", color: "#fff", fontSize: 40, fontWeight: 900, padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>⚡ MODIFICADA</div>}
 
       {/* Station columns */}
       <div style={{ display: "flex", flex: 1, minHeight: 100 }}>
         {hasKitchen && (
           <div style={{ flex: 1, padding: "10px 12px", background: order.kitchenReady ? "#F0FDF4" : "#FFFBEB", borderRight: hasDrinks ? "1px solid #E0D8C4" : "none" }}>
-            <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: order.kitchenReady ? "#15803D" : "#D97706", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 40, fontWeight: 900, letterSpacing: "0.1em", color: order.kitchenReady ? "#15803D" : "#D97706", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", textTransform: "uppercase" }}>
               🍳 COCINA
               {order.kitchenReady && <span>✅</span>}
             </div>
             {kitchenItems.map((item, i) => (
-              <div key={i} style={{ fontSize: 13, fontWeight: 700, color: order.kitchenReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.kitchenReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3 }}>
+              <div key={i} style={{ fontSize: 52, fontWeight: 700, color: order.kitchenReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.kitchenReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase" }}>
                 <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}
               </div>
             ))}
-            <div style={{ marginTop: 8, background: order.kitchenReady ? "#DCFCE7" : order.status === "in_progress" ? "#FEF3C7" : "#F5F3F0", color: order.kitchenReady ? "#15803D" : order.status === "in_progress" ? "#D97706" : "#9CA3AF", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 800, textAlign: "center", letterSpacing: "0.05em" }}>
+            <div style={{ marginTop: 8, background: order.kitchenReady ? "#DCFCE7" : order.status === "in_progress" ? "#FEF3C7" : "#F5F3F0", color: order.kitchenReady ? "#15803D" : order.status === "in_progress" ? "#D97706" : "#9CA3AF", borderRadius: 6, padding: "4px 8px", fontSize: 44, fontWeight: 800, textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" }}>
               {order.kitchenReady ? "✅ LISTO" : order.status === "in_progress" ? "🔥 COCINANDO" : "⏳ EN COLA"}
             </div>
           </div>
@@ -1505,16 +1511,16 @@ function ExpoTicket({ order, catNameById }) {
 
         {hasDrinks && (
           <div style={{ flex: 1, padding: "10px 12px", background: order.drinksReady ? "#F0FDF4" : "#F5F3FF" }}>
-            <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: order.drinksReady ? "#15803D" : "#7C3AED", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 40, fontWeight: 900, letterSpacing: "0.1em", color: order.drinksReady ? "#15803D" : "#7C3AED", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", textTransform: "uppercase" }}>
               🥤 BEBIDAS
               {order.drinksReady && <span>✅</span>}
             </div>
             {drinksItems.map((item, i) => (
-              <div key={i} style={{ fontSize: 13, fontWeight: 700, color: order.drinksReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.drinksReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3 }}>
+              <div key={i} style={{ fontSize: 52, fontWeight: 700, color: order.drinksReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.drinksReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase" }}>
                 <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}
               </div>
             ))}
-            <div style={{ marginTop: 8, background: order.drinksReady ? "#DCFCE7" : "#EDE9FE", color: order.drinksReady ? "#15803D" : "#7C3AED", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 800, textAlign: "center", letterSpacing: "0.05em" }}>
+            <div style={{ marginTop: 8, background: order.drinksReady ? "#DCFCE7" : "#EDE9FE", color: order.drinksReady ? "#15803D" : "#7C3AED", borderRadius: 6, padding: "4px 8px", fontSize: 44, fontWeight: 800, textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" }}>
               {order.drinksReady ? "✅ LISTO" : "⏳ PREPARANDO"}
             </div>
           </div>
@@ -1523,7 +1529,7 @@ function ExpoTicket({ order, catNameById }) {
         {!hasKitchen && !hasDrinks && (
           <div style={{ flex: 1, padding: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
             {order.items?.map((item, i) => (
-              <div key={i} style={{ fontSize: 13, fontWeight: 700, color: "#1A1A1A", marginBottom: 3 }}>
+              <div key={i} style={{ fontSize: 52, fontWeight: 700, color: "#1A1A1A", marginBottom: 3, textTransform: "uppercase" }}>
                 {item.qty}× {item.name}
               </div>
             ))}
@@ -1533,7 +1539,7 @@ function ExpoTicket({ order, catNameById }) {
 
       {/* Notes */}
       {order.note && (
-        <div style={{ padding: "5px 12px", background: "#FFFBEB", borderTop: "1px solid #E0D8C4", fontSize: 11, color: "#666", fontStyle: "italic" }}>
+        <div style={{ padding: "5px 12px", background: "#FFFBEB", borderTop: "1px solid #E0D8C4", fontSize: 44, color: "#666", fontStyle: "italic", textTransform: "uppercase" }}>
           📝 {order.note}
         </div>
       )}
@@ -1542,18 +1548,18 @@ function ExpoTicket({ order, catNameById }) {
       <div style={{ padding: "10px 14px", background: allDone ? "#15803D" : "#F5F3F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, borderTop: allDone ? "none" : "1px solid #E0D8C4" }}>
         {allDone ? (
           <>
-            <div style={{ fontSize: 13, fontWeight: 900, color: "#FFFFFF", letterSpacing: "0.04em" }}>
+            <div style={{ fontSize: 52, fontWeight: 900, color: "#FFFFFF", letterSpacing: "0.04em", textTransform: "uppercase" }}>
               🚀 LISTO PARA ENTREGAR
             </div>
             <button
               onClick={() => bumpOrder(order)}
-              style={{ background: "#FFFFFF", color: "#15803D", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 900, cursor: "pointer", letterSpacing: "0.06em", whiteSpace: "nowrap", flexShrink: 0 }}
+              style={{ background: "#FFFFFF", color: "#15803D", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 52, fontWeight: 900, cursor: "pointer", letterSpacing: "0.06em", whiteSpace: "nowrap", flexShrink: 0, textTransform: "uppercase" }}
             >
               BUMP ✓
             </button>
           </>
         ) : (
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#9CA3AF", width: "100%", textAlign: "center" }}>
+          <div style={{ fontSize: 48, fontWeight: 700, color: "#9CA3AF", width: "100%", textAlign: "center", textTransform: "uppercase" }}>
             {!kitchenDone && !drinksDone
               ? "Esperando Cocina y Bebidas"
               : !kitchenDone
@@ -1731,9 +1737,45 @@ function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo }) {
 // ============================================================
 // WAITER SCREEN
 // ============================================================
+const DRINK_CAT_KEYWORDS = [
+  "beverage", "bebida", "drink", "agua", "happy hour",
+  "beer", "cerveza", "liquor", "licor", "cocktail", "coctel", "cóctel",
+  "wine", "vino", "bar", "soda", "juice", "jugo",
+];
+
+function isDrinkCategory(cat) {
+  const name = (cat.name.en || cat.name.es || "").toLowerCase();
+  return DRINK_CAT_KEYWORDS.some(k => name.includes(k));
+}
+
+function getCategoryEmoji(cat) {
+  const name = (cat.name.en || cat.name.es || "").toLowerCase();
+  if (name.includes("cocktail") || name.includes("coctel") || name.includes("cóctel")) return "🍹";
+  if (name.includes("beer") || name.includes("cerveza")) return "🍺";
+  if (name.includes("wine") || name.includes("vino")) return "🍷";
+  if (name.includes("liquor") || name.includes("licor")) return "🥃";
+  if (name.includes("beverage") || name.includes("bebida") || name.includes("drink")) return "🥤";
+  if (name.includes("agua") || name.includes("water")) return "💧";
+  if (name.includes("juice") || name.includes("jugo")) return "🧃";
+  if (name.includes("soda")) return "🥤";
+  if (name.includes("appetizer") || name.includes("starter") || name.includes("entrada")) return "🥗";
+  if (name.includes("soup") || name.includes("sopa")) return "🍲";
+  if (name.includes("taco")) return "🌮";
+  if (name.includes("burrito")) return "🌯";
+  if (name.includes("fajita")) return "🥘";
+  if (name.includes("dessert") || name.includes("postre")) return "🍰";
+  if (name.includes("breakfast") || name.includes("desayuno")) return "🍳";
+  if (name.includes("side") || name.includes("extra")) return "🥙";
+  if (name.includes("kid")) return "👧";
+  if (name.includes("festival")) return "🎉";
+  if (name.includes("main") || name.includes("dinner") || name.includes("plato")) return "🍽️";
+  return "🍴";
+}
+
 function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType, onBack }) {
   const t = T[lang];
-  const [activeCategory, setActiveCategory] = useState(menu.categories[0]?.id);
+  const [activeTab, setActiveTab] = useState("drinks");
+  const [activeCategory, setActiveCategory] = useState(null);
   const [cart, setCart] = useState([]);
   const [orderType, setOrderType] = useState(initialOrderType || "table");
   const [tableNum, setTableNum] = useState(initialTable || "");
@@ -1755,7 +1797,10 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     return unsub;
   }, []);
 
-  const filteredItems = menu.items.filter(i => i.categoryId === activeCategory);
+  const drinkCategories = menu.categories.filter(isDrinkCategory);
+  const foodCategories = menu.categories.filter(c => !isDrinkCategory(c));
+  const tabCategories = activeTab === "drinks" ? drinkCategories : foodCategories;
+  const filteredItems = activeCategory ? menu.items.filter(i => i.categoryId === activeCategory) : [];
   const cartTotal = cart.reduce((sum, i) => sum + (i.price + (i.modifiers?.reduce((ms, m) => ms + m.price, 0) ?? 0)) * i.qty, 0);
   const isEditing = !!editingOrder;
   const identifier = orderType === "togo" ? toGoName : tableNum;
@@ -1907,85 +1952,124 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           ))}
         </div>
       )}
-      <div style={S.waiterBody}>
-        <div style={S.catRow}>
-          {menu.categories.map(cat => (
-            <button key={cat.id} style={{ ...S.catBtn, ...(activeCategory === cat.id ? S.catBtnActive : {}) }} onClick={() => setActiveCategory(cat.id)}>
-              {cat.name[lang] || cat.name.en}
-            </button>
-          ))}
-        </div>
-        <div style={S.menuGrid}>
-          {filteredItems.map(item => {
-            const inCart = cart.find(c => c.id === item.id);
-            const displayName = getItemDisplayName(item);
-            return (
-              <button key={item.id} style={{ ...S.menuItem, ...(inCart ? S.menuItemActive : {}) }} onClick={() => handleItemTap(item)}>
-                <span style={S.menuEmoji}>{item.emoji}</span>
-                <span style={S.menuName}>{displayName}</span>
-                <span style={S.menuPrice}>{fmt(item.price)}</span>
-                {inCart && <span style={S.menuBadge}>×{inCart.qty}</span>}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div style={S.cartPanel}>
-        <div style={S.cartTitle}>{t.orderSummary}</div>
-        {cart.filter(i => i.qty > 0).length === 0 && isEditing ? (
-          <div style={S.cartCancelWarning}>🚫 All items removed — this will cancel the order</div>
-        ) : cart.length === 0 ? (
-          <div style={S.cartEmpty}>{t.tapToAdd}</div>
-        ) : (
-          <div style={S.cartItems}>
-            {cart.map(item => (
-              <div key={item.id} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none" }}>
-                <div style={{ flex: 1 }}>
-                  <span style={S.cartName}>{item.emoji} {item.displayName || item.name}</span>
-                  {item.modifiers && item.modifiers.length > 0 && (
-                    <div style={S.cartModifiers}>
-                      {item.modifiers.map((mod, mi) => {
-                        const isRemoval = REMOVE_TRIGGERS.some(w => mod.name.toLowerCase().includes(w));
-                        return (
-                          <span key={mi} style={{ ...S.cartModChip, color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800 }}>
-                            {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}{mod.price > 0 ? ` (${fmt(mod.price)})` : ""}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {item.specialNote && (
-                    <div style={S.cartSpecialNoteBlock}>
-                      {parseSpecialNote(item.specialNote).map((seg, si) => (
-                        <div key={si} style={{ ...S.cartSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
-                          {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div style={S.cartQtyRow}>
-                  <button style={S.qtyBtn} onClick={() => removeFromCart(item.id)}>−</button>
-                  <span style={S.cartQty}>{item.qty}</span>
-                  <button style={S.qtyBtn} onClick={() => handleItemTap(item)}>+</button>
-                  <span style={S.cartItemTotal}>{fmt((item.price + (item.modifiers?.reduce((s, m) => s + m.price, 0) ?? 0)) * item.qty)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        <textarea style={S.noteField} placeholder={t.specialInstructions} value={note} onChange={e => setNote(e.target.value)} rows={2} />
-        <div style={S.cartFooter}>
-          <span style={S.cartTotal}>{fmt(cartTotal)}</span>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {isEditing && <button style={S.cancelBtn} onClick={cancelEdit}>{t.cancelEdit}</button>}
-            {isEditing && <button style={S.cancelOrderBtn} onClick={() => setCart(cart.map(i => ({ ...i, qty: 0 })))}>🚫 Cancel Order</button>}
+      <div style={S.waiterMain}>
+        {/* LEFT: tab + category/item navigation */}
+        <div style={S.menuPanel}>
+          <div style={S.tabBar}>
             <button
-              style={{ ...S.sendBtn, ...(isCancellingOrder ? S.sendBtnCancel : isEditing ? S.sendBtnEdit : {}), ...(sent ? S.sendBtnSent : {}), ...(!canSend ? S.sendBtnDisabled : {}) }}
-              onClick={handleSend} disabled={sending || !canSend}
+              style={{ ...S.tabBtn, ...(activeTab === "drinks" ? S.tabBtnActive : {}) }}
+              onClick={() => { setActiveTab("drinks"); setActiveCategory(null); }}
             >
-              {sent ? (isEditing ? t.updated : t.sent) : sending ? t.sending : isCancellingOrder ? "🚫 Confirm Cancel" : isEditing ? t.updateOrder : t.sendToKitchen}
+              🥤 {t.tabDrinks}
             </button>
+            <button
+              style={{ ...S.tabBtn, ...(activeTab === "food" ? S.tabBtnActive : {}) }}
+              onClick={() => { setActiveTab("food"); setActiveCategory(null); }}
+            >
+              🍽️ {t.tabFood}
+            </button>
+          </div>
+          <div style={S.catArea}>
+            {!activeCategory ? (
+              <div style={S.categoryGrid}>
+                {tabCategories.map(cat => (
+                  <button key={cat.id} style={S.catTile} onClick={() => setActiveCategory(cat.id)}>
+                    <span style={S.catTileEmoji}>{getCategoryEmoji(cat)}</span>
+                    <span style={S.catTileName}>{cat.name[lang] || cat.name.en}</span>
+                  </button>
+                ))}
+                {tabCategories.length === 0 && (
+                  <div style={{ color: "#BBB", fontSize: 14, padding: 24, gridColumn: "1/-1", textAlign: "center" }}>
+                    {activeTab === "drinks" ? "No drink categories found" : "No food categories found"}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <button style={S.backToCats} onClick={() => setActiveCategory(null)}>
+                  {t.backToCategories}
+                </button>
+                <div style={S.menuGrid}>
+                  {filteredItems.map(item => {
+                    const inCart = cart.find(c => c.id === item.id);
+                    const displayName = getItemDisplayName(item);
+                    return (
+                      <button key={item.id} style={{ ...S.menuItem, ...(inCart ? S.menuItemActive : {}) }} onClick={() => handleItemTap(item)}>
+                        <span style={S.menuEmoji}>{item.emoji}</span>
+                        <span style={S.menuName}>{displayName}</span>
+                        <span style={S.menuPrice}>{fmt(item.price)}</span>
+                        {inCart && <span style={S.menuBadge}>×{inCart.qty}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT: cart */}
+        <div style={S.cartPanel}>
+          <div style={S.cartTitle}>{t.orderSummary}</div>
+          <div style={S.cartScrollArea}>
+            {cart.filter(i => i.qty > 0).length === 0 && isEditing ? (
+              <div style={S.cartCancelWarning}>🚫 All items removed — this will cancel the order</div>
+            ) : cart.length === 0 ? (
+              <div style={S.cartEmpty}>{t.tapToAdd}</div>
+            ) : (
+              <div style={S.cartItems}>
+                {cart.map(item => (
+                  <div key={item.id} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none" }}>
+                    <div style={{ flex: 1 }}>
+                      <span style={S.cartName}>{item.emoji} {item.displayName || item.name}</span>
+                      {item.modifiers && item.modifiers.length > 0 && (
+                        <div style={S.cartModifiers}>
+                          {item.modifiers.map((mod, mi) => {
+                            const isRemoval = REMOVE_TRIGGERS.some(w => mod.name.toLowerCase().includes(w));
+                            return (
+                              <span key={mi} style={{ ...S.cartModChip, color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800 }}>
+                                {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}{mod.price > 0 ? ` (${fmt(mod.price)})` : ""}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {item.specialNote && (
+                        <div style={S.cartSpecialNoteBlock}>
+                          {parseSpecialNote(item.specialNote).map((seg, si) => (
+                            <div key={si} style={{ ...S.cartSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
+                              {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div style={S.cartQtyRow}>
+                      <button style={S.qtyBtn} onClick={() => removeFromCart(item.id)}>−</button>
+                      <span style={S.cartQty}>{item.qty}</span>
+                      <button style={S.qtyBtn} onClick={() => handleItemTap(item)}>+</button>
+                      <span style={S.cartItemTotal}>{fmt((item.price + (item.modifiers?.reduce((s, m) => s + m.price, 0) ?? 0)) * item.qty)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={S.cartFooterArea}>
+            <textarea style={S.noteField} placeholder={t.specialInstructions} value={note} onChange={e => setNote(e.target.value)} rows={2} />
+            <div style={S.cartFooter}>
+              <span style={S.cartTotal}>{fmt(cartTotal)}</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {isEditing && <button style={S.cancelBtn} onClick={cancelEdit}>{t.cancelEdit}</button>}
+                {isEditing && <button style={S.cancelOrderBtn} onClick={() => setCart(cart.map(i => ({ ...i, qty: 0 })))}>🚫 Cancel Order</button>}
+                <button
+                  style={{ ...S.sendBtn, ...(isCancellingOrder ? S.sendBtnCancel : isEditing ? S.sendBtnEdit : {}), ...(sent ? S.sendBtnSent : {}), ...(!canSend ? S.sendBtnDisabled : {}) }}
+                  onClick={handleSend} disabled={sending || !canSend}
+                >
+                  {sent ? (isEditing ? t.updated : t.sent) : sending ? t.sending : isCancellingOrder ? "🚫 Confirm Cancel" : isEditing ? t.updateOrder : t.sendToKitchen}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2339,9 +2423,9 @@ const S = {
 
   // TICKET MODIFIER DISPLAY
   ticketModifiers: { display: "flex", flexDirection: "column", gap: 1, marginTop: 4 },
-  ticketModifierChip: { fontSize: 14, fontStyle: "normal", display: "block" },
+  ticketModifierChip: { fontSize: 56, fontStyle: "normal", display: "block", textTransform: "uppercase" },
   ticketSpecialNoteBlock: { display: "flex", flexDirection: "column", gap: 2, marginTop: 4 },
-  ticketSpecialNoteLine: { fontSize: 14, fontWeight: 800, letterSpacing: "0.02em" },
+  ticketSpecialNoteLine: { fontSize: 56, fontWeight: 800, letterSpacing: "0.02em", textTransform: "uppercase" },
   cartModifiers: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 },
   cartModChip: { fontSize: 11, background: "#F0EDE8", borderRadius: 4, padding: "1px 6px" },
   cartSpecialNoteBlock: { display: "flex", flexDirection: "column", gap: 2, marginTop: 4 },
@@ -2351,59 +2435,59 @@ const S = {
   kitchenRoot: { flex: 1, display: "flex", flexDirection: "column", background: "#F5F3F0", minHeight: "calc(100vh - 53px)" },
   kitchenHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#FFFFFF", borderBottom: "1px solid #E5E0D8", flexWrap: "wrap", gap: 8 },
   kitchenHeaderLeft: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
-  kitchenTitle: { fontSize: 18, fontWeight: 900, letterSpacing: "-0.02em", color: "#1A1A1A" },
-  queuePill: { background: "#D97706", color: "#fff", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 800 },
+  kitchenTitle: { fontSize: 72, fontWeight: 900, letterSpacing: "-0.02em", color: "#1A1A1A", textTransform: "uppercase" },
+  queuePill: { background: "#D97706", color: "#fff", borderRadius: 20, padding: "3px 12px", fontSize: 48, fontWeight: 800, textTransform: "uppercase" },
   kitchenStats: { display: "flex", gap: 8 },
-  statPillRed: { background: "#BE202E", color: "#fff", borderRadius: 20, padding: "5px 14px", fontSize: 13, fontWeight: 800 },
-  statPillGreen: { background: "#15803D", color: "#fff", borderRadius: 20, padding: "5px 14px", fontSize: 13, fontWeight: 800 },
+  statPillRed: { background: "#BE202E", color: "#fff", borderRadius: 20, padding: "5px 14px", fontSize: 52, fontWeight: 800, textTransform: "uppercase" },
+  statPillGreen: { background: "#15803D", color: "#fff", borderRadius: 20, padding: "5px 14px", fontSize: 52, fontWeight: 800, textTransform: "uppercase" },
   kitchenEmpty: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
   emptyCheck: { background: "#FFFFFF", border: "2px solid #E5DFD0", borderRadius: 4, padding: "32px 48px", textAlign: "center", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" },
   emptyCheckInner: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8 },
-  emptyCheckTitle: { fontSize: 11, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.2em" },
-  emptyCheckmark: { fontSize: 64, color: "#15803D", fontWeight: 900, lineHeight: 1 },
-  emptyCheckSub: { fontSize: 24, fontWeight: 900, color: "#1A1A1A" },
-  emptyCheckSubSmall: { fontSize: 14, color: "#888" },
+  emptyCheckTitle: { fontSize: 44, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.2em", textTransform: "uppercase" },
+  emptyCheckmark: { fontSize: 256, color: "#15803D", fontWeight: 900, lineHeight: 1 },
+  emptyCheckSub: { fontSize: 96, fontWeight: 900, color: "#1A1A1A", textTransform: "uppercase" },
+  emptyCheckSubSmall: { fontSize: 56, color: "#888", textTransform: "uppercase" },
   ticketGrid: { flex: 1, display: "grid", gap: 16, padding: "16px", alignItems: "start" },
 
   // TICKET
   ticket: { background: "#FFFDF7", border: "1px solid #E0D8C4", borderRadius: 3, overflow: "hidden", transition: "all 0.3s", fontFamily: "'DM Sans', 'Segoe UI', sans-serif" },
-  cancelledBanner: { background: "#BE202E", color: "#fff", fontWeight: 900, fontSize: 16, padding: "8px 14px", textAlign: "center", letterSpacing: "0.08em" },
-  toGoBanner: { background: "#0369A1", color: "#fff", fontWeight: 900, fontSize: 13, padding: "6px 14px", textAlign: "center", letterSpacing: "0.05em" },
-  modifiedBanner: { background: "#7C3AED", color: "#fff", fontWeight: 900, fontSize: 12, padding: "5px 14px", textAlign: "center", letterSpacing: "0.05em" },
+  cancelledBanner: { background: "#BE202E", color: "#fff", fontWeight: 900, fontSize: 64, padding: "8px 14px", textAlign: "center", letterSpacing: "0.08em", textTransform: "uppercase" },
+  toGoBanner: { background: "#0369A1", color: "#fff", fontWeight: 900, fontSize: 52, padding: "6px 14px", textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" },
+  modifiedBanner: { background: "#7C3AED", color: "#fff", fontWeight: 900, fontSize: 48, padding: "5px 14px", textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" },
   ticketTop: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "10px 14px 8px 14px", background: "#F5EFE0" },
   ticketTopLeft: { flex: 1 },
   ticketTopRight: { textAlign: "right" },
-  guestCheckTitle: { fontSize: 9, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 3 },
-  tableNumberBig: { fontSize: 28, fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em", lineHeight: 1 },
-  toGoNameBig: { fontSize: 21, fontWeight: 900, color: "#0369A1", letterSpacing: "-0.01em", lineHeight: 1.1 },
+  guestCheckTitle: { fontSize: 36, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 3 },
+  tableNumberBig: { fontSize: 112, fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em", lineHeight: 1 },
+  toGoNameBig: { fontSize: 84, fontWeight: 900, color: "#0369A1", letterSpacing: "-0.01em", lineHeight: 1.1, textTransform: "uppercase" },
   ticketMeta: { marginTop: 3 },
-  checkNoLabel: { fontSize: 9, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.15em" },
-  checkNoValue: { fontSize: 19, fontWeight: 900, color: "#BE202E", letterSpacing: "0.05em" },
-  timerBig: { fontSize: 15, fontWeight: 900, marginTop: 3, letterSpacing: "-0.01em" },
+  checkNoLabel: { fontSize: 36, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.15em", textTransform: "uppercase" },
+  checkNoValue: { fontSize: 76, fontWeight: 900, color: "#BE202E", letterSpacing: "0.05em" },
+  timerBig: { fontSize: 60, fontWeight: 900, marginTop: 3, letterSpacing: "-0.01em" },
   ruledLine: { borderBottom: "1px solid #E0D8C4", margin: "0 14px" },
   colHeaders: { display: "flex", padding: "4px 14px", background: "#F5EFE0" },
-  colQty: { width: 42, fontSize: 9, fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em" },
-  colItem: { flex: 1, fontSize: 9, fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em" },
+  colQty: { width: 42, fontSize: 36, fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
+  colItem: { flex: 1, fontSize: 36, fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
   itemsList: { padding: "2px 0" },
   itemRow: { display: "flex", alignItems: "flex-start", padding: "6px 14px", minHeight: 36 },
-  itemQty: { width: 42, fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" },
-  itemName: { fontSize: 17, lineHeight: 1.2 },
-  changeTag: { display: "inline-block", color: "#fff", fontSize: 9, fontWeight: 900, padding: "2px 5px", borderRadius: 4, marginLeft: 7, letterSpacing: "0.06em" },
+  itemQty: { width: 80, fontSize: 80, fontWeight: 900, letterSpacing: "-0.02em" },
+  itemName: { fontSize: 68, lineHeight: 1.2, textTransform: "uppercase" },
+  changeTag: { display: "inline-block", color: "#fff", fontSize: 36, fontWeight: 900, padding: "2px 5px", borderRadius: 4, marginLeft: 7, letterSpacing: "0.06em", textTransform: "uppercase" },
   noteRow: { display: "flex", gap: 7, padding: "6px 14px", alignItems: "flex-start" },
-  noteLabel: { fontSize: 9, fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", minWidth: 40, paddingTop: 2 },
-  noteText: { fontSize: 13, fontWeight: 600, color: "#444", fontStyle: "italic", flex: 1 },
+  noteLabel: { fontSize: 36, fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", minWidth: 40, paddingTop: 2, textTransform: "uppercase" },
+  noteText: { fontSize: 52, fontWeight: 600, color: "#444", fontStyle: "italic", flex: 1, textTransform: "uppercase" },
   ticketFooter: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#F5EFE0", flexWrap: "wrap", gap: 6 },
-  statusStamp: { border: "2px solid", borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 900, letterSpacing: "0.1em" },
+  statusStamp: { border: "2px solid", borderRadius: 4, padding: "2px 8px", fontSize: 44, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase" },
   ticketBtns: { display: "flex", gap: 6, flexWrap: "wrap" },
-  btnStart: { background: "#D97706", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 900, cursor: "pointer" },
-  btnDone: { background: "#15803D", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 900, cursor: "pointer" },
+  btnStart: { background: "#D97706", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 52, fontWeight: 900, cursor: "pointer", textTransform: "uppercase" },
+  btnDone: { background: "#15803D", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 52, fontWeight: 900, cursor: "pointer", textTransform: "uppercase" },
   queueStrip: { background: "#FFFFFF", borderTop: "2px solid #E5E0D8", padding: "8px 16px", display: "flex", alignItems: "center", gap: 12, overflowX: "auto" },
-  queueLabel: { fontSize: 10, fontWeight: 900, color: "#D97706", letterSpacing: "0.15em", whiteSpace: "nowrap" },
+  queueLabel: { fontSize: 40, fontWeight: 900, color: "#D97706", letterSpacing: "0.15em", whiteSpace: "nowrap", textTransform: "uppercase" },
   queueItem: { display: "flex", alignItems: "center", gap: 8, background: "#F5F3F0", border: "1px solid #E5E0D8", borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap" },
-  queueOrderId: { fontSize: 12, fontWeight: 900, color: "#BE202E" },
-  queueOrderTable: { fontSize: 13, fontWeight: 800, color: "#1A1A1A" },
-  queueOrderItems: { fontSize: 12, color: "#888", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" },
-  queueOrderTime: { fontSize: 12, fontWeight: 700, color: "#D97706" },
+  queueOrderId: { fontSize: 48, fontWeight: 900, color: "#BE202E" },
+  queueOrderTable: { fontSize: 52, fontWeight: 800, color: "#1A1A1A", textTransform: "uppercase" },
+  queueOrderItems: { fontSize: 48, color: "#888", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", textTransform: "uppercase" },
+  queueOrderTime: { fontSize: 48, fontWeight: 700, color: "#D97706" },
 
   // WAITER
   waiterRoot: { display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", height: "calc(100vh - 53px)" },
@@ -2427,21 +2511,30 @@ const S = {
   toGoChipSmall: { background: "#E0F2FE", color: "#0369A1", borderRadius: 6, padding: "2px 7px", fontSize: 12, fontWeight: 800 },
   activeOrderItems: { flex: 1, fontSize: 14, color: "#888" },
   activeOrderEdit: { color: "#7C3AED", fontSize: 12, fontWeight: 700 },
-  waiterBody: { flex: 1, overflow: "auto", padding: "12px 14px" },
-  catRow: { display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" },
-  catBtn: { background: "#FFFFFF", border: "1px solid #E5E0D8", color: "#666", borderRadius: 20, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
-  catBtnActive: { background: "#BE202E", border: "1px solid #BE202E", color: "#fff" },
-  menuGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10 },
-  menuItem: { background: "#FFFFFF", border: "2px solid #E5E0D8", borderRadius: 12, padding: "14px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, position: "relative", transition: "border-color 0.15s, box-shadow 0.15s" },
+  waiterMain: { display: "flex", flex: 1, overflow: "hidden" },
+  menuPanel: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" },
+  tabBar: { display: "flex", borderBottom: "2px solid #E5E0D8", background: "#FAFAF8", flexShrink: 0 },
+  tabBtn: { flex: 1, background: "none", border: "none", borderBottom: "3px solid transparent", padding: "16px 0", fontSize: 17, fontWeight: 800, cursor: "pointer", color: "#999", letterSpacing: "0.03em", transition: "color 0.15s, border-color 0.15s" },
+  tabBtnActive: { color: "#BE202E", borderBottom: "3px solid #BE202E", background: "#FFF" },
+  catArea: { flex: 1, overflowY: "auto", padding: "16px" },
+  categoryGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
+  catTile: { background: "#FFFFFF", border: "2px solid #E5E0D8", borderRadius: 16, padding: "28px 16px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, minHeight: 150, transition: "border-color 0.15s, box-shadow 0.15s" },
+  catTileEmoji: { fontSize: 44 },
+  catTileName: { fontSize: 17, fontWeight: 700, textAlign: "center", color: "#1A1A1A", lineHeight: 1.3 },
+  backToCats: { display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#BE202E", fontWeight: 700, fontSize: 14, cursor: "pointer", padding: "10px 0 12px 0", letterSpacing: "0.02em" },
+  menuGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 },
+  menuItem: { background: "#FFFFFF", border: "2px solid #E5E0D8", borderRadius: 14, padding: "18px 12px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 7, position: "relative", transition: "border-color 0.15s, box-shadow 0.15s", minHeight: 120 },
   menuItemActive: { background: "#FFF1F2", border: "2px solid #BE202E", boxShadow: "0 0 0 2px rgba(190,32,46,0.12)" },
-  menuEmoji: { fontSize: 28 },
-  menuName: { fontSize: 12, fontWeight: 600, textAlign: "center", color: "#333", lineHeight: 1.3 },
-  menuPrice: { fontSize: 13, color: "#BE202E", fontWeight: 700 },
-  menuBadge: { position: "absolute", top: 6, right: 6, background: "#BE202E", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 800, padding: "1px 5px" },
+  menuEmoji: { fontSize: 36 },
+  menuName: { fontSize: 14, fontWeight: 600, textAlign: "center", color: "#333", lineHeight: 1.3 },
+  menuPrice: { fontSize: 15, color: "#BE202E", fontWeight: 700 },
+  menuBadge: { position: "absolute", top: 8, right: 8, background: "#BE202E", color: "#fff", borderRadius: 10, fontSize: 11, fontWeight: 800, padding: "2px 6px" },
 
   // CART
-  cartPanel: { background: "#FFFFFF", borderTop: "2px solid #E5E0D8", padding: "12px 14px", maxHeight: "38vh", overflowY: "auto" },
-  cartTitle: { fontSize: 10, fontWeight: 800, color: "#AAA", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8 },
+  cartPanel: { width: 300, flexShrink: 0, background: "#FFFFFF", borderLeft: "2px solid #E5E0D8", display: "flex", flexDirection: "column", overflow: "hidden" },
+  cartScrollArea: { flex: 1, overflowY: "auto", padding: "0 14px" },
+  cartFooterArea: { borderTop: "1px solid #E5E0D8", padding: "10px 14px", flexShrink: 0 },
+  cartTitle: { fontSize: 10, fontWeight: 800, color: "#AAA", letterSpacing: "0.12em", textTransform: "uppercase", padding: "12px 14px 8px", flexShrink: 0 },
   cartEmpty: { color: "#BBB", fontSize: 13, textAlign: "center", padding: "6px 0" },
   cartCancelWarning: { color: "#BE202E", fontSize: 13, fontWeight: 700, textAlign: "center", padding: "8px", background: "#FFF1F2", borderRadius: 8, marginBottom: 8 },
   cartItems: { display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 },
