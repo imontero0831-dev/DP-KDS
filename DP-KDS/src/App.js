@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, doc, onSnapshot,
-  addDoc, updateDoc, deleteDoc, getDoc, query, orderBy, serverTimestamp
+  addDoc, updateDoc, deleteDoc, getDoc, query, orderBy, limit, serverTimestamp
 } from "firebase/firestore";
 
 // ============================================================
@@ -544,6 +544,34 @@ async function bumpOrder(order) {
   }
 }
 
+// ── UNDO LAST COMPLETED ORDER (mistake recovery) ────────────────
+// Live-subscribes to the most recently completed order so Kitchen/Drinks/Expo
+// screens can offer a one-tap "undo" for the last accidental bump.
+function useLastCompletedOrder() {
+  const [lastCompleted, setLastCompleted] = useState(null);
+  useEffect(() => {
+    const q = query(collection(db, "completedOrders"), orderBy("completedAt", "desc"), limit(1));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setLastCompleted(snapshot.empty ? null : { firestoreId: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+    });
+    return unsub;
+  }, []);
+  return lastCompleted;
+}
+
+async function undoCompletedOrder(order) {
+  if (!order) return;
+  const { firestoreId, completedAt, duration, allReadyAt, ...rest } = order;
+  await addDoc(collection(db, "orders"), {
+    ...rest,
+    status: "in_progress",
+    kitchenReady: false,
+    drinksReady: false,
+    allReady: false,
+  });
+  await deleteDoc(doc(db, "completedOrders", firestoreId));
+}
+
 // ============================================================
 // UTILS
 // ============================================================
@@ -609,8 +637,10 @@ const DRINKS_RULES = [
   },
 ];
 
-const TOGO_COLOR  = "#92400E";
-const TOGO_BG     = "#FEF3C7";
+const TOGO_COLOR   = "#92400E";
+const TOGO_BG      = "#FEF3C7";
+const DINEIN_COLOR = "#1D4ED8";
+const DINEIN_BG    = "#EFF6FF";
 
 function getDrinksRule(itemName, catName) {
   return DRINKS_RULES.find(r => r.match(itemName, catName)) || null;
@@ -842,9 +872,14 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
     }
   };
 
+  const ticketAccentColor = order.isToGo ? TOGO_COLOR : DINEIN_COLOR;
+  const ticketTintBg = order.isToGo ? TOGO_BG : DINEIN_BG;
+
   return (
     <div style={{
       ...S.ticket,
+      background: ticketTintBg,
+      borderLeft: `10px solid ${ticketAccentColor}`,
       opacity: isQueue ? 0.55 : 1,
       transform: isQueue ? "scale(0.97)" : "scale(1)",
       // ── KEYBOARD FOCUS HIGHLIGHT ──────────────────────────────
@@ -978,6 +1013,7 @@ function KitchenScreen({ lang, menu }) {
   const [focusedIndex, setFocusedIndex] = useState(0); // which ticket is keyboard-focused
   const [actionFlash, setActionFlash] = useState(null); // brief visual feedback on keypress
   const MAX_VISIBLE = 3;
+  const lastCompleted = useLastCompletedOrder();
 
   const catNameById = {};
   if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name[lang] || c.name.en || ""; });
@@ -1008,6 +1044,14 @@ function KitchenScreen({ lang, menu }) {
   function flash(msg, color = "#15803D") {
     setActionFlash({ msg, color });
     setTimeout(() => setActionFlash(null), 1200);
+  }
+
+  function handleUndoLastCompleted() {
+    if (!lastCompleted) return;
+    const label = lastCompleted.isToGo ? lastCompleted.toGoName : `Mesa ${lastCompleted.table}`;
+    if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
+    undoCompletedOrder(lastCompleted);
+    flash("↩ Orden restaurada", "#7C3AED");
   }
 
   // ── Keyboard / numpad handler ──────────────────────────────
@@ -1130,6 +1174,9 @@ function KitchenScreen({ lang, menu }) {
         <div style={S.kitchenStats}>
           <span style={S.statPillRed}>{active.length} {t.active}</span>
           <span style={S.statPillGreen}>{doneCount} {t.done}</span>
+          {lastCompleted && (
+            <button style={S.undoBtn} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
+          )}
         </div>
       </div>
 
@@ -1162,9 +1209,9 @@ function KitchenScreen({ lang, menu }) {
           </div>
         </div>
       ) : (
-        <div style={{ ...S.ticketGrid, gridTemplateColumns: `repeat(${Math.min(visible.length, MAX_VISIBLE)}, minmax(0, 1fr))` }}>
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
           {visible.map((order, idx) => (
-            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer" }}>
+            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <GuestCheckTicket
                 order={order}
                 t={t}
@@ -1209,10 +1256,14 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
   const isWarning = elapsedSecs > 300;
   const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
 
+  const ticketAccentColor = order.isToGo ? TOGO_COLOR : DINEIN_COLOR;
+  const ticketTintBg = order.isToGo ? TOGO_BG : DINEIN_BG;
+
   return (
     <div style={{
       ...S.ticket,
-      borderTop: order.isToGo ? `5px solid ${TOGO_COLOR}` : undefined,
+      background: ticketTintBg,
+      borderLeft: `10px solid ${ticketAccentColor}`,
       outline: isFocused ? "4px solid #2563EB" : "none",
       outlineOffset: isFocused ? "3px" : "0",
       boxShadow: isFocused
@@ -1312,6 +1363,7 @@ function DrinksStationScreen({ lang, menu }) {
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [actionFlash, setActionFlash]   = useState(null);
   const MAX_VISIBLE = 3;
+  const lastCompleted = useLastCompletedOrder();
 
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
@@ -1335,6 +1387,14 @@ function DrinksStationScreen({ lang, menu }) {
   function flash(msg, color = "#15803D") {
     setActionFlash({ msg, color });
     setTimeout(() => setActionFlash(null), 1200);
+  }
+
+  function handleUndoLastCompleted() {
+    if (!lastCompleted) return;
+    const label = lastCompleted.isToGo ? lastCompleted.toGoName : `Mesa ${lastCompleted.table}`;
+    if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
+    undoCompletedOrder(lastCompleted);
+    flash("↩ Orden restaurada", "#7C3AED");
   }
 
   const handleKeyDown = useCallback((e) => {
@@ -1379,15 +1439,18 @@ function DrinksStationScreen({ lang, menu }) {
         </div>
         <div style={S.kitchenStats}>
           <span style={S.statPillRed}>{active.length} {t.active}</span>
+          {lastCompleted && (
+            <button style={S.undoBtn} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
+          )}
         </div>
       </div>
 
       {/* Color legend */}
       <div style={{ display: "flex", gap: 16, padding: "6px 16px", background: "#1E293B", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 44, color: "#C4B5FD", fontWeight: 800 }}>🟣 BEBIDA NO ALC.</span>
-        <span style={{ fontSize: 44, color: "#FCA5A5", fontWeight: 800 }}>🔴 CALDO</span>
-        <span style={{ fontSize: 44, color: "#FCD34D", fontWeight: 800 }}>🟤 PARA LLEVAR</span>
-        <span style={{ fontSize: 44, color: "#86EFAC", fontWeight: 800 }}>🟢 GUACAMOLE</span>
+        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#C4B5FD", fontWeight: 800 }}>🟣 BEBIDA NO ALC.</span>
+        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#FCA5A5", fontWeight: 800 }}>🔴 CALDO</span>
+        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#FCD34D", fontWeight: 800 }}>🟤 PARA LLEVAR</span>
+        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#86EFAC", fontWeight: 800 }}>🟢 GUACAMOLE</span>
       </div>
 
       {actionFlash && (
@@ -1406,9 +1469,9 @@ function DrinksStationScreen({ lang, menu }) {
           </div>
         </div>
       ) : (
-        <div style={{ ...S.ticketGrid, gridTemplateColumns: `repeat(${Math.min(visible.length, MAX_VISIBLE)}, minmax(0, 1fr))` }}>
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
           {visible.map((order, idx) => (
-            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer" }}>
+            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <DrinksTicket order={order} t={t} catNameById={catNameById} isFocused={idx === focusedIndex} />
             </div>
           ))}
@@ -1458,52 +1521,57 @@ function ExpoTicket({ order, catNameById }) {
   const isWarning = elapsedSecs > 300;
   const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
 
+  const ticketAccentColor = order.isToGo ? TOGO_COLOR : DINEIN_COLOR;
+  const ticketTintBg = order.isToGo ? TOGO_BG : DINEIN_BG;
+
   return (
     <div
       className={allDone ? "expo-ticket-ready" : ""}
       style={{
-        background: "#FFFFFF",
-        border: allDone ? "3px solid #15803D" : "1.5px solid #E0D8C4",
+        background: allDone ? "#FFFFFF" : ticketTintBg,
+        border: allDone ? "3px solid #15803D" : `1.5px solid ${ticketAccentColor}`,
+        borderLeft: allDone ? "3px solid #15803D" : `10px solid ${ticketAccentColor}`,
         borderRadius: 12,
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
         transition: "border-color 0.3s, box-shadow 0.3s",
         boxShadow: allDone ? "0 4px 20px rgba(21,128,61,0.3)" : "0 2px 8px rgba(0,0,0,0.06)",
+        containerType: "inline-size",
       }}
     >
       {/* Header */}
-      <div style={{ background: allDone ? "#DCFCE7" : "#F5EFE0", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <div style={{ fontSize: 36, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.18em", textTransform: "uppercase" }}>
+      <div style={{ background: allDone ? "#DCFCE7" : "#F5EFE0", padding: "10px 14px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 800, color: "#9B8B72", letterSpacing: "0.18em", textTransform: "uppercase" }}>
             {order.isToGo ? "Para Llevar" : "Mesa"}
           </div>
-          <div style={{ fontSize: 104, fontWeight: 900, lineHeight: 1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : "#1A1A1A", textTransform: "uppercase" }}>
+          <div style={{ fontSize: order.isToGo ? "clamp(20px, calc(17.308cqw - 38.85px), 65px)" : "clamp(39px, calc(35.096cqw - 80.57px), 130px)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : "#1A1A1A", textTransform: "uppercase", wordBreak: "break-word" }}>
             {order.isToGo ? order.toGoName : order.table}
           </div>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 40, fontWeight: 800, color: "#BE202E", letterSpacing: "0.05em" }}>#{order.id}</div>
-          <div style={{ fontSize: 56, fontWeight: 900, color: timerColor, marginTop: 2 }}>⏱ {elapsed(order.timestamp)}</div>
+        <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 10 }}>
+          <div style={{ fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 800, color: "#BE202E", letterSpacing: "0.05em" }}>#{order.id}</div>
+          <div style={{ fontSize: "clamp(21px, calc(18.750cqw - 42.50px), 70px)", fontWeight: 900, color: timerColor, marginTop: 2, whiteSpace: "nowrap" }}>⏱ {elapsed(order.timestamp)}</div>
         </div>
       </div>
 
-      {order.modified && <div style={{ background: "#7C3AED", color: "#fff", fontSize: 40, fontWeight: 900, padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>⚡ MODIFICADA</div>}
+      {order.modified && <div style={{ background: "#7C3AED", color: "#fff", fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>⚡ MODIFICADA</div>}
 
       {/* Station columns */}
       <div style={{ display: "flex", flex: 1, minHeight: 100 }}>
         {hasKitchen && (
           <div style={{ flex: 1, padding: "10px 12px", background: order.kitchenReady ? "#F0FDF4" : "#FFFBEB", borderRight: hasDrinks ? "1px solid #E0D8C4" : "none" }}>
-            <div style={{ fontSize: 40, fontWeight: 900, letterSpacing: "0.1em", color: order.kitchenReady ? "#15803D" : "#D97706", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", textTransform: "uppercase" }}>
+            <div style={{ fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, letterSpacing: "0.1em", color: order.kitchenReady ? "#15803D" : "#D97706", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", textTransform: "uppercase" }}>
               🍳 COCINA
               {order.kitchenReady && <span>✅</span>}
             </div>
             {kitchenItems.map((item, i) => (
-              <div key={i} style={{ fontSize: 52, fontWeight: 700, color: order.kitchenReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.kitchenReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase" }}>
+              <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: order.kitchenReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.kitchenReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase" }}>
                 <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}
               </div>
             ))}
-            <div style={{ marginTop: 8, background: order.kitchenReady ? "#DCFCE7" : order.status === "in_progress" ? "#FEF3C7" : "#F5F3F0", color: order.kitchenReady ? "#15803D" : order.status === "in_progress" ? "#D97706" : "#9CA3AF", borderRadius: 6, padding: "4px 8px", fontSize: 44, fontWeight: 800, textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+            <div style={{ marginTop: 8, background: order.kitchenReady ? "#DCFCE7" : order.status === "in_progress" ? "#FEF3C7" : "#F5F3F0", color: order.kitchenReady ? "#15803D" : order.status === "in_progress" ? "#D97706" : "#9CA3AF", borderRadius: 6, padding: "4px 8px", fontSize: "clamp(22px, calc(12.500cqw - 20.00px), 55px)", fontWeight: 800, textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" }}>
               {order.kitchenReady ? "✅ LISTO" : order.status === "in_progress" ? "🔥 COCINANDO" : "⏳ EN COLA"}
             </div>
           </div>
@@ -1511,16 +1579,16 @@ function ExpoTicket({ order, catNameById }) {
 
         {hasDrinks && (
           <div style={{ flex: 1, padding: "10px 12px", background: order.drinksReady ? "#F0FDF4" : "#F5F3FF" }}>
-            <div style={{ fontSize: 40, fontWeight: 900, letterSpacing: "0.1em", color: order.drinksReady ? "#15803D" : "#7C3AED", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", textTransform: "uppercase" }}>
+            <div style={{ fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, letterSpacing: "0.1em", color: order.drinksReady ? "#15803D" : "#7C3AED", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", textTransform: "uppercase" }}>
               🥤 BEBIDAS
               {order.drinksReady && <span>✅</span>}
             </div>
             {drinksItems.map((item, i) => (
-              <div key={i} style={{ fontSize: 52, fontWeight: 700, color: order.drinksReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.drinksReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase" }}>
+              <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: order.drinksReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.drinksReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase" }}>
                 <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}
               </div>
             ))}
-            <div style={{ marginTop: 8, background: order.drinksReady ? "#DCFCE7" : "#EDE9FE", color: order.drinksReady ? "#15803D" : "#7C3AED", borderRadius: 6, padding: "4px 8px", fontSize: 44, fontWeight: 800, textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+            <div style={{ marginTop: 8, background: order.drinksReady ? "#DCFCE7" : "#EDE9FE", color: order.drinksReady ? "#15803D" : "#7C3AED", borderRadius: 6, padding: "4px 8px", fontSize: "clamp(22px, calc(12.500cqw - 20.00px), 55px)", fontWeight: 800, textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" }}>
               {order.drinksReady ? "✅ LISTO" : "⏳ PREPARANDO"}
             </div>
           </div>
@@ -1529,7 +1597,7 @@ function ExpoTicket({ order, catNameById }) {
         {!hasKitchen && !hasDrinks && (
           <div style={{ flex: 1, padding: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
             {order.items?.map((item, i) => (
-              <div key={i} style={{ fontSize: 52, fontWeight: 700, color: "#1A1A1A", marginBottom: 3, textTransform: "uppercase" }}>
+              <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: "#1A1A1A", marginBottom: 3, textTransform: "uppercase" }}>
                 {item.qty}× {item.name}
               </div>
             ))}
@@ -1539,7 +1607,7 @@ function ExpoTicket({ order, catNameById }) {
 
       {/* Notes */}
       {order.note && (
-        <div style={{ padding: "5px 12px", background: "#FFFBEB", borderTop: "1px solid #E0D8C4", fontSize: 44, color: "#666", fontStyle: "italic", textTransform: "uppercase" }}>
+        <div style={{ padding: "5px 12px", background: "#FFFBEB", borderTop: "1px solid #E0D8C4", fontSize: "clamp(22px, calc(12.500cqw - 20.00px), 55px)", color: "#666", fontStyle: "italic", textTransform: "uppercase" }}>
           📝 {order.note}
         </div>
       )}
@@ -1548,18 +1616,18 @@ function ExpoTicket({ order, catNameById }) {
       <div style={{ padding: "10px 14px", background: allDone ? "#15803D" : "#F5F3F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, borderTop: allDone ? "none" : "1px solid #E0D8C4" }}>
         {allDone ? (
           <>
-            <div style={{ fontSize: 52, fontWeight: 900, color: "#FFFFFF", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            <div style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 900, color: "#FFFFFF", letterSpacing: "0.04em", textTransform: "uppercase" }}>
               🚀 LISTO PARA ENTREGAR
             </div>
             <button
               onClick={() => bumpOrder(order)}
-              style={{ background: "#FFFFFF", color: "#15803D", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 52, fontWeight: 900, cursor: "pointer", letterSpacing: "0.06em", whiteSpace: "nowrap", flexShrink: 0, textTransform: "uppercase" }}
+              style={{ background: "#FFFFFF", color: "#15803D", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 900, cursor: "pointer", letterSpacing: "0.06em", whiteSpace: "nowrap", flexShrink: 0, textTransform: "uppercase" }}
             >
               BUMP ✓
             </button>
           </>
         ) : (
-          <div style={{ fontSize: 48, fontWeight: 700, color: "#9CA3AF", width: "100%", textAlign: "center", textTransform: "uppercase" }}>
+          <div style={{ fontSize: "clamp(24px, calc(13.942cqw - 23.65px), 60px)", fontWeight: 700, color: "#9CA3AF", width: "100%", textAlign: "center", textTransform: "uppercase" }}>
             {!kitchenDone && !drinksDone
               ? "Esperando Cocina y Bebidas"
               : !kitchenDone
@@ -1577,6 +1645,14 @@ function ExpoTicket({ order, catNameById }) {
 // ============================================================
 function ExpoScreen({ menu }) {
   const [orders, setOrders] = useState([]);
+  const lastCompleted = useLastCompletedOrder();
+
+  function handleUndoLastCompleted() {
+    if (!lastCompleted) return;
+    const label = lastCompleted.isToGo ? lastCompleted.toGoName : `Mesa ${lastCompleted.table}`;
+    if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
+    undoCompletedOrder(lastCompleted);
+  }
 
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
@@ -1602,7 +1678,6 @@ function ExpoScreen({ menu }) {
 
   const readyOrders  = orders.filter(isOrderReady);
   const activeOrders = orders.filter(o => !isOrderReady(o));
-  const cols = Math.min(Math.max(orders.length, 1), 4);
 
   return (
     <div style={S.kitchenRoot}>
@@ -1618,6 +1693,9 @@ function ExpoScreen({ menu }) {
         <div style={S.kitchenStats}>
           <span style={S.statPillRed}>{activeOrders.length} en proceso</span>
           <span style={S.statPillGreen}>{readyOrders.length} lista{readyOrders.length !== 1 ? "s" : ""}</span>
+          {lastCompleted && (
+            <button style={S.undoBtn} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
+          )}
         </div>
       </div>
 
@@ -1633,7 +1711,7 @@ function ExpoScreen({ menu }) {
           </div>
         </div>
       ) : (
-        <div style={{ flex: 1, display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 14, padding: 16, alignItems: "start", overflowY: "auto" }}>
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14, padding: 16, alignItems: "start", overflowY: "auto" }}>
           {/* Ready orders first (at top) */}
           {readyOrders.map(order => (
             <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} />
@@ -1835,6 +1913,10 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       }
       return prev.map(c => c.id === id ? { ...c, qty: c.qty - 1 } : c);
     });
+  }
+
+  function incrementCartItem(id) {
+    setCart(prev => prev.map(c => c.id === id ? { ...c, qty: c.qty + 1 } : c));
   }
 
   function loadOrderForEdit(order) {
@@ -2047,7 +2129,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                     <div style={S.cartQtyRow}>
                       <button style={S.qtyBtn} onClick={() => removeFromCart(item.id)}>−</button>
                       <span style={S.cartQty}>{item.qty}</span>
-                      <button style={S.qtyBtn} onClick={() => handleItemTap(item)}>+</button>
+                      <button style={S.qtyBtn} onClick={() => incrementCartItem(item.id)}>+</button>
                       <span style={S.cartItemTotal}>{fmt((item.price + (item.modifiers?.reduce((s, m) => s + m.price, 0) ?? 0)) * item.qty)}</span>
                     </div>
                   </div>
@@ -2247,13 +2329,18 @@ export default function App() {
   useEffect(() => {
     if (!menu) return;
     if (lang === "es") applyTranslations(menu);
-    else setMenu(prev => ({ ...prev, items: prev.items.map(item => ({ ...item, nameEs: item.nameEs || null })) }));
+    else if (menu.items.some(item => item.nameEs)) {
+      setMenu(prev => ({ ...prev, items: prev.items.map(item => ({ ...item, nameEs: item.nameEs || null })) }));
+    }
   }, [lang, menu]);
 
   async function applyTranslations(currentMenu) {
     const needsTranslation = currentMenu.items.filter(item => !translationCache.current[item.id] && !item.nameEs);
     if (needsTranslation.length === 0) {
-      setMenu(prev => ({ ...prev, items: prev.items.map(item => ({ ...item, nameEs: translationCache.current[item.id] || item.nameEs || item.name })) }));
+      const alreadyResolved = currentMenu.items.every(item => item.nameEs === (translationCache.current[item.id] || item.nameEs || item.name));
+      if (!alreadyResolved) {
+        setMenu(prev => ({ ...prev, items: prev.items.map(item => ({ ...item, nameEs: translationCache.current[item.id] || item.nameEs || item.name })) }));
+      }
       return;
     }
     setTranslating(true);
@@ -2389,7 +2476,7 @@ const S = {
   kbd: { background: "#334155", color: "#E2E8F0", border: "1px solid #475569", borderRadius: 4, padding: "1px 6px", fontSize: 11, fontFamily: "monospace", fontWeight: 700 },
   keyboardHintBar: { display: "flex", gap: 12, background: "#1D4ED8", padding: "6px 16px", flexWrap: "wrap" },
   keyboardHint: { fontSize: 11, color: "#BFDBFE", fontWeight: 600 },
-  actionFlash: { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", color: "#fff", fontSize: 36, fontWeight: 900, padding: "20px 40px", borderRadius: 16, zIndex: 9999, pointerEvents: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.3)", letterSpacing: "-0.01em" },
+  actionFlash: { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", color: "#fff", fontSize: "clamp(18px, calc(1.786vw + 11.07px), 45px)", fontWeight: 900, padding: "20px 40px", borderRadius: 16, zIndex: 9999, pointerEvents: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.3)", letterSpacing: "-0.01em" },
 
   // MODAL
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 },
@@ -2423,9 +2510,9 @@ const S = {
 
   // TICKET MODIFIER DISPLAY
   ticketModifiers: { display: "flex", flexDirection: "column", gap: 1, marginTop: 4 },
-  ticketModifierChip: { fontSize: 56, fontStyle: "normal", display: "block", textTransform: "uppercase" },
+  ticketModifierChip: { fontSize: "clamp(21px, calc(18.750cqw - 42.50px), 70px)", fontStyle: "normal", display: "block", textTransform: "uppercase" },
   ticketSpecialNoteBlock: { display: "flex", flexDirection: "column", gap: 2, marginTop: 4 },
-  ticketSpecialNoteLine: { fontSize: 56, fontWeight: 800, letterSpacing: "0.02em", textTransform: "uppercase" },
+  ticketSpecialNoteLine: { fontSize: "clamp(21px, calc(18.750cqw - 42.50px), 70px)", fontWeight: 800, letterSpacing: "0.02em", textTransform: "uppercase" },
   cartModifiers: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 },
   cartModChip: { fontSize: 11, background: "#F0EDE8", borderRadius: 4, padding: "1px 6px" },
   cartSpecialNoteBlock: { display: "flex", flexDirection: "column", gap: 2, marginTop: 4 },
@@ -2435,62 +2522,63 @@ const S = {
   kitchenRoot: { flex: 1, display: "flex", flexDirection: "column", background: "#F5F3F0", minHeight: "calc(100vh - 53px)" },
   kitchenHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#FFFFFF", borderBottom: "1px solid #E5E0D8", flexWrap: "wrap", gap: 8 },
   kitchenHeaderLeft: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
-  kitchenTitle: { fontSize: 72, fontWeight: 900, letterSpacing: "-0.02em", color: "#1A1A1A", textTransform: "uppercase" },
-  queuePill: { background: "#D97706", color: "#fff", borderRadius: 20, padding: "3px 12px", fontSize: 48, fontWeight: 800, textTransform: "uppercase" },
+  kitchenTitle: { fontSize: "clamp(28px, calc(4.059vw + 12.89px), 90px)", fontWeight: 900, letterSpacing: "-0.02em", color: "#1A1A1A", textTransform: "uppercase" },
+  queuePill: { background: "#D97706", color: "#fff", borderRadius: 20, padding: "3px 12px", fontSize: "clamp(24px, calc(2.354vw + 15.28px), 60px)", fontWeight: 800, textTransform: "uppercase" },
   kitchenStats: { display: "flex", gap: 8 },
-  statPillRed: { background: "#BE202E", color: "#fff", borderRadius: 20, padding: "5px 14px", fontSize: 52, fontWeight: 800, textTransform: "uppercase" },
-  statPillGreen: { background: "#15803D", color: "#fff", borderRadius: 20, padding: "5px 14px", fontSize: 52, fontWeight: 800, textTransform: "uppercase" },
+  statPillRed: { background: "#BE202E", color: "#fff", borderRadius: 20, padding: "5px 14px", fontSize: "clamp(26px, calc(2.516vw + 17.19px), 65px)", fontWeight: 800, textTransform: "uppercase" },
+  statPillGreen: { background: "#15803D", color: "#fff", borderRadius: 20, padding: "5px 14px", fontSize: "clamp(26px, calc(2.516vw + 17.19px), 65px)", fontWeight: 800, textTransform: "uppercase" },
+  undoBtn: { background: "#7C3AED", color: "#fff", border: "none", borderRadius: 20, padding: "5px 14px", fontSize: "clamp(26px, calc(2.516vw + 17.19px), 65px)", fontWeight: 800, textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap" },
   kitchenEmpty: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
   emptyCheck: { background: "#FFFFFF", border: "2px solid #E5DFD0", borderRadius: 4, padding: "32px 48px", textAlign: "center", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" },
   emptyCheckInner: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8 },
-  emptyCheckTitle: { fontSize: 44, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.2em", textTransform: "uppercase" },
-  emptyCheckmark: { fontSize: 256, color: "#15803D", fontWeight: 900, lineHeight: 1 },
-  emptyCheckSub: { fontSize: 96, fontWeight: 900, color: "#1A1A1A", textTransform: "uppercase" },
-  emptyCheckSubSmall: { fontSize: 56, color: "#888", textTransform: "uppercase" },
+  emptyCheckTitle: { fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", fontWeight: 800, color: "#9B8B72", letterSpacing: "0.2em", textTransform: "uppercase" },
+  emptyCheckmark: { fontSize: "clamp(96px, calc(14.529vw + 43.95px), 320px)", color: "#15803D", fontWeight: 900, lineHeight: 1 },
+  emptyCheckSub: { fontSize: "clamp(36px, calc(5.439vw + 16.68px), 120px)", fontWeight: 900, color: "#1A1A1A", textTransform: "uppercase" },
+  emptyCheckSubSmall: { fontSize: "clamp(28px, calc(2.760vw + 17.56px), 70px)", color: "#888", textTransform: "uppercase" },
   ticketGrid: { flex: 1, display: "grid", gap: 16, padding: "16px", alignItems: "start" },
 
   // TICKET
   ticket: { background: "#FFFDF7", border: "1px solid #E0D8C4", borderRadius: 3, overflow: "hidden", transition: "all 0.3s", fontFamily: "'DM Sans', 'Segoe UI', sans-serif" },
-  cancelledBanner: { background: "#BE202E", color: "#fff", fontWeight: 900, fontSize: 64, padding: "8px 14px", textAlign: "center", letterSpacing: "0.08em", textTransform: "uppercase" },
-  toGoBanner: { background: "#0369A1", color: "#fff", fontWeight: 900, fontSize: 52, padding: "6px 14px", textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" },
-  modifiedBanner: { background: "#7C3AED", color: "#fff", fontWeight: 900, fontSize: 48, padding: "5px 14px", textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" },
-  ticketTop: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "10px 14px 8px 14px", background: "#F5EFE0" },
+  cancelledBanner: { background: "#BE202E", color: "#fff", fontWeight: 900, fontSize: "clamp(24px, calc(21.635cqw - 49.81px), 80px)", padding: "8px 14px", textAlign: "center", letterSpacing: "0.08em", textTransform: "uppercase" },
+  toGoBanner: { background: "#0369A1", color: "#fff", fontWeight: 900, fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", padding: "6px 14px", textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" },
+  modifiedBanner: { background: "#7C3AED", color: "#fff", fontWeight: 900, fontSize: "clamp(24px, calc(13.942cqw - 23.65px), 60px)", padding: "5px 14px", textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" },
+  ticketTop: { display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", padding: "10px 14px 8px 14px", background: "#F5EFE0" },
   ticketTopLeft: { flex: 1 },
-  ticketTopRight: { textAlign: "right" },
-  guestCheckTitle: { fontSize: 36, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 3 },
-  tableNumberBig: { fontSize: 112, fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em", lineHeight: 1 },
-  toGoNameBig: { fontSize: 84, fontWeight: 900, color: "#0369A1", letterSpacing: "-0.01em", lineHeight: 1.1, textTransform: "uppercase" },
+  ticketTopRight: { textAlign: "right", flexShrink: 0 },
+  guestCheckTitle: { fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 800, color: "#9B8B72", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 3 },
+  tableNumberBig: { fontSize: "clamp(42px, calc(37.500cqw - 85.00px), 140px)", fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em", lineHeight: 1, overflowWrap: "break-word" },
+  toGoNameBig: { fontSize: "clamp(31px, calc(28.365cqw - 65.19px), 105px)", fontWeight: 900, color: "#0369A1", letterSpacing: "-0.01em", lineHeight: 1.1, textTransform: "uppercase", overflowWrap: "break-word" },
   ticketMeta: { marginTop: 3 },
-  checkNoLabel: { fontSize: 36, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.15em", textTransform: "uppercase" },
-  checkNoValue: { fontSize: 76, fontWeight: 900, color: "#BE202E", letterSpacing: "0.05em" },
-  timerBig: { fontSize: 60, fontWeight: 900, marginTop: 3, letterSpacing: "-0.01em" },
+  checkNoLabel: { fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 800, color: "#9B8B72", letterSpacing: "0.15em", textTransform: "uppercase" },
+  checkNoValue: { fontSize: "clamp(29px, calc(25.481cqw - 57.89px), 95px)", fontWeight: 900, color: "#BE202E", letterSpacing: "0.05em" },
+  timerBig: { fontSize: "clamp(22px, calc(20.192cqw - 46.15px), 75px)", fontWeight: 900, marginTop: 3, letterSpacing: "-0.01em" },
   ruledLine: { borderBottom: "1px solid #E0D8C4", margin: "0 14px" },
   colHeaders: { display: "flex", padding: "4px 14px", background: "#F5EFE0" },
-  colQty: { width: 42, fontSize: 36, fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
-  colItem: { flex: 1, fontSize: 36, fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
+  colQty: { flexShrink: 0, whiteSpace: "nowrap", marginRight: 10, fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
+  colItem: { flex: 1, fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
   itemsList: { padding: "2px 0" },
   itemRow: { display: "flex", alignItems: "flex-start", padding: "6px 14px", minHeight: 36 },
-  itemQty: { width: 80, fontSize: 80, fontWeight: 900, letterSpacing: "-0.02em" },
-  itemName: { fontSize: 68, lineHeight: 1.2, textTransform: "uppercase" },
-  changeTag: { display: "inline-block", color: "#fff", fontSize: 36, fontWeight: 900, padding: "2px 5px", borderRadius: 4, marginLeft: 7, letterSpacing: "0.06em", textTransform: "uppercase" },
+  itemQty: { width: "clamp(30px, calc(26.922cqw - 61.54px), 100px)", fontSize: "clamp(30px, calc(26.922cqw - 61.54px), 100px)", fontWeight: 900, letterSpacing: "-0.02em" },
+  itemName: { fontSize: "clamp(25px, calc(23.078cqw - 53.46px), 85px)", lineHeight: 1.2, textTransform: "uppercase" },
+  changeTag: { display: "inline-block", color: "#fff", fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 900, padding: "2px 5px", borderRadius: 4, marginLeft: 7, letterSpacing: "0.06em", textTransform: "uppercase" },
   noteRow: { display: "flex", gap: 7, padding: "6px 14px", alignItems: "flex-start" },
-  noteLabel: { fontSize: 36, fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", minWidth: 40, paddingTop: 2, textTransform: "uppercase" },
-  noteText: { fontSize: 52, fontWeight: 600, color: "#444", fontStyle: "italic", flex: 1, textTransform: "uppercase" },
+  noteLabel: { fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", minWidth: 40, paddingTop: 2, textTransform: "uppercase" },
+  noteText: { fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 600, color: "#444", fontStyle: "italic", flex: 1, textTransform: "uppercase" },
   ticketFooter: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#F5EFE0", flexWrap: "wrap", gap: 6 },
-  statusStamp: { border: "2px solid", borderRadius: 4, padding: "2px 8px", fontSize: 44, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase" },
+  statusStamp: { border: "2px solid", borderRadius: 4, padding: "2px 8px", fontSize: "clamp(22px, calc(12.500cqw - 20.00px), 55px)", fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase" },
   ticketBtns: { display: "flex", gap: 6, flexWrap: "wrap" },
-  btnStart: { background: "#D97706", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 52, fontWeight: 900, cursor: "pointer", textTransform: "uppercase" },
-  btnDone: { background: "#15803D", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 52, fontWeight: 900, cursor: "pointer", textTransform: "uppercase" },
+  btnStart: { background: "#D97706", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 900, cursor: "pointer", textTransform: "uppercase" },
+  btnDone: { background: "#15803D", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 900, cursor: "pointer", textTransform: "uppercase" },
   queueStrip: { background: "#FFFFFF", borderTop: "2px solid #E5E0D8", padding: "8px 16px", display: "flex", alignItems: "center", gap: 12, overflowX: "auto" },
-  queueLabel: { fontSize: 40, fontWeight: 900, color: "#D97706", letterSpacing: "0.15em", whiteSpace: "nowrap", textTransform: "uppercase" },
+  queueLabel: { fontSize: "clamp(20px, calc(1.948vw + 12.99px), 50px)", fontWeight: 900, color: "#D97706", letterSpacing: "0.15em", whiteSpace: "nowrap", textTransform: "uppercase" },
   queueItem: { display: "flex", alignItems: "center", gap: 8, background: "#F5F3F0", border: "1px solid #E5E0D8", borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap" },
-  queueOrderId: { fontSize: 48, fontWeight: 900, color: "#BE202E" },
-  queueOrderTable: { fontSize: 52, fontWeight: 800, color: "#1A1A1A", textTransform: "uppercase" },
-  queueOrderItems: { fontSize: 48, color: "#888", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", textTransform: "uppercase" },
-  queueOrderTime: { fontSize: 48, fontWeight: 700, color: "#D97706" },
+  queueOrderId: { fontSize: "clamp(24px, calc(2.354vw + 15.28px), 60px)", fontWeight: 900, color: "#BE202E" },
+  queueOrderTable: { fontSize: "clamp(26px, calc(2.516vw + 17.19px), 65px)", fontWeight: 800, color: "#1A1A1A", textTransform: "uppercase" },
+  queueOrderItems: { fontSize: "clamp(24px, calc(2.354vw + 15.28px), 60px)", color: "#888", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", textTransform: "uppercase" },
+  queueOrderTime: { fontSize: "clamp(24px, calc(2.354vw + 15.28px), 60px)", fontWeight: 700, color: "#D97706" },
 
   // WAITER
-  waiterRoot: { display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", height: "calc(100vh - 53px)" },
+  waiterRoot: { display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", height: "calc(100dvh - 53px)" },
   waiterHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#FFFFFF", borderBottom: "1px solid #E5E0D8", flexWrap: "wrap", gap: 8 },
   waiterLogo: { fontWeight: 800, fontSize: 16, letterSpacing: "-0.01em", color: "#1A1A1A" },
   editingBadge: { background: "#EDE9FE", color: "#7C3AED", borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 800 },
@@ -2533,7 +2621,7 @@ const S = {
   // CART
   cartPanel: { width: 300, flexShrink: 0, background: "#FFFFFF", borderLeft: "2px solid #E5E0D8", display: "flex", flexDirection: "column", overflow: "hidden" },
   cartScrollArea: { flex: 1, overflowY: "auto", padding: "0 14px" },
-  cartFooterArea: { borderTop: "1px solid #E5E0D8", padding: "10px 14px", flexShrink: 0 },
+  cartFooterArea: { borderTop: "1px solid #E5E0D8", padding: "10px 14px", flexShrink: 0, position: "sticky", bottom: 0, background: "#FFFFFF", zIndex: 2 },
   cartTitle: { fontSize: 10, fontWeight: 800, color: "#AAA", letterSpacing: "0.12em", textTransform: "uppercase", padding: "12px 14px 8px", flexShrink: 0 },
   cartEmpty: { color: "#BBB", fontSize: 13, textAlign: "center", padding: "6px 0" },
   cartCancelWarning: { color: "#BE202E", fontSize: 13, fontWeight: 700, textAlign: "center", padding: "8px", background: "#FFF1F2", borderRadius: 8, marginBottom: 8 },
