@@ -514,7 +514,7 @@ async function _completeOrder(orderId, startedAt, timestamp) {
 async function markKitchenReady(order) {
   const ref = doc(db, "orders", order.firestoreId);
   await updateDoc(ref, { kitchenReady: true });
-  const hasDrinks = orderHasDrinksItems(order);
+  const hasDrinks = orderNeedsDrinksStation(order);
   if (!hasDrinks || order.drinksReady) {
     await _completeOrder(order.firestoreId, order.startedAt, order.timestamp);
   }
@@ -651,6 +651,16 @@ function getDrinksRule(itemName, catName) {
 
 function orderHasDrinksItems(order) {
   if (order.isToGo) return true;
+  return order.items?.some(item => getDrinksRule(item.name, item.catName)) ?? false;
+}
+
+// Whether an order actually needs a drinks-station bump before it can be
+// marked complete. Unlike orderHasDrinksItems (which also forces true for
+// to-go orders so they're visible on the Drinks/Sides screen for bagging),
+// this only looks at real item matches — otherwise a to-go order with no
+// drink/side items waits forever on a bump nobody will ever make, and stays
+// stuck "active" even after the kitchen marks it done.
+function orderNeedsDrinksStation(order) {
   return order.items?.some(item => getDrinksRule(item.name, item.catName)) ?? false;
 }
 
@@ -1212,7 +1222,7 @@ function KitchenScreen({ lang, menu }) {
           </div>
         </div>
       ) : (
-        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 280px))" }}>
           {visible.map((order, idx) => (
             <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <GuestCheckTicket
@@ -1675,7 +1685,7 @@ function ExpoScreen({ menu }) {
 
   const isOrderReady = (o) => {
     const hasK = orderHasKitchenItems(o);
-    const hasD = orderHasDrinksItems(o);
+    const hasD = orderNeedsDrinksStation(o);
     return (!hasK || !!o.kitchenReady) && (!hasD || !!o.drinksReady);
   };
 
@@ -2360,7 +2370,7 @@ export default function App() {
       setActiveOrders(docs.length);
       setReadyCount(docs.filter(o => {
         const hasK = o.items?.some(i => !isKitchenDimmed(i.name, i.catName || ""));
-        const hasD = orderHasDrinksItems(o);
+        const hasD = orderNeedsDrinksStation(o);
         return (!hasK || !!o.kitchenReady) && (!hasD || !!o.drinksReady);
       }).length);
     });
