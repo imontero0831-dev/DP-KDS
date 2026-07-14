@@ -599,33 +599,36 @@ const DRINKS_RULES = [
     color: "#7C3AED",
     bg: "#F5F3FF",
     label: "BEBIDA",
-    match: (name, catName = "") => {
-      const n = name.toLowerCase();
-      const c = catName.toLowerCase();
-      const hits = ["agua", "limonada", "horchata", "jamaica", "refresco", "soda",
-                    "jugo", "atole", "tepache", "bebida", "drink", "té", "te ",
-                    "cafe", "café", "chocolate", "leche", "naranjada", "aguas"];
-      const alc  = ["cerveza", "beer", "margarita", "mezcal", "tequila", "wine",
-                    "vino", "cocktail", "licor", "michelada", "vodka", "rum", "ron"];
-      return (hits.some(k => n.includes(k)) || c.includes("bebida") || c.includes("drink"))
-        && !alc.some(k => n.includes(k) || c.includes(k));
-    },
+    match: (name) => name.toLowerCase().includes("agua fresca"),
   },
   {
     key: "caldo",
     color: "#BE202E",
     bg: "#FFF1F2",
     label: "CALDO",
-    match: (name) => name.toLowerCase().includes("caldo"),
+    match: (name, catName = "") => {
+      const c = catName.toLowerCase();
+      return name.toLowerCase().includes("caldo") || c.includes("sopa") || c.includes("soup");
+    },
   },
   {
     key: "guacamole",
     color: "#15803D",
     bg: "#F0FDF4",
     label: "GUACAMOLE",
-    match: (name) => {
+    match: (name) => name.toLowerCase().includes("guacamol"),
+  },
+  {
+    key: "appetizer",
+    color: "#C2410C",
+    bg: "#FFF7ED",
+    label: "ENTRADA",
+    match: (name, catName = "") => {
+      const c = catName.toLowerCase();
       const n = name.toLowerCase();
-      return n.includes("guacamol") || n.includes("guac");
+      if (c.includes("appetizer")) return true;
+      if (c.includes("happy hour") && !n.startsWith("hh ")) return true;
+      return false;
     },
   },
   {
