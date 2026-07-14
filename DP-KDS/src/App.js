@@ -1183,16 +1183,16 @@ function KitchenScreen({ lang, menu }) {
     <div style={S.kitchenRoot}>
       <div style={S.kitchenHeader}>
         <div style={S.kitchenHeaderLeft}>
-          <span style={S.kitchenTitle}>👨‍🍳 {t.kitchenDisplay}</span>
-          {queued.length > 0 && <span style={S.queuePill}>+{queued.length} {t.inQueue}</span>}
+          <span style={{ ...S.kitchenTitle, fontSize: "clamp(14px, calc(2.030vw + 6.45px), 45px)" }}>👨‍🍳 {t.kitchenDisplay}</span>
+          {queued.length > 0 && <span style={{ ...S.queuePill, fontSize: "clamp(12px, calc(1.177vw + 7.64px), 30px)" }}>+{queued.length} {t.inQueue}</span>}
           {/* Keyboard mode indicator */}
           <span style={S.keyboardModePill}>⌨️ {t.keyboardMode}</span>
         </div>
         <div style={S.kitchenStats}>
-          <span style={S.statPillRed}>{active.length} {t.active}</span>
-          <span style={S.statPillGreen}>{doneCount} {t.done}</span>
+          <span style={{ ...S.statPillRed, fontSize: "clamp(13px, calc(1.258vw + 8.6px), 33px)" }}>{active.length} {t.active}</span>
+          <span style={{ ...S.statPillGreen, fontSize: "clamp(13px, calc(1.258vw + 8.6px), 33px)" }}>{doneCount} {t.done}</span>
           {lastCompleted && (
-            <button style={S.undoBtn} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
+            <button style={{ ...S.undoBtn, fontSize: "clamp(13px, calc(1.258vw + 8.6px), 33px)" }} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
           )}
         </div>
       </div>
@@ -1218,10 +1218,10 @@ function KitchenScreen({ lang, menu }) {
         <div style={S.kitchenEmpty}>
           <div style={S.emptyCheck}>
             <div style={S.emptyCheckInner}>
-              <div style={S.emptyCheckTitle}>{t.guestCheck}</div>
-              <div style={S.emptyCheckmark}>✓</div>
-              <div style={S.emptyCheckSub}>{t.allCaughtUp}</div>
-              <div style={S.emptyCheckSubSmall}>{t.allCaughtUpSub}</div>
+              <div style={{ ...S.emptyCheckTitle, fontSize: "clamp(11px, calc(1.055vw + 7.45px), 28px)" }}>{t.guestCheck}</div>
+              <div style={{ ...S.emptyCheckmark, fontSize: "clamp(48px, calc(7.265vw + 21.98px), 160px)" }}>✓</div>
+              <div style={{ ...S.emptyCheckSub, fontSize: "clamp(18px, calc(2.720vw + 8.34px), 60px)" }}>{t.allCaughtUp}</div>
+              <div style={{ ...S.emptyCheckSubSmall, fontSize: "clamp(14px, calc(1.380vw + 8.78px), 35px)" }}>{t.allCaughtUpSub}</div>
             </div>
           </div>
         </div>
