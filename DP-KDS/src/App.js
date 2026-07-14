@@ -1882,6 +1882,33 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [activeOrders, setActiveOrders] = useState([]);
   const [showActiveOrders, setShowActiveOrders] = useState(false);
   const [modModalItem, setModModalItem] = useState(null);
+  const rootRef = useRef(null);
+  const [rootHeight, setRootHeight] = useState(null);
+
+  // Measure actual space below the nav bar instead of assuming a fixed
+  // height — on narrower tablets the nav wraps to 2 lines, which made a
+  // hardcoded offset undershoot and let the whole page scroll instead of
+  // just the internal menu/cart panels.
+  useEffect(() => {
+    function recalc() {
+      if (!rootRef.current) return;
+      const top = rootRef.current.getBoundingClientRect().top;
+      const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      setRootHeight(Math.max(200, vh - top));
+    }
+    recalc();
+    window.addEventListener("resize", recalc);
+    window.addEventListener("orientationchange", recalc);
+    window.visualViewport?.addEventListener("resize", recalc);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("resize", recalc);
+      window.removeEventListener("orientationchange", recalc);
+      window.visualViewport?.removeEventListener("resize", recalc);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
@@ -1983,7 +2010,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   }
 
   return (
-    <div style={S.waiterRoot}>
+    <div ref={rootRef} style={{ ...S.waiterRoot, ...(rootHeight ? { height: rootHeight } : {}) }}>
       {modModalItem && (
         <ModifierModal item={modModalItem} displayName={getItemDisplayName(modModalItem)} lang={lang} onConfirm={handleModifierConfirm} onClose={() => setModModalItem(null)} />
       )}
