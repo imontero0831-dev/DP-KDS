@@ -346,19 +346,23 @@ async function sendOrderToClover(order) {
     const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
     const cloverOrderId = cloverOrder.id;
     if (!cloverOrderId) throw new Error("No order ID returned from Clover");
+    // Clover doesn't treat unitQty as a quantity multiplier for regular
+    // items — each line item represents a single unit. To show "qty 2" on
+    // the POS you need two separate line items, not one with unitQty:2000.
     for (const item of order.items) {
-      const lineItem = await cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
-        name: item.name,
-        price: item.price,
-        unitQty: item.qty * 1000,
-      });
-      if (item.modifiers && item.modifiers.length > 0) {
-        for (const mod of item.modifiers) {
-          await cloverRequest(
-            `orders/${cloverOrderId}/line_items/${lineItem.id}/modifications`,
-            "POST",
-            { modifier: { id: mod.id }, name: mod.name, amount: mod.price }
-          );
+      for (let unit = 0; unit < item.qty; unit++) {
+        const lineItem = await cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
+          name: item.name,
+          price: item.price,
+        });
+        if (item.modifiers && item.modifiers.length > 0) {
+          for (const mod of item.modifiers) {
+            await cloverRequest(
+              `orders/${cloverOrderId}/line_items/${lineItem.id}/modifications`,
+              "POST",
+              { modifier: { id: mod.id }, name: mod.name, amount: mod.price }
+            );
+          }
         }
       }
     }
