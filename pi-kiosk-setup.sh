@@ -1,8 +1,16 @@
 # ============================================================
 # DONA PATYS KDS — Raspberry Pi Kiosk Setup
 # ============================================================
-# Follow these steps IN ORDER after flashing Raspberry Pi OS
-# to your SD card. Should take ~20 minutes total.
+# This is the verified setup currently running on donapatys-kds
+# (KDS Display 1). Follow these steps IN ORDER after flashing
+# Raspberry Pi OS to your SD card. Should take ~20 minutes total.
+#
+# Fleet reference (update as devices/networks change):
+#   donapatys-kds  → ssh pi@donapatys-kds.local   → ?screen=kitchen
+#   kds-display-2  → ssh pi@kds-display-2.local   → ?screen=TBD
+#   kds-display-3  → ssh pi@kds-display-3.local   → ?screen=TBD
+#   App URL: https://dp-kds.vercel.app
+#   Screen values: kitchen, drinks, expo, (none = waiter/tables)
 # ============================================================
 
 
@@ -17,7 +25,7 @@ sudo apt update && sudo apt upgrade -y
 
 
 # ── STEP 3: Install Chromium (usually pre-installed) ─────────
-sudo apt install -y chromium-browser
+sudo apt install -y chromium
 
 
 # ── STEP 4: Disable screen blanking / sleep ──────────────────
@@ -32,45 +40,76 @@ EndSection
 EOF
 
 
-# ── STEP 5: Create the autostart file ────────────────────────
+# ── STEP 5: Create the launch script + autostart file ────────
 # This makes the Pi boot straight into your KDS, fullscreen,
 # no desktop icons, no taskbar — just the app.
 #
-# First create the directory if it doesn't exist:
-mkdir -p /home/pi/.config/lxsession/LXDE-pi
-
-# Now create the autostart file:
-# ⚠️  REPLACE the URL below with your actual Vercel URL
-#     before pasting this into Terminal.
+# fix-chromium.sh is what fixes the "white screen on boot"
+# problem. Kitchen Pis get power-cycled (unplugged) instead of
+# shut down cleanly, which causes two things that both show up
+# as a stuck blank/white screen:
+#   1. Chromium tries to load the page before WiFi is connected
+#   2. Chromium shows a "restore pages?" prompt hidden behind
+#      the kiosk window instead of loading fresh
+# It also auto-restarts Chromium if it ever crashes mid-shift,
+# so recovery doesn't require unplugging the Pi.
 #
-sudo tee /home/pi/.config/lxsession/LXDE-pi/autostart > /dev/null << 'EOF'
-@lxpanel --profile LXDE-pi
-@pcmanfm --desktop --profile LXDE-pi
-@xset s off
-@xset -dpms
-@xset s noblank
-@chromium-browser \
-  --kiosk \
-  --noerrdialogs \
-  --disable-infobars \
-  --disable-extensions \
-  --disable-plugins \
-  --disable-translate \
-  --disable-sync \
-  --disable-background-networking \
-  --disable-features=TranslateUI \
-  --no-first-run \
-  --check-for-update-interval=31536000 \
-  https://YOUR-VERCEL-APP-URL.vercel.app
+# ⚠️  REPLACE the ?screen= value below for the station this Pi
+#     is actually going to display before pasting into Terminal.
+#
+tee /home/pi/fix-chromium.sh > /dev/null << 'EOF'
+#!/bin/bash
+# Wait up to ~60s for network before doing anything (avoids
+# launching Chromium before WiFi reconnects after a power cycle)
+for i in $(seq 1 30); do
+  ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && break
+  sleep 2
+done
+
+# Clear crashed-session flags so Chromium never shows a
+# "restore pages?" prompt hidden behind the kiosk window
+sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' /home/pi/.config/chromium/Default/Preferences 2>/dev/null
+sed -i 's/"exited_cleanly":false/"exited_cleanly":true/g' /home/pi/.config/chromium/Default/Preferences 2>/dev/null
+
+xset s off
+xset -dpms
+xset s noblank
+
+# Auto-restart Chromium if it ever crashes or gets closed
+# mid-shift, so recovery doesn't require unplugging the Pi
+while true; do
+  chromium \
+    --kiosk \
+    --noerrdialogs \
+    --disable-infobars \
+    --disable-extensions \
+    --no-first-run \
+    "https://dp-kds.vercel.app/?screen=kitchen"
+  sleep 2
+done
+EOF
+chmod +x /home/pi/fix-chromium.sh
+
+mkdir -p /home/pi/.config/autostart
+tee /home/pi/.config/autostart/kds.desktop > /dev/null << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=KDS
+Exec=bash -c '/home/pi/fix-chromium.sh'
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
 EOF
 
-# ── STEP 5b: For FOOD station ────────────────────────────────
-# If this Pi is the food station, change the URL to:
-#   https://YOUR-VERCEL-APP-URL.vercel.app?station=food
-
-# ── STEP 5c: For DRINKS station ──────────────────────────────
-# If this Pi is the drinks station, change the URL to:
-#   https://YOUR-VERCEL-APP-URL.vercel.app?station=drinks
+# ── STEP 5b: Which screen does this Pi show? ─────────────────
+# Edit fix-chromium.sh and change the URL at the bottom:
+#   Kitchen ticket display → ?screen=kitchen
+#   Drinks/sides station   → ?screen=drinks
+#   Expo station            → ?screen=expo
+#   Waiter/ordering tables  → no ?screen= param at all
+# NOTE: leaving off ?screen= entirely loads the waiter/tables
+# ordering view, not a kitchen display — don't leave a KDS Pi
+# on the bare URL by accident.
 
 
 # ── STEP 6: Set Pi to auto-login to desktop ──────────────────
@@ -115,10 +154,29 @@ sudo reboot
 
 # ── TROUBLESHOOTING ──────────────────────────────────────────
 
+# White screen / blank screen on boot?
+# → This should now be fixed by fix-chromium.sh (waits for
+#   network + clears crash-restore state + auto-restarts
+#   Chromium if it ever dies).
+# → If it still happens, SSH in (see below) and check:
+#     cat /home/pi/fix-chromium.sh          (URL correct? script present?)
+#     cat /home/pi/.config/autostart/kds.desktop
+#     pgrep -af chromium                    (is it even running?)
+#     ping -c3 8.8.8.8                      (is WiFi actually connecting
+#                                             within the 60s wait window?)
+#   If WiFi takes longer than 60s to connect on your network,
+#   raise the "seq 1 30" loop count in fix-chromium.sh (each
+#   step is 2s, so 30 = 60s, 60 = 2min, etc).
+# → IMPORTANT: the app is a React build using absolute asset
+#   paths. It must be loaded from the live Vercel URL
+#   (https://dp-kds.vercel.app/...), never from a local
+#   file:// path (e.g. file:///home/pi/DP-KDS/...) — file://
+#   breaks the asset paths and shows a white screen.
+
 # App not loading?
 # → Check WiFi is connected: ping google.com
-# → Check the URL in autostart file is correct
-# → Try opening manually: chromium-browser https://your-url.vercel.app
+# → Check the URL in fix-chromium.sh is correct
+# → Try opening manually: chromium https://dp-kds.vercel.app
 
 # Screen went black?
 # → Re-run Step 4 (the xorg.conf blanking disable)
@@ -131,17 +189,21 @@ sudo reboot
 
 # Need to access desktop again for maintenance?
 # → Plug in a keyboard, press Alt+F4 to close Chrome
-# → Or: ssh pi@<pi-ip-address> from another computer
+# → Or: ssh pi@<hostname>.local from another computer on the
+#   same WiFi (e.g. ssh pi@donapatys-kds.local)
 
-# How to find Pi's IP address (for SSH):
-# → On Pi: hostname -I
+# How to find Pi's IP/hostname (for SSH):
+# → On Pi: hostname -I    and    hostname
 # → Or check your router's connected devices list
+# → Or try: ssh pi@<hostname>.local (mDNS, works if both
+#   devices are on the same network)
 
-# ── TO CLONE THIS SETUP TO A SECOND PI ──────────────────────
+# ── TO CLONE THIS SETUP TO ANOTHER PI ────────────────────────
 # 1. Flash a fresh SD card with Raspberry Pi OS
 # 2. Boot it up and connect to WiFi
 # 3. Run all the same steps above
-# 4. Change the URL in Step 5 to ?station=drinks (or food)
+# 4. Set the ?screen= value in fix-chromium.sh for that
+#    station (drinks / expo / kitchen)
 # 5. Done — takes ~15 minutes since you've done it before
 #
 # ============================================================
