@@ -339,8 +339,8 @@ async function sendOrderToClover(order) {
     const orderPayload = {
       orderType: { id: orderTypeId },
       note: order.isToGo
-        ? `🥡 PARA LLEVAR: ${order.toGoName}${order.note ? " | " + order.note : ""}`
-        : `🪑 MESA ${order.table}${order.note ? " | " + order.note : ""}`,
+        ? `PARA LLEVAR: ${order.toGoName}${order.note ? " | " + order.note : ""}`
+        : `MESA ${order.table}${order.note ? " | " + order.note : ""}`,
       state: "open",
     };
     const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
