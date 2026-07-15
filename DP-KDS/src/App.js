@@ -1818,6 +1818,15 @@ function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo, onSelectB
         <span style={S.tableSelectSub}>Selecciona una mesa para ordenar</span>
       </div>
 
+      <div style={{ ...S.toGoRow, margin: "0 auto 16px" }}>
+        <button style={{ ...S.toGoCardBtn, width: "100%", background: BAR_BG, borderColor: "#DDD6FE", color: BAR_COLOR }} onClick={onSelectBar}>
+          🍺 Barra
+          {barOrders.length > 0 && (
+            <span style={{ ...S.toGoBadgeCount, background: BAR_COLOR }}>{barOrders.length} activa{barOrders.length !== 1 ? "s" : ""}</span>
+          )}
+        </button>
+      </div>
+
       <div style={S.tableGrid}>
         {TABLES.map(num => {
           const key = num.toString();
@@ -1855,17 +1864,11 @@ function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo, onSelectB
         })}
       </div>
 
-      <div style={{ ...S.toGoRow, display: "flex", gap: 12 }}>
-        <button style={{ ...S.toGoCardBtn, flex: 1 }} onClick={onSelectToGo}>
+      <div style={S.toGoRow}>
+        <button style={S.toGoCardBtn} onClick={onSelectToGo}>
           🥡 Para Llevar
           {toGoOrders.length > 0 && (
             <span style={S.toGoBadgeCount}>{toGoOrders.length} activa{toGoOrders.length !== 1 ? "s" : ""}</span>
-          )}
-        </button>
-        <button style={{ ...S.toGoCardBtn, flex: 1, background: BAR_BG, borderColor: "#DDD6FE", color: BAR_COLOR }} onClick={onSelectBar}>
-          🍺 Barra
-          {barOrders.length > 0 && (
-            <span style={{ ...S.toGoBadgeCount, background: BAR_COLOR }}>{barOrders.length} activa{barOrders.length !== 1 ? "s" : ""}</span>
           )}
         </button>
       </div>
@@ -2527,16 +2530,16 @@ const S = {
   tableSelectHeader: { marginBottom: 24, textAlign: "center" },
   tableSelectTitle: { fontSize: 26, fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em" },
   tableSelectSub: { display: "block", fontSize: 13, color: "#888", marginTop: 4 },
-  tableGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, maxWidth: 540, margin: "0 auto", width: "100%" },
-  tableCard: { borderRadius: 16, padding: "20px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", border: "2px solid transparent", transition: "all 0.15s", userSelect: "none" },
+  tableGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18, maxWidth: 600, margin: "0 auto", width: "100%" },
+  tableCard: { borderRadius: 16, padding: "24px 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", border: "2px solid transparent", transition: "all 0.15s", userSelect: "none" },
   tableCardFree: { background: "#FFFFFF", border: "2px solid #D1FAE5", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
   tableCardOccupied: { background: "#FFFBEB", border: "2px solid #FCD34D", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" },
-  tableCardNum: { fontSize: 48, fontWeight: 900, color: "#1A1A1A", lineHeight: 1 },
+  tableCardNum: { fontSize: 54, fontWeight: 900, color: "#1A1A1A", lineHeight: 1 },
   tableCardLabel: { fontSize: 10, fontWeight: 900, letterSpacing: "0.12em" },
   tableCardItems: { fontSize: 12, color: "#666", fontWeight: 600 },
   tableCardTimer: { fontSize: 12, fontWeight: 700, color: "#D97706" },
   tableCardCloseBtn: { marginTop: 6, background: "#15803D", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 11, fontWeight: 800, cursor: "pointer", letterSpacing: "0.04em" },
-  toGoRow: { maxWidth: 540, margin: "20px auto 0", width: "100%" },
+  toGoRow: { maxWidth: 600, margin: "20px auto 0", width: "100%" },
   toGoCardBtn: { width: "100%", background: "#EFF6FF", border: "2px solid #BFDBFE", borderRadius: 16, padding: "18px 24px", fontSize: 18, fontWeight: 800, color: "#1D4ED8", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 12 },
   toGoBadgeCount: { background: "#1D4ED8", color: "#fff", borderRadius: 20, fontSize: 11, padding: "2px 10px", fontWeight: 800 },
   backBtn: { background: "#F5F3F0", border: "1px solid #DDD", color: "#444", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
