@@ -1930,6 +1930,8 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [activeOrders, setActiveOrders] = useState([]);
   const [showActiveOrders, setShowActiveOrders] = useState(false);
   const [modModalItem, setModModalItem] = useState(null);
+  const rootRef = useRef(null);
+  const [rootHeight, setRootHeight] = useState(null);
 
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
@@ -1938,6 +1940,30 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       setActiveOrders(data.filter(o => o.status !== "done"));
     });
     return unsub;
+  }, []);
+
+  // The top nav bar wraps to 2 lines on narrower tablets, so its real
+  // height varies. Rather than assume a fixed nav height (which broke
+  // scrolling last time), measure the actual gap between the viewport
+  // top and this screen's own top edge, and size to exactly what's left.
+  // No body-scroll locking here — if this is ever off by a few px, the
+  // page can still fall back to scrolling instead of getting stuck.
+  useEffect(() => {
+    function recalc() {
+      if (!rootRef.current) return;
+      const top = rootRef.current.getBoundingClientRect().top;
+      setRootHeight(Math.max(300, window.innerHeight - top));
+    }
+    recalc();
+    const ro = new ResizeObserver(recalc);
+    ro.observe(document.body);
+    window.addEventListener("resize", recalc);
+    window.addEventListener("orientationchange", recalc);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", recalc);
+      window.removeEventListener("orientationchange", recalc);
+    };
   }, []);
 
   const drinkCategories = menu.categories.filter(isDrinkCategory);
@@ -2034,7 +2060,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   }
 
   return (
-    <div style={S.waiterRoot}>
+    <div ref={rootRef} style={{ ...S.waiterRoot, ...(rootHeight ? { height: rootHeight } : {}) }}>
       {modModalItem && (
         <ModifierModal item={modModalItem} displayName={getItemDisplayName(modModalItem)} lang={lang} onConfirm={handleModifierConfirm} onClose={() => setModModalItem(null)} />
       )}
@@ -2546,7 +2572,7 @@ const S = {
   waiterTableBig: { fontSize: 20, fontWeight: 900, color: "#BE202E", letterSpacing: "-0.01em" },
 
   appRoot: { fontFamily: "'DM Sans', 'Segoe UI', sans-serif", background: "#F5F3F0", minHeight: "100vh", color: "#1A1A1A", display: "flex", flexDirection: "column" },
-  nav: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "#FFFFFF", borderBottom: "2px solid #BE202E", padding: "0 12px", flexWrap: "wrap", gap: 4, boxShadow: "0 1px 4px rgba(0,0,0,0.08)" },
+  nav: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "#FFFFFF", borderBottom: "2px solid #BE202E", padding: "0 12px", flexWrap: "wrap", gap: 4, boxShadow: "0 1px 4px rgba(0,0,0,0.08)", position: "sticky", top: 0, zIndex: 60 },
   navLeft: { display: "flex", flexWrap: "wrap" },
   navBtn: { background: "none", border: "none", color: "#666", padding: "14px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", letterSpacing: "0.01em", whiteSpace: "nowrap" },
   navBtnActive: { color: "#BE202E", borderBottom: "3px solid #BE202E" },
@@ -2696,7 +2722,7 @@ const S = {
   catTile: { background: "#FFFFFF", border: "2px solid #E5E0D8", borderRadius: 16, padding: "28px 16px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, minHeight: 150, transition: "border-color 0.15s, box-shadow 0.15s" },
   catTileEmoji: { fontSize: 44 },
   catTileName: { fontSize: 17, fontWeight: 700, textAlign: "center", color: "#1A1A1A", lineHeight: 1.3 },
-  backToCats: { display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#BE202E", fontWeight: 700, fontSize: 14, cursor: "pointer", padding: "10px 0 12px 0", letterSpacing: "0.02em" },
+  backToCats: { display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#BE202E", fontWeight: 800, fontSize: 18, cursor: "pointer", padding: "12px 0 14px 0", letterSpacing: "0.02em" },
   menuGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 },
   menuItem: { background: "#FFFFFF", border: "2px solid #E5E0D8", borderRadius: 14, padding: "18px 12px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 7, position: "relative", transition: "border-color 0.15s, box-shadow 0.15s", minHeight: 140 },
   menuItemActive: { background: "#FFF1F2", border: "2px solid #BE202E", boxShadow: "0 0 0 2px rgba(190,32,46,0.12)" },
