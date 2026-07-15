@@ -70,6 +70,8 @@ const T = {
     table2: "Mesa",
     duration: "Duración",
     editOrder: "Editar Orden",
+    completeOrder: "Completar",
+    confirmComplete: "¿Marcar esta orden como entregada y completada? Esto la quitará de órdenes activas.",
     activeOrders: "Órdenes Activas",
     editHistory: "Historial de Cambios",
     original: "Original",
@@ -156,6 +158,8 @@ const T = {
     table2: "Table",
     duration: "Duration",
     editOrder: "Edit Order",
+    completeOrder: "Complete",
+    confirmComplete: "Mark this order as delivered and complete? This will remove it from active orders.",
     activeOrders: "Active Orders",
     editHistory: "Edit History",
     original: "Original",
@@ -386,12 +390,20 @@ async function sendOrderToClover(order) {
 }
 
 async function updateOrderInClover(order) {
+  if (!order.cloverOrderId) return null;
+  // Clover has no atomic "replace all line items" call, and patching items
+  // one-by-one would reopen the same multi-call race window atomic_order/orders
+  // was added to avoid. This used to only patch the note, leaving the item
+  // list on the POS permanently stale after any edit — which is exactly why
+  // cashiers had to reinput edited orders by hand at charge time. Deleting
+  // and recreating the order atomically keeps the POS in sync with every
+  // edit. Callers must persist the returned id as the order's new cloverOrderId.
   try {
-    if (!order.cloverOrderId) return;
-    await cloverRequest(`orders/${order.cloverOrderId}`, "POST", { note: order.note || "" });
+    await cloverRequest(`orders/${order.cloverOrderId}`, "DELETE");
   } catch (err) {
-    console.warn("⚠️ Clover order update failed:", err.message);
+    console.warn("⚠️ Clover order delete failed during edit sync:", err.message);
   }
+  return (await sendOrderToClover(order)) || null;
 }
 
 // ============================================================
@@ -2034,7 +2046,10 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         await cancelKitchenOrder(editingOrder.firestoreId);
       } else {
         await editKitchenOrder(editingOrder.firestoreId, editingOrder.items, cart, note);
-        await updateOrderInClover({ ...editingOrder, items: cart, note });
+        const newCloverOrderId = await updateOrderInClover({ ...editingOrder, items: cart, note });
+        if (newCloverOrderId) {
+          await updateDoc(doc(db, "orders", editingOrder.firestoreId), { cloverOrderId: newCloverOrderId });
+        }
       }
       setSending(false); setSent(true);
       setTimeout(() => { setSent(false); cancelEdit(); }, 2000);
@@ -2135,11 +2150,19 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         <div style={S.activeOrdersDropdown}>
           <div style={S.dropdownTitle}>{t.activeOrders} — {t.editOrder}</div>
           {activeOrders.map(order => (
-            <button key={order.firestoreId} style={S.activeOrderRow} onClick={() => loadOrderForEdit(order)}>
-              <span style={order.isToGo ? S.toGoChipSmall : order.isBar ? { ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR } : S.tableChipSmall}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : `${t.table2} ${order.table}`}</span>
-              <span style={S.activeOrderItems}>{order.items.map(i => `${i.emoji}×${i.qty}`).join(" ")}</span>
-              <span style={S.activeOrderEdit}>✏️ {t.editOrder}</span>
-            </button>
+            <div key={order.firestoreId} style={S.activeOrderRow}>
+              <button style={S.activeOrderMain} onClick={() => loadOrderForEdit(order)}>
+                <span style={order.isToGo ? S.toGoChipSmall : order.isBar ? { ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR } : S.tableChipSmall}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : `${t.table2} ${order.table}`}</span>
+                <span style={S.activeOrderItems}>{order.items.map(i => `${i.emoji}×${i.qty}`).join(" ")}</span>
+                <span style={S.activeOrderEdit}>✏️ {t.editOrder}</span>
+              </button>
+              <button
+                style={S.activeOrderComplete}
+                onClick={() => { if (window.confirm(t.confirmComplete)) bumpOrder(order); }}
+              >
+                ✓ {t.completeOrder}
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -2707,7 +2730,9 @@ const S = {
   activeOrdersBadge: { background: "#BE202E", color: "#fff", borderRadius: 10, fontSize: 10, padding: "1px 5px", fontWeight: 800 },
   activeOrdersDropdown: { background: "#FFFFFF", borderBottom: "1px solid #E5E0D8", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 },
   dropdownTitle: { fontSize: 10, fontWeight: 800, color: "#AAA", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 },
-  activeOrderRow: { background: "#F5F3F0", border: "1px solid #E5E0D8", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", width: "100%", textAlign: "left", flexWrap: "wrap" },
+  activeOrderRow: { background: "#F5F3F0", border: "1px solid #E5E0D8", borderRadius: 10, padding: "4px 4px 4px 12px", display: "flex", alignItems: "center", gap: 10, width: "100%" },
+  activeOrderMain: { background: "none", border: "none", padding: "4px 0", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1, textAlign: "left", flexWrap: "wrap" },
+  activeOrderComplete: { background: "#15803D", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 },
   tableChipSmall: { background: "#FFF1F2", color: "#BE202E", borderRadius: 6, padding: "2px 7px", fontSize: 12, fontWeight: 800 },
   toGoChipSmall: { background: "#E0F2FE", color: "#0369A1", borderRadius: 6, padding: "2px 7px", fontSize: 12, fontWeight: 800 },
   activeOrderItems: { flex: 1, fontSize: 14, color: "#888" },
