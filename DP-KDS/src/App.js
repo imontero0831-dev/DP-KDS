@@ -32,6 +32,9 @@ const T = {
     table: "MESA",
     toGo: "PARA LLEVAR",
     toGoName: "Nombre del cliente",
+    bar: "BARRA",
+    barSeat: "Asiento",
+    barLabel: "BARRA",
     orderSummary: "Resumen de Orden",
     tapToAdd: "Toca los artículos para agregarlos",
     specialInstructions: "Instrucciones especiales...",
@@ -115,6 +118,9 @@ const T = {
     table: "TABLE",
     toGo: "TO GO",
     toGoName: "Customer name",
+    bar: "BAR",
+    barSeat: "Seat",
+    barLabel: "BAR",
     orderSummary: "Order Summary",
     tapToAdd: "Tap items to add them",
     specialInstructions: "Special instructions...",
@@ -333,39 +339,46 @@ const CLOVER_ORDER_TYPES = {
   takeOut: "RFE2M1R5QRJWR",
 };
 
+function buildCloverOrderNote(order) {
+  if (order.isToGo) return `PARA LLEVAR: ${order.toGoName}${order.note ? " | " + order.note : ""}`;
+  if (order.isBar) return `BARRA ${order.table}${order.note ? " | " + order.note : ""}`;
+  return `MESA ${order.table}${order.note ? " | " + order.note : ""}`;
+}
+
 async function sendOrderToClover(order) {
   try {
     const orderTypeId = order.isToGo ? CLOVER_ORDER_TYPES.takeOut : CLOVER_ORDER_TYPES.dineIn;
-    const orderPayload = {
-      orderType: { id: orderTypeId },
-      note: order.isToGo
-        ? `PARA LLEVAR: ${order.toGoName}${order.note ? " | " + order.note : ""}`
-        : `MESA ${order.table}${order.note ? " | " + order.note : ""}`,
-      state: "open",
-    };
-    const cloverOrder = await cloverRequest("orders", "POST", orderPayload);
-    const cloverOrderId = cloverOrder.id;
-    if (!cloverOrderId) throw new Error("No order ID returned from Clover");
     // Clover doesn't treat unitQty as a quantity multiplier for regular
     // items — each line item represents a single unit. To show "qty 2" on
     // the POS you need two separate line items, not one with unitQty:2000.
+    //
+    // All line items + modifications are sent in one atomic_order/orders
+    // call instead of the order-then-N-sequential-POSTs approach. The old
+    // approach left a multi-second window where the register/terminal could
+    // open an order while it was still being built, which is a documented
+    // cause of the POS "won't let you charge" glitch on API-created orders.
+    const lineItems = [];
     for (const item of order.items) {
       for (let unit = 0; unit < item.qty; unit++) {
-        const lineItem = await cloverRequest(`orders/${cloverOrderId}/line_items`, "POST", {
+        lineItems.push({
           name: item.name,
           price: item.price,
+          ...(item.modifiers && item.modifiers.length > 0
+            ? { modifications: item.modifiers.map(mod => ({ modifier: { id: mod.id }, name: mod.name, amount: mod.price })) }
+            : {}),
         });
-        if (item.modifiers && item.modifiers.length > 0) {
-          for (const mod of item.modifiers) {
-            await cloverRequest(
-              `orders/${cloverOrderId}/line_items/${lineItem.id}/modifications`,
-              "POST",
-              { modifier: { id: mod.id }, name: mod.name, amount: mod.price }
-            );
-          }
-        }
       }
     }
+    const cloverOrder = await cloverRequest("atomic_order/orders", "POST", {
+      orderCart: {
+        orderType: { id: orderTypeId },
+        note: buildCloverOrderNote(order),
+        state: "open",
+        lineItems,
+      },
+    });
+    const cloverOrderId = cloverOrder.id;
+    if (!cloverOrderId) throw new Error("No order ID returned from Clover");
     return cloverOrderId;
   } catch (err) {
     console.warn("⚠️ Clover order push failed (saved to Firebase only):", err.message);
@@ -648,6 +661,20 @@ const TOGO_COLOR   = "#92400E";
 const TOGO_BG      = "#FEF3C7";
 const DINEIN_COLOR = "#1D4ED8";
 const DINEIN_BG    = "#EFF6FF";
+const BAR_COLOR    = "#7C3AED";
+const BAR_BG       = "#F3E8FF";
+
+function getOrderAccentColor(order) {
+  if (order.isToGo) return TOGO_COLOR;
+  if (order.isBar) return BAR_COLOR;
+  return DINEIN_COLOR;
+}
+
+function getOrderAccentBg(order) {
+  if (order.isToGo) return TOGO_BG;
+  if (order.isBar) return BAR_BG;
+  return DINEIN_BG;
+}
 
 function getDrinksRule(itemName, catName) {
   return DRINKS_RULES.find(r => r.match(itemName, catName)) || null;
@@ -889,8 +916,8 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
     }
   };
 
-  const ticketAccentColor = order.isToGo ? TOGO_COLOR : DINEIN_COLOR;
-  const ticketTintBg = order.isToGo ? TOGO_BG : DINEIN_BG;
+  const ticketAccentColor = getOrderAccentColor(order);
+  const ticketTintBg = getOrderAccentBg(order);
 
   return (
     <div style={{
@@ -910,6 +937,7 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
     }}>
       {order.cancelled && <div style={S.cancelledBanner}>{t.cancelled}</div>}
       {order.isToGo && <div style={S.toGoBanner}>🥡 {t.toGoLabel} — {order.toGoName}</div>}
+      {order.isBar && <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>🍺 {t.barLabel} — {order.table}</div>}
       {order.modified && !order.cancelled && <div style={S.modifiedBanner}>⚡ {t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket */}
@@ -928,6 +956,8 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
           <div style={S.ticketMeta}>
             {order.isToGo
               ? <span style={S.toGoNameBig}>{order.toGoName}</span>
+              : order.isBar
+              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>🍺 {order.table}</span>
               : <span style={S.tableNumberBig}>{t.table2} {order.table}</span>
             }
           </div>
@@ -1065,7 +1095,7 @@ function KitchenScreen({ lang, menu }) {
 
   function handleUndoLastCompleted() {
     if (!lastCompleted) return;
-    const label = lastCompleted.isToGo ? lastCompleted.toGoName : `Mesa ${lastCompleted.table}`;
+    const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
     if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
     undoCompletedOrder(lastCompleted);
     flash("↩ Orden restaurada", "#7C3AED");
@@ -1247,7 +1277,7 @@ function KitchenScreen({ lang, menu }) {
           {queued.map(order => (
             <div key={order.firestoreId} style={S.queueItem}>
               <span style={S.queueOrderId}>#{order.id}</span>
-              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : `${t.table2} ${order.table}`}</span>
+              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : `${t.table2} ${order.table}`}</span>
               <span style={S.queueOrderItems}>{order.items.map(i => `${i.qty}× ${i.name}`).join(", ")}</span>
               <span style={S.queueOrderTime}>{elapsed(order.timestamp)}</span>
             </div>
@@ -1273,8 +1303,8 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
   const isWarning = elapsedSecs > 300;
   const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
 
-  const ticketAccentColor = order.isToGo ? TOGO_COLOR : DINEIN_COLOR;
-  const ticketTintBg = order.isToGo ? TOGO_BG : DINEIN_BG;
+  const ticketAccentColor = getOrderAccentColor(order);
+  const ticketTintBg = getOrderAccentBg(order);
 
   return (
     <div style={{
@@ -1292,6 +1322,11 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
           🥡 PARA LLEVAR — {order.toGoName}
         </div>
       )}
+      {order.isBar && (
+        <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>
+          🍺 BARRA — {order.table}
+        </div>
+      )}
       {order.modified && !order.cancelled && <div style={S.modifiedBanner}>⚡ {t.modified}</div>}
 
       <div style={S.ticketTop}>
@@ -1300,6 +1335,8 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
           <div style={S.ticketMeta}>
             {order.isToGo
               ? <span style={{ ...S.toGoNameBig, color: TOGO_COLOR }}>{order.toGoName}</span>
+              : order.isBar
+              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>🍺 {order.table}</span>
               : <span style={S.tableNumberBig}>{t.table2} {order.table}</span>}
           </div>
         </div>
@@ -1408,7 +1445,7 @@ function DrinksStationScreen({ lang, menu }) {
 
   function handleUndoLastCompleted() {
     if (!lastCompleted) return;
-    const label = lastCompleted.isToGo ? lastCompleted.toGoName : `Mesa ${lastCompleted.table}`;
+    const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
     if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
     undoCompletedOrder(lastCompleted);
     flash("↩ Orden restaurada", "#7C3AED");
@@ -1501,7 +1538,7 @@ function DrinksStationScreen({ lang, menu }) {
           {queued.map(order => (
             <div key={order.firestoreId} style={S.queueItem}>
               <span style={S.queueOrderId}>#{order.id}</span>
-              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : `${t.table2} ${order.table}`}</span>
+              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : `${t.table2} ${order.table}`}</span>
               <span style={S.queueOrderItems}>
                 {order.items?.filter(i => getDrinksRule(i.name) || order.isToGo).map(i => `${i.qty}× ${i.name}`).join(", ")}
               </span>
@@ -1538,8 +1575,8 @@ function ExpoTicket({ order, catNameById }) {
   const isWarning = elapsedSecs > 300;
   const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
 
-  const ticketAccentColor = order.isToGo ? TOGO_COLOR : DINEIN_COLOR;
-  const ticketTintBg = order.isToGo ? TOGO_BG : DINEIN_BG;
+  const ticketAccentColor = getOrderAccentColor(order);
+  const ticketTintBg = getOrderAccentBg(order);
 
   return (
     <div
@@ -1561,9 +1598,9 @@ function ExpoTicket({ order, catNameById }) {
       <div style={{ background: allDone ? "#DCFCE7" : "#F5EFE0", padding: "10px 14px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 800, color: "#9B8B72", letterSpacing: "0.18em", textTransform: "uppercase" }}>
-            {order.isToGo ? "Para Llevar" : "Mesa"}
+            {order.isToGo ? "Para Llevar" : order.isBar ? "Barra" : "Mesa"}
           </div>
-          <div style={{ fontSize: order.isToGo ? "clamp(20px, calc(17.308cqw - 38.85px), 65px)" : "clamp(39px, calc(35.096cqw - 80.57px), 130px)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : "#1A1A1A", textTransform: "uppercase", wordBreak: "break-word" }}>
+          <div style={{ fontSize: order.isToGo ? "clamp(20px, calc(17.308cqw - 38.85px), 65px)" : "clamp(39px, calc(35.096cqw - 80.57px), 130px)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : (order.isBar ? BAR_COLOR : "#1A1A1A"), textTransform: "uppercase", wordBreak: "break-word" }}>
             {order.isToGo ? order.toGoName : order.table}
           </div>
         </div>
@@ -1666,7 +1703,7 @@ function ExpoScreen({ menu }) {
 
   function handleUndoLastCompleted() {
     if (!lastCompleted) return;
-    const label = lastCompleted.isToGo ? lastCompleted.toGoName : `Mesa ${lastCompleted.table}`;
+    const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
     if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
     undoCompletedOrder(lastCompleted);
   }
@@ -1747,7 +1784,7 @@ function ExpoScreen({ menu }) {
 // ============================================================
 const TABLES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo }) {
+function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo, onSelectBar }) {
   const [orders, setOrders] = useState([]);
   const [closing, setClosing] = useState(null);
 
@@ -1760,11 +1797,12 @@ function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo }) {
   }, []);
 
   const activeByTable = {};
-  orders.filter(o => o.status !== "done" && !o.isToGo).forEach(o => {
+  orders.filter(o => o.status !== "done" && !o.isToGo && !o.isBar).forEach(o => {
     if (!activeByTable[o.table]) activeByTable[o.table] = [];
     activeByTable[o.table].push(o);
   });
   const toGoOrders = orders.filter(o => o.status !== "done" && o.isToGo);
+  const barOrders = orders.filter(o => o.status !== "done" && o.isBar);
 
   async function handleClose(tableNum, e) {
     e.stopPropagation();
@@ -1817,11 +1855,17 @@ function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo }) {
         })}
       </div>
 
-      <div style={S.toGoRow}>
-        <button style={S.toGoCardBtn} onClick={onSelectToGo}>
+      <div style={{ ...S.toGoRow, display: "flex", gap: 12 }}>
+        <button style={{ ...S.toGoCardBtn, flex: 1 }} onClick={onSelectToGo}>
           🥡 Para Llevar
           {toGoOrders.length > 0 && (
             <span style={S.toGoBadgeCount}>{toGoOrders.length} activa{toGoOrders.length !== 1 ? "s" : ""}</span>
+          )}
+        </button>
+        <button style={{ ...S.toGoCardBtn, flex: 1, background: BAR_BG, borderColor: "#DDD6FE", color: BAR_COLOR }} onClick={onSelectBar}>
+          🍺 Barra
+          {barOrders.length > 0 && (
+            <span style={{ ...S.toGoBadgeCount, background: BAR_COLOR }}>{barOrders.length} activa{barOrders.length !== 1 ? "s" : ""}</span>
           )}
         </button>
       </div>
@@ -1875,6 +1919,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [orderType, setOrderType] = useState(initialOrderType || "table");
   const [tableNum, setTableNum] = useState(initialTable || "");
   const [toGoName, setToGoName] = useState("");
+  const [barSeat, setBarSeat] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [note, setNote] = useState("");
@@ -1898,7 +1943,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const filteredItems = activeCategory ? menu.items.filter(i => i.categoryId === activeCategory) : [];
   const cartTotal = cart.reduce((sum, i) => sum + (i.price + (i.modifiers?.reduce((ms, m) => ms + m.price, 0) ?? 0)) * i.qty, 0);
   const isEditing = !!editingOrder;
-  const identifier = orderType === "togo" ? toGoName : tableNum;
+  const identifier = orderType === "togo" ? toGoName : orderType === "bar" ? barSeat : tableNum;
   const canSend = identifier.trim() && (cart.length > 0 || isEditing);
   const isCancellingOrder = isEditing && cart.every(i => i.qty === 0);
 
@@ -1940,14 +1985,15 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     setEditingOrder(order);
     setCart([...order.items.map(i => ({ ...i }))]);
     setNote(order.note || "");
-    setOrderType(order.isToGo ? "togo" : "table");
+    setOrderType(order.isToGo ? "togo" : order.isBar ? "bar" : "table");
     if (order.isToGo) setToGoName(order.toGoName || "");
+    else if (order.isBar) setBarSeat(order.table || "");
     else setTableNum(order.table || "");
     setShowActiveOrders(false);
   }
 
   function cancelEdit() {
-    setEditingOrder(null); setCart([]); setNote(""); setTableNum(""); setToGoName("");
+    setEditingOrder(null); setCart([]); setNote(""); setTableNum(""); setToGoName(""); setBarSeat("");
   }
 
   async function handleSend() {
@@ -1965,8 +2011,9 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       setTimeout(() => { setSent(false); cancelEdit(); }, 2000);
     } else {
       const order = {
-        id: genId(), table: orderType === "table" ? tableNum : null,
+        id: genId(), table: orderType === "table" ? tableNum : orderType === "bar" ? barSeat : null,
         isToGo: orderType === "togo", toGoName: orderType === "togo" ? toGoName : null,
+        isBar: orderType === "bar",
         items: cart.map(i => ({ ...i, name: i.name })), note, total: cartTotal,
         timestamp: Date.now(), status: "new", editHistory: [],
       };
@@ -1976,8 +2023,9 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       onOrderSent?.(order);
       setTimeout(() => {
         setCart([]); setNote(""); setSent(false);
-        if (!initialTable && orderType !== "togo") { setTableNum(""); }
+        if (!initialTable && orderType !== "togo" && orderType !== "bar") { setTableNum(""); }
         if (orderType === "togo") setToGoName("");
+        if (orderType === "bar") setBarSeat("");
       }, 2000);
     }
   }
@@ -1996,6 +2044,8 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
             <span style={S.waiterTableBig}>🪑 Mesa {initialTable}</span>
           ) : initialOrderType === "togo" ? (
             <span style={S.waiterTableBig}>🥡 Para Llevar</span>
+          ) : initialOrderType === "bar" ? (
+            <span style={{ ...S.waiterTableBig, color: BAR_COLOR }}>🍺 Barra</span>
           ) : (
             <span style={S.waiterLogo}>🍽️ {t.orderStation}</span>
           )}
@@ -2007,9 +2057,10 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               {t.activeOrders} <span style={S.activeOrdersBadge}>{activeOrders.length}</span>
             </button>
           )}
-          {!initialTable && initialOrderType !== "togo" && (
+          {!initialTable && !initialOrderType && (
             <div style={S.orderTypeToggle}>
               <button style={{ ...S.typeBtn, ...(orderType === "table" ? S.typeBtnActive : {}) }} onClick={() => setOrderType("table")}>🪑 {t.table}</button>
+              <button style={{ ...S.typeBtn, ...(orderType === "bar" ? { background: BAR_COLOR, color: "#fff" } : {}) }} onClick={() => setOrderType("bar")}>🍺 {t.bar}</button>
               <button style={{ ...S.typeBtn, ...(orderType === "togo" ? S.typeBtnToGo : {}) }} onClick={() => setOrderType("togo")}>🥡 {t.toGo}</button>
             </div>
           )}
@@ -2025,15 +2076,27 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               />
             </div>
           )}
-          {!initialTable && !initialOrderType && (
-            <div style={{ ...S.tableInput, ...(orderType === "togo" ? S.tableInputToGo : {}) }}>
-              <span style={{ ...S.tableLabel, ...(orderType === "togo" ? { color: "#0369A1" } : {}) }}>{orderType === "togo" ? "🥡" : t.table}</span>
+          {initialOrderType === "bar" && (
+            <div style={{ ...S.tableInput, background: BAR_BG, borderColor: "#DDD6FE" }}>
+              <span style={{ ...S.tableLabel, color: BAR_COLOR }}>🍺</span>
               <input
-                style={{ ...S.tableField, width: orderType === "togo" ? 130 : 48 }}
-                value={orderType === "togo" ? toGoName : tableNum}
-                onChange={e => orderType === "togo" ? setToGoName(e.target.value) : setTableNum(e.target.value)}
-                placeholder={orderType === "togo" ? t.toGoName : "#"}
-                maxLength={orderType === "togo" ? 30 : 3}
+                style={{ ...S.tableField, width: 90 }}
+                value={barSeat}
+                onChange={e => setBarSeat(e.target.value)}
+                placeholder={t.barSeat}
+                maxLength={10}
+              />
+            </div>
+          )}
+          {!initialTable && !initialOrderType && (
+            <div style={{ ...S.tableInput, ...(orderType === "togo" ? S.tableInputToGo : {}), ...(orderType === "bar" ? { background: BAR_BG, borderColor: "#DDD6FE" } : {}) }}>
+              <span style={{ ...S.tableLabel, ...(orderType === "togo" ? { color: "#0369A1" } : {}), ...(orderType === "bar" ? { color: BAR_COLOR } : {}) }}>{orderType === "togo" ? "🥡" : orderType === "bar" ? "🍺" : t.table}</span>
+              <input
+                style={{ ...S.tableField, width: orderType === "togo" ? 130 : orderType === "bar" ? 90 : 48 }}
+                value={orderType === "togo" ? toGoName : orderType === "bar" ? barSeat : tableNum}
+                onChange={e => orderType === "togo" ? setToGoName(e.target.value) : orderType === "bar" ? setBarSeat(e.target.value) : setTableNum(e.target.value)}
+                placeholder={orderType === "togo" ? t.toGoName : orderType === "bar" ? t.barSeat : "#"}
+                maxLength={orderType === "togo" ? 30 : orderType === "bar" ? 10 : 3}
               />
             </div>
           )}
@@ -2044,7 +2107,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           <div style={S.dropdownTitle}>{t.activeOrders} — {t.editOrder}</div>
           {activeOrders.map(order => (
             <button key={order.firestoreId} style={S.activeOrderRow} onClick={() => loadOrderForEdit(order)}>
-              <span style={order.isToGo ? S.toGoChipSmall : S.tableChipSmall}>{order.isToGo ? `🥡 ${order.toGoName}` : `${t.table2} ${order.table}`}</span>
+              <span style={order.isToGo ? S.toGoChipSmall : order.isBar ? { ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR } : S.tableChipSmall}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : `${t.table2} ${order.table}`}</span>
               <span style={S.activeOrderItems}>{order.items.map(i => `${i.emoji}×${i.qty}`).join(" ")}</span>
               <span style={S.activeOrderEdit}>✏️ {t.editOrder}</span>
             </button>
@@ -2218,7 +2281,7 @@ function HistoryScreen({ lang }) {
             <div key={order.firestoreId} style={S.historyCard}>
               <button style={S.historyCardHeader} onClick={() => setExpandedId(expandedId === order.firestoreId ? null : order.firestoreId)}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  {order.isToGo ? <span style={S.toGoChipSmall}>🥡 {order.toGoName}</span> : <span style={S.historyTable}>{t.table2} {order.table}</span>}
+                  {order.isToGo ? <span style={S.toGoChipSmall}>🥡 {order.toGoName}</span> : order.isBar ? <span style={{ ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR }}>🍺 {order.table}</span> : <span style={S.historyTable}>{t.table2} {order.table}</span>}
                   {order.modified && <span style={S.modifiedChip}>⚡ {t.modified}</span>}
                   <span style={S.historyId}>#{order.id}</span>
                 </div>
@@ -2429,6 +2492,10 @@ export default function App() {
           }}
           onSelectToGo={() => {
             setOrderContext({ table: null, orderType: "togo" });
+            setView("waiter");
+          }}
+          onSelectBar={() => {
+            setOrderContext({ table: null, orderType: "bar" });
             setView("waiter");
           }}
         />
