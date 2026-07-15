@@ -72,10 +72,22 @@ function checkValidServiceWorker(swUrl, config) {
     .catch(() => console.log('PWA: no internet, running in offline mode.'));
 }
 
+// Kiosk tablets/Pis leave this app open for days without navigating away,
+// so a previously-installed service worker can keep serving a stale
+// cached build indefinitely (its update check only runs on navigation or
+// a ~24h background timer). This app has no real offline use case — it's
+// useless without live Firestore/Clover calls anyway — so on any device
+// that still has the old service worker installed, tear it down, wipe its
+// Workbox caches, and reload once to guarantee the latest code takes over.
 export function unregister() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.ready
-      .then((registration) => registration.unregister())
+    navigator.serviceWorker.getRegistrations()
+      .then((registrations) => {
+        if (registrations.length === 0) return;
+        return Promise.all(registrations.map((r) => r.unregister()))
+          .then(() => 'caches' in window ? caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))) : null)
+          .then(() => window.location.reload());
+      })
       .catch((error) => console.error(error.message));
   }
 }
