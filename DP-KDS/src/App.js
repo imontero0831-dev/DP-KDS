@@ -76,7 +76,6 @@ const T = {
     editOrder: "Editar Orden",
     completeOrder: "Completar",
     confirmComplete: "¿Marcar esta orden como entregada y completada? Esto la quitará de órdenes activas.",
-    activeOrders: "Órdenes Activas",
     editHistory: "Historial de Cambios",
     original: "Original",
     edit: "Edición",
@@ -116,6 +115,11 @@ const T = {
     tabDrinks: "Bebidas",
     tabFood: "Comida",
     backToCategories: "← Categorías",
+    tableOrders: "Órdenes de la Mesa",
+    noActiveOrders: "Sin órdenes activas",
+    newRound: "+ Nueva Ronda",
+    newToGoOrder: "+ Nueva Orden Para Llevar",
+    newBarOrder: "+ Nueva Orden de Barra",
   },
   en: {
     orderStation: "Order Station",
@@ -168,7 +172,6 @@ const T = {
     editOrder: "Edit Order",
     completeOrder: "Complete",
     confirmComplete: "Mark this order as delivered and complete? This will remove it from active orders.",
-    activeOrders: "Active Orders",
     editHistory: "Edit History",
     original: "Original",
     edit: "Edit",
@@ -208,6 +211,11 @@ const T = {
     tabDrinks: "Drinks",
     tabFood: "Food",
     backToCategories: "← Categories",
+    tableOrders: "Table Orders",
+    noActiveOrders: "No active orders",
+    newRound: "+ New Round",
+    newToGoOrder: "+ New To-Go Order",
+    newBarOrder: "+ New Bar Order",
   },
 };
 
@@ -1133,7 +1141,8 @@ function KitchenScreen({ lang, menu }) {
   //   Enter        → advance focused order (new→in_progress, in_progress→done)
   //   +            → focus next ticket
   //   -            → focus previous ticket
-  //   *            → undo focused order one step back (hard to press accidentally)
+  //   *            → undo: step the focused order back one status, or if there's
+  //                  nothing to step back, restore the last completed order
   //   1–9          → jump directly to ticket by position
   //   0            → reset focus to first ticket
   //
@@ -1145,12 +1154,17 @@ function KitchenScreen({ lang, menu }) {
 
     const order = visible[focusedIndex];
 
-    // Normalize numpad keys — e.code is the physical key, e.key varies by OS/NumLock
+    // Normalize numpad keys — e.code is the physical key, e.key varies by OS/NumLock.
+    // Digit keys especially: with NumLock off, Numpad4/6/etc. send e.key
+    // "ArrowLeft"/"ArrowRight"/etc. instead of a digit, which used to make the
+    // jump-to-ticket shortcuts silently fail (and made a digit key act like a
+    // stray "back" arrow instead). Reading e.code keeps digits reliable either way.
     let key = e.key;
     if (e.code === "NumpadEnter")    key = "Enter";
     if (e.code === "NumpadAdd")      key = "+";
     if (e.code === "NumpadSubtract") key = "-";
     if (e.code === "NumpadMultiply") key = "*";
+    if (/^Numpad[0-9]$/.test(e.code)) key = e.code.slice(6);
 
     switch (key) {
       // ── ENTER: advance order status ────────────────────────
@@ -1181,13 +1195,18 @@ function KitchenScreen({ lang, menu }) {
         break;
       }
 
-      // ── * (NumpadMultiply): undo one step ──────────────────
+      // ── * (NumpadMultiply): undo — step the focused ticket back one
+      //    status, or if there's nothing to step back (e.g. it was just
+      //    bumped to done and is already gone from view), restore the
+      //    last completed order instead, same as the header ↩ button.
       case "*": {
         e.preventDefault();
-        if (!order || order.cancelled) return;
-        if (order.status === "in_progress") {
+        if (order && !order.cancelled && order.status === "in_progress") {
           updateOrderStatus(order.firestoreId, "new");
           flash("↩ Deshecho", "#D97706");
+        } else if (lastCompleted) {
+          undoCompletedOrder(lastCompleted);
+          flash("↩ Orden restaurada", "#7C3AED");
         }
         break;
       }
@@ -1215,8 +1234,13 @@ function KitchenScreen({ lang, menu }) {
       case "Backspace":
       case "Delete": {
         e.preventDefault();
-        if (!order || order.cancelled) return;
-        if (order.status === "in_progress") { updateOrderStatus(order.firestoreId, "new"); flash("↩ Deshecho", "#D97706"); }
+        if (order && !order.cancelled && order.status === "in_progress") {
+          updateOrderStatus(order.firestoreId, "new");
+          flash("↩ Deshecho", "#D97706");
+        } else if (lastCompleted) {
+          undoCompletedOrder(lastCompleted);
+          flash("↩ Orden restaurada", "#7C3AED");
+        }
         break;
       }
       case "Escape":   { e.preventDefault(); setFocusedIndex(0); break; }
@@ -1224,7 +1248,7 @@ function KitchenScreen({ lang, menu }) {
       default:
         break;
     }
-  }, [focusedIndex, visible]);
+  }, [focusedIndex, visible, lastCompleted]);
 
   // Attach and clean up the global keydown listener
   useEffect(() => {
@@ -1236,16 +1260,16 @@ function KitchenScreen({ lang, menu }) {
     <div style={S.kitchenRoot}>
       <div style={S.kitchenHeader}>
         <div style={S.kitchenHeaderLeft}>
-          <span style={{ ...S.kitchenTitle, fontSize: "clamp(14px, calc(2.030vw + 6.45px), 45px)" }}>👨‍🍳 {t.kitchenDisplay}</span>
-          {queued.length > 0 && <span style={{ ...S.queuePill, fontSize: "clamp(12px, calc(1.177vw + 7.64px), 30px)" }}>+{queued.length} {t.inQueue}</span>}
+          <span style={{ ...S.kitchenTitle, fontSize: "clamp(13px, calc(0.9vw + 6px), 22px)" }}>👨‍🍳 {t.kitchenDisplay}</span>
+          {queued.length > 0 && <span style={{ ...S.queuePill, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "3px 10px" }}>+{queued.length} {t.inQueue}</span>}
           {/* Keyboard mode indicator */}
           <span style={S.keyboardModePill}>⌨️ {t.keyboardMode}</span>
         </div>
         <div style={S.kitchenStats}>
-          <span style={{ ...S.statPillRed, fontSize: "clamp(13px, calc(1.258vw + 8.6px), 33px)" }}>{active.length} {t.active}</span>
-          <span style={{ ...S.statPillGreen, fontSize: "clamp(13px, calc(1.258vw + 8.6px), 33px)" }}>{doneCount} {t.done}</span>
+          <span style={{ ...S.statPillRed, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{active.length} {t.active}</span>
+          <span style={{ ...S.statPillGreen, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{doneCount} {t.done}</span>
           {lastCompleted && (
-            <button style={{ ...S.undoBtn, fontSize: "clamp(13px, calc(1.258vw + 8.6px), 33px)" }} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
+            <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
           )}
         </div>
       </div>
@@ -1494,13 +1518,18 @@ function DrinksStationScreen({ lang, menu }) {
       case "-": { e.preventDefault(); setFocusedIndex(i => Math.max(i - 1, 0)); break; }
       case "*": {
         e.preventDefault();
-        if (!order || order.cancelled) return;
-        if (order.status === "in_progress") { updateOrderStatus(order.firestoreId, "new"); flash("↩ Deshecho", "#D97706"); }
+        if (order && !order.cancelled && order.status === "in_progress") {
+          updateOrderStatus(order.firestoreId, "new");
+          flash("↩ Deshecho", "#D97706");
+        } else if (lastCompleted) {
+          undoCompletedOrder(lastCompleted);
+          flash("↩ Orden restaurada", "#7C3AED");
+        }
         break;
       }
       default: break;
     }
-  }, [focusedIndex, visible]);
+  }, [focusedIndex, visible, lastCompleted]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -1803,13 +1832,57 @@ function ExpoScreen({ menu }) {
 }
 
 // ============================================================
+// ACTIVE ORDERS PICKER MODAL — shared by table / to-go / bar
+// ============================================================
+function ActiveOrdersModal({ title, orders, lang, onEditOrder, onNewOrder, newOrderLabel, onClose }) {
+  const t = T[lang];
+  return (
+    <div style={S.modalOverlay} onClick={onClose}>
+      <div style={S.modalBox} onClick={e => e.stopPropagation()}>
+        <div style={S.modalHeader}>
+          <div style={S.modalTitle}>{title}</div>
+          <button style={S.modalCloseBtn} onClick={onClose}>✕</button>
+        </div>
+        <div style={{ ...S.modalBody, display: "flex", flexDirection: "column", gap: 8 }}>
+          {orders.length === 0 && <div style={S.modalEmpty}>{t.noActiveOrders}</div>}
+          {orders.map(order => (
+            <div key={order.firestoreId} style={S.activeOrderRow}>
+              <button style={S.activeOrderMain} onClick={() => onEditOrder(order)}>
+                <span style={order.isToGo ? S.toGoChipSmall : order.isBar ? { ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR } : S.tableChipSmall}>
+                  {order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : `${t.table2} ${order.table}`}
+                </span>
+                <span style={S.activeOrderItems}>{order.items.map(i => `${i.emoji}×${i.qty}`).join(" ")}</span>
+                <span style={S.activeOrderEdit}>✏️ {t.editOrder}</span>
+              </button>
+              <button
+                style={S.activeOrderComplete}
+                onClick={() => { if (window.confirm(t.confirmComplete)) bumpOrder(order); }}
+              >
+                ✓ {t.completeOrder}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div style={S.modalFooter}>
+          <button style={S.modalConfirmBtn} onClick={onNewOrder}>{newOrderLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // TABLE SELECT SCREEN
 // ============================================================
 const TABLES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo, onSelectBar }) {
+function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onEditOrder }) {
+  const t = T[lang];
   const [orders, setOrders] = useState([]);
   const [closing, setClosing] = useState(null);
+  const [detailTable, setDetailTable] = useState(null);
+  const [togoPickerOpen, setTogoPickerOpen] = useState(false);
+  const [barPickerOpen, setBarPickerOpen] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
@@ -1836,13 +1909,46 @@ function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo, onSelectB
 
   return (
     <div style={S.tableSelectRoot}>
+      {detailTable && (
+        <ActiveOrdersModal
+          title={`${t.table2} ${detailTable} — ${t.tableOrders}`}
+          orders={activeByTable[detailTable] || []}
+          lang={lang}
+          onEditOrder={(order) => { setDetailTable(null); onEditOrder(order); }}
+          onNewOrder={() => { setDetailTable(null); onSelectTable(detailTable); }}
+          newOrderLabel={t.newRound}
+          onClose={() => setDetailTable(null)}
+        />
+      )}
+      {togoPickerOpen && (
+        <ActiveOrdersModal
+          title={`🥡 ${t.toGoLabel}`}
+          orders={toGoOrders}
+          lang={lang}
+          onEditOrder={(order) => { setTogoPickerOpen(false); onEditOrder(order); }}
+          onNewOrder={() => { setTogoPickerOpen(false); onSelectToGo(); }}
+          newOrderLabel={t.newToGoOrder}
+          onClose={() => setTogoPickerOpen(false)}
+        />
+      )}
+      {barPickerOpen && (
+        <ActiveOrdersModal
+          title={`🍺 ${t.barLabel}`}
+          orders={barOrders}
+          lang={lang}
+          onEditOrder={(order) => { setBarPickerOpen(false); onEditOrder(order); }}
+          onNewOrder={() => { setBarPickerOpen(false); onSelectBar(); }}
+          newOrderLabel={t.newBarOrder}
+          onClose={() => setBarPickerOpen(false)}
+        />
+      )}
       <div style={S.tableSelectHeader}>
         <span style={S.tableSelectTitle}>🍽️ Dona Paty's</span>
         <span style={S.tableSelectSub}>Selecciona una mesa para ordenar</span>
       </div>
 
       <div style={{ ...S.toGoRow, margin: "0 auto 16px" }}>
-        <button style={{ ...S.toGoCardBtn, width: "100%", background: BAR_BG, borderColor: "#DDD6FE", color: BAR_COLOR }} onClick={onSelectBar}>
+        <button style={{ ...S.toGoCardBtn, width: "100%", background: BAR_BG, borderColor: "#DDD6FE", color: BAR_COLOR }} onClick={() => barOrders.length > 0 ? setBarPickerOpen(true) : onSelectBar()}>
           🍺 Barra
           {barOrders.length > 0 && (
             <span style={{ ...S.toGoBadgeCount, background: BAR_COLOR }}>{barOrders.length} activa{barOrders.length !== 1 ? "s" : ""}</span>
@@ -1863,7 +1969,7 @@ function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo, onSelectB
             <div
               key={num}
               style={{ ...S.tableCard, ...(occupied ? S.tableCardOccupied : S.tableCardFree) }}
-              onClick={() => onSelectTable(key, tableOrders)}
+              onClick={() => occupied ? setDetailTable(key) : onSelectTable(key)}
             >
               <div style={S.tableCardNum}>{num}</div>
               <div style={{ ...S.tableCardLabel, color: occupied ? "#92400E" : "#15803D" }}>
@@ -1888,7 +1994,7 @@ function TableSelectScreen({ lang: _lang, onSelectTable, onSelectToGo, onSelectB
       </div>
 
       <div style={S.toGoRow}>
-        <button style={S.toGoCardBtn} onClick={onSelectToGo}>
+        <button style={S.toGoCardBtn} onClick={() => toGoOrders.length > 0 ? setTogoPickerOpen(true) : onSelectToGo()}>
           🥡 Para Llevar
           {toGoOrders.length > 0 && (
             <span style={S.toGoBadgeCount}>{toGoOrders.length} activa{toGoOrders.length !== 1 ? "s" : ""}</span>
@@ -1937,7 +2043,7 @@ function getCategoryEmoji(cat) {
   return "🍴";
 }
 
-function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType, onBack }) {
+function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType, initialEditOrder, onBack }) {
   const t = T[lang];
   const [activeTab, setActiveTab] = useState("drinks");
   const [activeCategory, setActiveCategory] = useState(null);
@@ -1953,19 +2059,15 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [sent, setSent] = useState(false);
   const [note, setNote] = useState("");
   const [editingOrder, setEditingOrder] = useState(null);
-  const [activeOrders, setActiveOrders] = useState([]);
-  const [showActiveOrders, setShowActiveOrders] = useState(false);
   const [modModalItem, setModModalItem] = useState(null);
   const rootRef = useRef(null);
   const [rootHeight, setRootHeight] = useState(null);
 
+  // If we arrived here from the table/to-go/bar picker with an order to edit,
+  // load it once on mount — this screen remounts fresh each time view === "waiter".
   useEffect(() => {
-    const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
-    const unsub = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
-      setActiveOrders(data.filter(o => o.status !== "done"));
-    });
-    return unsub;
+    if (initialEditOrder) loadOrderForEdit(initialEditOrder);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // The top nav bar wraps to 2 lines on narrower tablets, so its real
@@ -2047,7 +2149,6 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     else setTableNum(order.table || "");
     const maxSeat = order.items.reduce((max, i) => i.seat ? Math.max(max, i.seat) : max, 0);
     setSeatCount(Math.min(maxSeat, MAX_SEATS));
-    setShowActiveOrders(false);
   }
 
   function cancelEdit() {
@@ -2113,11 +2214,6 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           {isEditing && <span style={S.editingBadge}>✏️ {t.editOrder}</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {activeOrders.length > 0 && (
-            <button style={S.activeOrdersBtn} onClick={() => setShowActiveOrders(v => !v)}>
-              {t.activeOrders} <span style={S.activeOrdersBadge}>{activeOrders.length}</span>
-            </button>
-          )}
           {!initialTable && !initialOrderType && (
             <div style={S.orderTypeToggle}>
               <button style={{ ...S.typeBtn, ...(orderType === "table" ? S.typeBtnActive : {}) }} onClick={() => setOrderType("table")}>🪑 {t.table}</button>
@@ -2163,26 +2259,6 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           )}
         </div>
       </div>
-      {showActiveOrders && (
-        <div style={S.activeOrdersDropdown}>
-          <div style={S.dropdownTitle}>{t.activeOrders} — {t.editOrder}</div>
-          {activeOrders.map(order => (
-            <div key={order.firestoreId} style={S.activeOrderRow}>
-              <button style={S.activeOrderMain} onClick={() => loadOrderForEdit(order)}>
-                <span style={order.isToGo ? S.toGoChipSmall : order.isBar ? { ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR } : S.tableChipSmall}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : `${t.table2} ${order.table}`}</span>
-                <span style={S.activeOrderItems}>{order.items.map(i => `${i.emoji}×${i.qty}`).join(" ")}</span>
-                <span style={S.activeOrderEdit}>✏️ {t.editOrder}</span>
-              </button>
-              <button
-                style={S.activeOrderComplete}
-                onClick={() => { if (window.confirm(t.confirmComplete)) bumpOrder(order); }}
-              >
-                ✓ {t.completeOrder}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
       <div style={S.waiterMain}>
         {/* LEFT: tab + category/item navigation */}
         <div style={S.menuPanel}>
@@ -2262,7 +2338,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               <div style={S.cartItems}>
                 {(orderType === "table"
                   ? [null, ...Array.from({ length: MAX_SEATS }, (_, i) => i + 1)]
-                      .map(seat => ({ seat, items: cart.filter(i => i.seat === seat) }))
+                      .map(seat => ({ seat, items: cart.filter(i => (i.seat ?? null) === seat) }))
                       .filter(g => g.items.length > 0)
                   : [{ seat: null, items: cart }]
                 ).map(group => (
@@ -2593,6 +2669,14 @@ export default function App() {
             setOrderContext({ table: null, orderType: "bar" });
             setView("waiter");
           }}
+          onEditOrder={(order) => {
+            setOrderContext({
+              table: order.isToGo ? null : order.table,
+              orderType: order.isToGo ? "togo" : order.isBar ? "bar" : "table",
+              editOrder: order,
+            });
+            setView("waiter");
+          }}
         />
       )}
       {view === "waiter" && (
@@ -2602,6 +2686,7 @@ export default function App() {
           lang={lang}
           initialTable={orderContext?.table}
           initialOrderType={orderContext?.orderType}
+          initialEditOrder={orderContext?.editOrder}
           onBack={() => { setOrderContext(null); setView("tables"); }}
         />
       )}
@@ -2632,8 +2717,8 @@ const S = {
   tableCardTimer: { fontSize: 12, fontWeight: 700, color: "#D97706" },
   tableCardCloseBtn: { marginTop: 6, background: "#15803D", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 11, fontWeight: 800, cursor: "pointer", letterSpacing: "0.04em" },
   toGoRow: { maxWidth: 600, margin: "20px auto 0", width: "100%" },
-  toGoCardBtn: { width: "100%", background: "#EFF6FF", border: "2px solid #BFDBFE", borderRadius: 16, padding: "18px 24px", fontSize: 18, fontWeight: 800, color: "#1D4ED8", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 12 },
-  toGoBadgeCount: { background: "#1D4ED8", color: "#fff", borderRadius: 20, fontSize: 11, padding: "2px 10px", fontWeight: 800 },
+  toGoCardBtn: { width: "100%", background: "#EFF6FF", border: "2px solid #BFDBFE", borderRadius: 16, padding: "18px 24px", fontSize: 18, fontWeight: 800, color: "#1D4ED8", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", gap: 12 },
+  toGoBadgeCount: { background: "#1D4ED8", color: "#fff", borderRadius: 20, fontSize: 11, padding: "2px 10px", fontWeight: 800, position: "absolute", right: 18, top: "50%", transform: "translateY(-50%)" },
   backBtn: { background: "#F5F3F0", border: "1px solid #DDD", color: "#444", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   waiterTableBig: { fontSize: 20, fontWeight: 900, color: "#BE202E", letterSpacing: "-0.01em" },
 
@@ -2650,9 +2735,9 @@ const S = {
 
   // ── KEYBOARD CONTROL UI ────────────────────────────────────
   keyboardModePill: { background: "#EFF6FF", border: "1px solid #BFDBFE", color: "#1D4ED8", borderRadius: 20, fontSize: 11, fontWeight: 700, padding: "3px 10px" },
-  shortcutBar: { display: "flex", gap: 16, alignItems: "center", padding: "6px 16px", background: "#1E293B", flexWrap: "wrap" },
-  shortcutItem: { display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#94A3B8", fontWeight: 600 },
-  kbd: { background: "#334155", color: "#E2E8F0", border: "1px solid #475569", borderRadius: 4, padding: "1px 6px", fontSize: 11, fontFamily: "monospace", fontWeight: 700 },
+  shortcutBar: { display: "flex", gap: 28, alignItems: "center", padding: "14px 20px", background: "#1E293B", flexWrap: "wrap" },
+  shortcutItem: { display: "flex", alignItems: "center", gap: 8, fontSize: "clamp(16px, calc(0.6vw + 14px), 24px)", color: "#CBD5E1", fontWeight: 700 },
+  kbd: { background: "#334155", color: "#E2E8F0", border: "1px solid #475569", borderRadius: 6, padding: "5px 12px", fontSize: "clamp(14px, calc(0.5vw + 12px), 20px)", fontFamily: "monospace", fontWeight: 700 },
   keyboardHintBar: { display: "flex", gap: 12, background: "#1D4ED8", padding: "6px 16px", flexWrap: "wrap" },
   keyboardHint: { fontSize: 11, color: "#BFDBFE", fontWeight: 600 },
   actionFlash: { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", color: "#fff", fontSize: "clamp(18px, calc(1.786vw + 11.07px), 45px)", fontWeight: 900, padding: "20px 40px", borderRadius: 16, zIndex: 9999, pointerEvents: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.3)", letterSpacing: "-0.01em" },
@@ -2699,7 +2784,7 @@ const S = {
 
   // KITCHEN
   kitchenRoot: { flex: 1, display: "flex", flexDirection: "column", background: "#F5F3F0", minHeight: "calc(100vh - 53px)" },
-  kitchenHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#FFFFFF", borderBottom: "1px solid #E5E0D8", flexWrap: "wrap", gap: 8 },
+  kitchenHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", background: "#FFFFFF", borderBottom: "1px solid #E5E0D8", flexWrap: "wrap", gap: 8 },
   kitchenHeaderLeft: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
   kitchenTitle: { fontSize: "clamp(28px, calc(4.059vw + 12.89px), 90px)", fontWeight: 900, letterSpacing: "-0.02em", color: "#1A1A1A", textTransform: "uppercase" },
   queuePill: { background: "#D97706", color: "#fff", borderRadius: 20, padding: "3px 12px", fontSize: "clamp(24px, calc(2.354vw + 15.28px), 60px)", fontWeight: 800, textTransform: "uppercase" },
@@ -2769,10 +2854,6 @@ const S = {
   tableInputToGo: { border: "2px solid #0369A1" },
   tableLabel: { fontSize: 11, fontWeight: 800, color: "#BE202E", letterSpacing: "0.08em" },
   tableField: { background: "none", border: "none", color: "#1A1A1A", fontSize: 14, fontWeight: 700, outline: "none" },
-  activeOrdersBtn: { background: "#F5F3F0", border: "1px solid #DDD", color: "#444", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" },
-  activeOrdersBadge: { background: "#BE202E", color: "#fff", borderRadius: 10, fontSize: 10, padding: "1px 5px", fontWeight: 800 },
-  activeOrdersDropdown: { background: "#FFFFFF", borderBottom: "1px solid #E5E0D8", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 },
-  dropdownTitle: { fontSize: 10, fontWeight: 800, color: "#AAA", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 },
   activeOrderRow: { background: "#F5F3F0", border: "1px solid #E5E0D8", borderRadius: 10, padding: "4px 4px 4px 12px", display: "flex", alignItems: "center", gap: 10, width: "100%" },
   activeOrderMain: { background: "none", border: "none", padding: "4px 0", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1, textAlign: "left", flexWrap: "wrap" },
   activeOrderComplete: { background: "#15803D", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 },
