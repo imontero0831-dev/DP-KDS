@@ -35,6 +35,10 @@ const T = {
     bar: "BARRA",
     barSeat: "Asiento",
     barLabel: "BARRA",
+    seat: "Asiento",
+    guest: "Invitado",
+    plato: "Plato",
+    shared: "Compartido",
     orderSummary: "Resumen de Orden",
     tapToAdd: "Toca los artículos para agregarlos",
     specialInstructions: "Instrucciones especiales...",
@@ -123,6 +127,10 @@ const T = {
     bar: "BAR",
     barSeat: "Seat",
     barLabel: "BAR",
+    seat: "Seat",
+    guest: "Guest",
+    plato: "Plato",
+    shared: "Shared",
     orderSummary: "Order Summary",
     tapToAdd: "Tap items to add them",
     specialInstructions: "Special instructions...",
@@ -437,20 +445,21 @@ const MOCK_MENU = {
 // DIFF HELPER
 // ============================================================
 function diffItems(oldItems, newItems) {
+  const diffKey = i => i.id + "::" + (i.seat ?? "");
   const result = [];
   const oldMap = {};
-  oldItems.forEach(i => { oldMap[i.id] = i; });
+  oldItems.forEach(i => { oldMap[diffKey(i)] = i; });
   const newMap = {};
-  newItems.forEach(i => { newMap[i.id] = i; });
+  newItems.forEach(i => { newMap[diffKey(i)] = i; });
   newItems.forEach(item => {
-    const old = oldMap[item.id];
+    const old = oldMap[diffKey(item)];
     if (!old) result.push({ ...item, changeType: "added" });
     else if (item.qty > old.qty) result.push({ ...item, changeType: "increased" });
     else if (item.qty < old.qty) result.push({ ...item, changeType: "decreased" });
     else result.push({ ...item, changeType: "unchanged" });
   });
   oldItems.forEach(item => {
-    if (!newMap[item.id]) result.push({ ...item, changeType: "removed" });
+    if (!newMap[diffKey(item)]) result.push({ ...item, changeType: "removed" });
   });
   return result;
 }
@@ -707,10 +716,11 @@ function orderNeedsDrinksStation(order) {
   return order.items?.some(item => getDrinksRule(item.name, item.catName)) ?? false;
 }
 
-// Items the kitchen doesn't cook — greyed out on kitchen tickets
+// Items the kitchen doesn't cook — greyed out on kitchen tickets.
+// Only real drinks qualify; sides/extras are food the kitchen makes, so they stay full-opacity.
 function isKitchenDimmed(itemName, catName = "") {
   const rule = getDrinksRule(itemName, catName);
-  return rule?.key === "nonalcoholic" || rule?.key === "sides";
+  return rule?.key === "nonalcoholic";
 }
 
 function orderHasKitchenItems(order) {
@@ -999,6 +1009,7 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
               <div style={{ flex: 1 }}>
                 <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
                   {item.name}
+                  {item.seat && <span style={S.seatTagBadge}>{t.plato} {item.seat}</span>}
                   {cs.tagBg && !order.cancelled && <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>}
                 </span>
                 {item.modifiers && item.modifiers.length > 0 && (
@@ -1931,6 +1942,9 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [activeTab, setActiveTab] = useState("drinks");
   const [activeCategory, setActiveCategory] = useState(null);
   const [cart, setCart] = useState([]);
+  const [activeSeat, setActiveSeat] = useState(null);
+  const [seatCount, setSeatCount] = useState(0);
+  const MAX_SEATS = 4;
   const [orderType, setOrderType] = useState(initialOrderType || "table");
   const [tableNum, setTableNum] = useState(initialTable || "");
   const [toGoName, setToGoName] = useState("");
@@ -2000,26 +2014,27 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     setModModalItem(null);
     const cat = menu.categories.find(c => c.id === item.categoryId);
     const catName = cat ? (cat.name.en || cat.name.es || "") : "";
+    const seat = orderType === "table" ? activeSeat : null;
     setCart(prev => {
-      const existing = prev.find(c => c.id === item.id);
-      if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
-      return [...prev, { ...item, catName, displayName: getItemDisplayName(item), qty: 1, modifiers: selectedMods, specialNote: specialNote || null }];
+      const existing = prev.find(c => c.id === item.id && c.seat === seat);
+      if (existing) return prev.map(c => c.id === item.id && c.seat === seat ? { ...c, qty: c.qty + 1 } : c);
+      return [...prev, { ...item, catName, displayName: getItemDisplayName(item), qty: 1, modifiers: selectedMods, specialNote: specialNote || null, seat }];
     });
   }
 
-  function removeFromCart(id) {
+  function removeFromCart(id, seat) {
     setCart(prev => {
-      const existing = prev.find(c => c.id === id);
+      const existing = prev.find(c => c.id === id && c.seat === seat);
       if (existing?.qty === 1) {
-        if (isEditing) return prev.map(c => c.id === id ? { ...c, qty: 0 } : c);
-        return prev.filter(c => c.id !== id);
+        if (isEditing) return prev.map(c => c.id === id && c.seat === seat ? { ...c, qty: 0 } : c);
+        return prev.filter(c => !(c.id === id && c.seat === seat));
       }
-      return prev.map(c => c.id === id ? { ...c, qty: c.qty - 1 } : c);
+      return prev.map(c => c.id === id && c.seat === seat ? { ...c, qty: c.qty - 1 } : c);
     });
   }
 
-  function incrementCartItem(id) {
-    setCart(prev => prev.map(c => c.id === id ? { ...c, qty: c.qty + 1 } : c));
+  function incrementCartItem(id, seat) {
+    setCart(prev => prev.map(c => c.id === id && c.seat === seat ? { ...c, qty: c.qty + 1 } : c));
   }
 
   function loadOrderForEdit(order) {
@@ -2030,11 +2045,13 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     if (order.isToGo) setToGoName(order.toGoName || "");
     else if (order.isBar) setBarSeat(order.table || "");
     else setTableNum(order.table || "");
+    const maxSeat = order.items.reduce((max, i) => i.seat ? Math.max(max, i.seat) : max, 0);
+    setSeatCount(Math.min(maxSeat, MAX_SEATS));
     setShowActiveOrders(false);
   }
 
   function cancelEdit() {
-    setEditingOrder(null); setCart([]); setNote(""); setTableNum(""); setToGoName(""); setBarSeat("");
+    setEditingOrder(null); setCart([]); setNote(""); setTableNum(""); setToGoName(""); setBarSeat(""); setActiveSeat(null); setSeatCount(0);
   }
 
   async function handleSend() {
@@ -2066,7 +2083,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       setSending(false); setSent(true);
       onOrderSent?.(order);
       setTimeout(() => {
-        setCart([]); setNote(""); setSent(false);
+        setCart([]); setNote(""); setSent(false); setActiveSeat(null); setSeatCount(0);
         if (!initialTable && orderType !== "togo" && orderType !== "bar") { setTableNum(""); }
         if (orderType === "togo") setToGoName("");
         if (orderType === "bar") setBarSeat("");
@@ -2104,8 +2121,8 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           {!initialTable && !initialOrderType && (
             <div style={S.orderTypeToggle}>
               <button style={{ ...S.typeBtn, ...(orderType === "table" ? S.typeBtnActive : {}) }} onClick={() => setOrderType("table")}>🪑 {t.table}</button>
-              <button style={{ ...S.typeBtn, ...(orderType === "bar" ? { background: BAR_COLOR, color: "#fff" } : {}) }} onClick={() => setOrderType("bar")}>🍺 {t.bar}</button>
-              <button style={{ ...S.typeBtn, ...(orderType === "togo" ? S.typeBtnToGo : {}) }} onClick={() => setOrderType("togo")}>🥡 {t.toGo}</button>
+              <button style={{ ...S.typeBtn, ...(orderType === "bar" ? { background: BAR_COLOR, color: "#fff" } : {}) }} onClick={() => { setOrderType("bar"); setActiveSeat(null); }}>🍺 {t.bar}</button>
+              <button style={{ ...S.typeBtn, ...(orderType === "togo" ? S.typeBtnToGo : {}) }} onClick={() => { setOrderType("togo"); setActiveSeat(null); }}>🥡 {t.toGo}</button>
             </div>
           )}
           {initialOrderType === "togo" && (
@@ -2205,14 +2222,14 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                 </button>
                 <div style={S.menuGrid}>
                   {filteredItems.map(item => {
-                    const inCart = cart.find(c => c.id === item.id);
+                    const inCartQty = cart.filter(c => c.id === item.id).reduce((s, c) => s + c.qty, 0);
                     const displayName = getItemDisplayName(item);
                     return (
-                      <button key={item.id} style={{ ...S.menuItem, ...(inCart ? S.menuItemActive : {}) }} onClick={() => handleItemTap(item)}>
+                      <button key={item.id} style={{ ...S.menuItem, ...(inCartQty > 0 ? S.menuItemActive : {}) }} onClick={() => handleItemTap(item)}>
                         <span style={S.menuEmoji}>{item.emoji}</span>
                         <span style={S.menuName}>{displayName}</span>
                         <span style={S.menuPrice}>{fmt(item.price)}</span>
-                        {inCart && <span style={S.menuBadge}>×{inCart.qty}</span>}
+                        {inCartQty > 0 && <span style={S.menuBadge}>×{inCartQty}</span>}
                       </button>
                     );
                   })}
@@ -2225,6 +2242,17 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         {/* RIGHT: cart */}
         <div style={S.cartPanel}>
           <div style={S.cartTitle}>{t.orderSummary}</div>
+          {orderType === "table" && (
+            <div style={S.seatChipRow}>
+              <button style={{ ...S.seatChip, ...(activeSeat === null ? S.seatChipActive : {}) }} onClick={() => setActiveSeat(null)}>{t.shared}</button>
+              {Array.from({ length: seatCount }, (_, i) => i + 1).map(n => (
+                <button key={n} style={{ ...S.seatChip, ...(activeSeat === n ? S.seatChipActive : {}) }} onClick={() => setActiveSeat(n)}>{t.guest} {n}</button>
+              ))}
+              {seatCount < MAX_SEATS && (
+                <button style={S.seatChipAdd} onClick={() => { const next = seatCount + 1; setSeatCount(next); setActiveSeat(next); }}>+</button>
+              )}
+            </div>
+          )}
           <div style={S.cartScrollArea}>
             {cart.filter(i => i.qty > 0).length === 0 && isEditing ? (
               <div style={S.cartCancelWarning}>🚫 All items removed — this will cancel the order</div>
@@ -2232,38 +2260,53 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               <div style={S.cartEmpty}>{t.tapToAdd}</div>
             ) : (
               <div style={S.cartItems}>
-                {cart.map(item => (
-                  <div key={item.id} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none" }}>
-                    <div style={{ flex: 1 }}>
-                      <span style={S.cartName}>{item.emoji} {item.displayName || item.name}</span>
-                      {item.modifiers && item.modifiers.length > 0 && (
-                        <div style={S.cartModifiers}>
-                          {item.modifiers.map((mod, mi) => {
-                            const isRemoval = REMOVE_TRIGGERS.some(w => mod.name.toLowerCase().includes(w));
-                            return (
-                              <span key={mi} style={{ ...S.cartModChip, color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800 }}>
-                                {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}{mod.price > 0 ? ` (${fmt(mod.price)})` : ""}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {item.specialNote && (
-                        <div style={S.cartSpecialNoteBlock}>
-                          {parseSpecialNote(item.specialNote).map((seg, si) => (
-                            <div key={si} style={{ ...S.cartSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
-                              {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
+                {(orderType === "table"
+                  ? [null, ...Array.from({ length: MAX_SEATS }, (_, i) => i + 1)]
+                      .map(seat => ({ seat, items: cart.filter(i => i.seat === seat) }))
+                      .filter(g => g.items.length > 0)
+                  : [{ seat: null, items: cart }]
+                ).map(group => (
+                  <div key={group.seat ?? "shared"}>
+                    {orderType === "table" && cart.some(i => i.seat) && (
+                      <div style={S.cartGroupHeader}>
+                        <span>{group.seat ? `${t.guest} ${group.seat}` : t.shared}</span>
+                        <span>{fmt(group.items.reduce((s, i) => s + (i.price + (i.modifiers?.reduce((ms, m) => ms + m.price, 0) ?? 0)) * i.qty, 0))}</span>
+                      </div>
+                    )}
+                    {group.items.map(item => (
+                      <div key={item.id + "-" + (item.seat ?? "shared")} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none" }}>
+                        <div style={{ flex: 1 }}>
+                          <span style={S.cartName}>{item.emoji} {item.displayName || item.name}</span>
+                          {item.modifiers && item.modifiers.length > 0 && (
+                            <div style={S.cartModifiers}>
+                              {item.modifiers.map((mod, mi) => {
+                                const isRemoval = REMOVE_TRIGGERS.some(w => mod.name.toLowerCase().includes(w));
+                                return (
+                                  <span key={mi} style={{ ...S.cartModChip, color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800 }}>
+                                    {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}{mod.price > 0 ? ` (${fmt(mod.price)})` : ""}
+                                  </span>
+                                );
+                              })}
                             </div>
-                          ))}
+                          )}
+                          {item.specialNote && (
+                            <div style={S.cartSpecialNoteBlock}>
+                              {parseSpecialNote(item.specialNote).map((seg, si) => (
+                                <div key={si} style={{ ...S.cartSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
+                                  {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <div style={S.cartQtyRow}>
-                      <button style={S.qtyBtn} onClick={() => removeFromCart(item.id)}>−</button>
-                      <span style={S.cartQty}>{item.qty}</span>
-                      <button style={S.qtyBtn} onClick={() => incrementCartItem(item.id)}>+</button>
-                      <span style={S.cartItemTotal}>{fmt((item.price + (item.modifiers?.reduce((s, m) => s + m.price, 0) ?? 0)) * item.qty)}</span>
-                    </div>
+                        <div style={S.cartQtyRow}>
+                          <button style={S.qtyBtn} onClick={() => removeFromCart(item.id, item.seat)}>−</button>
+                          <span style={S.cartQty}>{item.qty}</span>
+                          <button style={S.qtyBtn} onClick={() => incrementCartItem(item.id, item.seat)}>+</button>
+                          <span style={S.cartItemTotal}>{fmt((item.price + (item.modifiers?.reduce((s, m) => s + m.price, 0) ?? 0)) * item.qty)}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -2766,6 +2809,12 @@ const S = {
   cartItems: { display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 },
   cartRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #F0EDE8", flexWrap: "wrap", gap: 4 },
   cartName: { fontSize: 13, color: "#333" },
+  seatChipRow: { display: "flex", gap: 4, flexWrap: "wrap", padding: "0 14px 10px", flexShrink: 0 },
+  seatChip: { background: "#F5F3F0", border: "1px solid #DDD", borderRadius: 8, padding: "4px 9px", fontSize: 11, fontWeight: 700, color: "#888", cursor: "pointer", whiteSpace: "nowrap" },
+  seatChipActive: { background: "#BE202E", color: "#fff", borderColor: "#BE202E" },
+  seatChipAdd: { background: "#F5F3F0", border: "1px dashed #AAA", borderRadius: 8, padding: "4px 11px", fontSize: 13, fontWeight: 900, color: "#555", cursor: "pointer", whiteSpace: "nowrap" },
+  cartGroupHeader: { fontSize: 10, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.1em", textTransform: "uppercase", padding: "10px 0 2px", display: "flex", justifyContent: "space-between" },
+  seatTagBadge: { fontSize: 9, fontWeight: 800, color: "#fff", background: "#9B8B72", borderRadius: 5, padding: "1px 5px", marginLeft: 6, verticalAlign: "middle" },
   cartQtyRow: { display: "flex", alignItems: "center", gap: 6 },
   qtyBtn: { background: "#F5F3F0", border: "1px solid #DDD", color: "#444", width: 28, height: 28, borderRadius: 7, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" },
   cartQty: { fontSize: 14, fontWeight: 700, minWidth: 20, textAlign: "center" },
