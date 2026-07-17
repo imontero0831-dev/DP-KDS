@@ -615,6 +615,52 @@ function useLastCompletedOrder() {
   return lastCompleted;
 }
 
+// ── NEW-ORDER CHIME (Kitchen / Drinks / Expo screens) ───────────
+// Web Audio API tone — no audio asset needed. Kiosk browsers (Chromium on
+// the Raspberry Pis) block autoplay until the page has seen one user
+// gesture; since these screens are driven by a numpad dongle / touch bumps,
+// that gesture normally lands within moments of boot, but the very first
+// chime right after a Pi reboot can be silently swallowed by that policy.
+function playOrderChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = ctx.currentTime;
+    [660, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const start = now + i * 0.15;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.4, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.3);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.32);
+    });
+  } catch (err) {
+    console.warn("⚠️ chime playback failed:", err.message);
+  }
+}
+
+// Plays the chime when an id shows up in `ids` that wasn't there on the
+// previous render — used to alert staff when a fresh order lands on their
+// screen's queue. Skips the first population so opening/reloading a screen
+// doesn't chime once per order already sitting in the queue.
+function useNewOrderChime(ids) {
+  const prevIds = useRef(null);
+  const key = ids.join(",");
+  useEffect(() => {
+    const current = new Set(ids);
+    if (prevIds.current !== null) {
+      const hasNew = ids.some(id => !prevIds.current.has(id));
+      if (hasNew) playOrderChime();
+    }
+    prevIds.current = current;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+}
+
 async function undoCompletedOrder(order) {
   if (!order) return;
   const { firestoreId, completedAt, duration, allReadyAt, ...rest } = order;
@@ -1120,6 +1166,7 @@ function KitchenScreen({ lang, menu }) {
   const visible = active.slice(0, MAX_VISIBLE);
   const queued = active.slice(MAX_VISIBLE);
   const doneCount = orders.filter(o => o.kitchenReady).length;
+  useNewOrderChime(active.map(o => o.firestoreId));
 
   // Keep focused index in bounds when orders change
   useEffect(() => {
@@ -1490,6 +1537,7 @@ function DrinksStationScreen({ lang, menu }) {
   const active  = orders.filter(o => !o.drinksReady && orderHasDrinksItems(o));
   const visible = active.slice(0, MAX_VISIBLE);
   const queued  = active.slice(MAX_VISIBLE);
+  useNewOrderChime(active.map(o => o.firestoreId));
 
   useEffect(() => {
     if (focusedIndex >= visible.length && visible.length > 0) setFocusedIndex(visible.length - 1);
@@ -1795,6 +1843,7 @@ function ExpoScreen({ menu }) {
 
   const readyOrders  = orders.filter(o => isOrderReady(o) && !o.delivered);
   const activeOrders = orders.filter(o => !isOrderReady(o));
+  useNewOrderChime(readyOrders.map(o => o.firestoreId));
 
   return (
     <div style={S.kitchenRoot}>
