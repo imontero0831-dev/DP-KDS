@@ -117,7 +117,6 @@ const T = {
     backToCategories: "← Categorías",
     tableOrders: "Órdenes de la Mesa",
     noActiveOrders: "Sin órdenes activas",
-    newRound: "+ Nueva Ronda",
     newToGoOrder: "+ Nueva Orden Para Llevar",
     newBarOrder: "+ Nueva Orden de Barra",
   },
@@ -213,7 +212,6 @@ const T = {
     backToCategories: "← Categories",
     tableOrders: "Table Orders",
     noActiveOrders: "No active orders",
-    newRound: "+ New Round",
     newToGoOrder: "+ New To-Go Order",
     newBarOrder: "+ New Bar Order",
   },
@@ -1293,12 +1291,12 @@ function KitchenScreen({ lang, menu }) {
 
       {active.length === 0 ? (
         <div style={S.kitchenEmpty}>
-          <div style={S.emptyCheck}>
-            <div style={S.emptyCheckInner}>
-              <div style={{ ...S.emptyCheckTitle, fontSize: "clamp(11px, calc(1.055vw + 7.45px), 28px)" }}>{t.guestCheck}</div>
-              <div style={{ ...S.emptyCheckmark, fontSize: "clamp(48px, calc(7.265vw + 21.98px), 160px)" }}>✓</div>
-              <div style={{ ...S.emptyCheckSub, fontSize: "clamp(18px, calc(2.720vw + 8.34px), 60px)" }}>{t.allCaughtUp}</div>
-              <div style={{ ...S.emptyCheckSubSmall, fontSize: "clamp(14px, calc(1.380vw + 8.78px), 35px)" }}>{t.allCaughtUpSub}</div>
+          <div style={{ ...S.emptyCheck, padding: "20px 32px" }}>
+            <div style={{ ...S.emptyCheckInner, gap: 6 }}>
+              <div style={{ ...S.emptyCheckTitle, fontSize: "clamp(10px, calc(0.75vw + 6.5px), 20px)" }}>{t.guestCheck}</div>
+              <div style={{ ...S.emptyCheckmark, fontSize: "clamp(34px, calc(5.1vw + 15.5px), 112px)" }}>✓</div>
+              <div style={{ ...S.emptyCheckSub, fontSize: "clamp(13px, calc(1.9vw + 5.8px), 42px)" }}>{t.allCaughtUp}</div>
+              <div style={{ ...S.emptyCheckSubSmall, fontSize: "clamp(10px, calc(0.97vw + 6.1px), 24px)" }}>{t.allCaughtUpSub}</div>
             </div>
           </div>
         </div>
@@ -1863,9 +1861,11 @@ function ActiveOrdersModal({ title, orders, lang, onEditOrder, onNewOrder, newOr
             </div>
           ))}
         </div>
-        <div style={S.modalFooter}>
-          <button style={S.modalConfirmBtn} onClick={onNewOrder}>{newOrderLabel}</button>
-        </div>
+        {onNewOrder && (
+          <div style={S.modalFooter}>
+            <button style={S.modalConfirmBtn} onClick={onNewOrder}>{newOrderLabel}</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1915,8 +1915,6 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
           orders={activeByTable[detailTable] || []}
           lang={lang}
           onEditOrder={(order) => { setDetailTable(null); onEditOrder(order); }}
-          onNewOrder={() => { setDetailTable(null); onSelectTable(detailTable); }}
-          newOrderLabel={t.newRound}
           onClose={() => setDetailTable(null)}
         />
       )}
