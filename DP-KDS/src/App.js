@@ -1597,13 +1597,13 @@ function DrinksStationScreen({ lang, menu }) {
     <div style={S.kitchenRoot}>
       <div style={S.kitchenHeader}>
         <div style={S.kitchenHeaderLeft}>
-          <span style={S.kitchenTitle}>🥤 Bebidas / Sides</span>
-          {queued.length > 0 && <span style={S.queuePill}>+{queued.length} {t.inQueue}</span>}
+          <span style={{ ...S.kitchenTitle, fontSize: "clamp(13px, calc(0.9vw + 6px), 22px)" }}>🥤 Bebidas / Sides</span>
+          {queued.length > 0 && <span style={{ ...S.queuePill, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "3px 10px" }}>+{queued.length} {t.inQueue}</span>}
         </div>
         <div style={S.kitchenStats}>
-          <span style={S.statPillRed}>{active.length} {t.active}</span>
+          <span style={{ ...S.statPillRed, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{active.length} {t.active}</span>
           {lastCompleted && (
-            <button style={S.undoBtn} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
+            <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
           )}
         </div>
       </div>
@@ -1622,17 +1622,17 @@ function DrinksStationScreen({ lang, menu }) {
 
       {active.length === 0 ? (
         <div style={S.kitchenEmpty}>
-          <div style={S.emptyCheck}>
-            <div style={S.emptyCheckInner}>
-              <div style={S.emptyCheckTitle}>BEBIDAS / SIDES</div>
-              <div style={S.emptyCheckmark}>✓</div>
-              <div style={S.emptyCheckSub}>{t.allCaughtUp}</div>
-              <div style={S.emptyCheckSubSmall}>{t.allCaughtUpSub}</div>
+          <div style={{ ...S.emptyCheck, padding: "20px 32px" }}>
+            <div style={{ ...S.emptyCheckInner, gap: 6 }}>
+              <div style={{ ...S.emptyCheckTitle, fontSize: "clamp(10px, calc(0.75vw + 6.5px), 20px)" }}>BEBIDAS / SIDES</div>
+              <div style={{ ...S.emptyCheckmark, fontSize: "clamp(34px, calc(5.1vw + 15.5px), 112px)" }}>✓</div>
+              <div style={{ ...S.emptyCheckSub, fontSize: "clamp(13px, calc(1.9vw + 5.8px), 42px)" }}>{t.allCaughtUp}</div>
+              <div style={{ ...S.emptyCheckSubSmall, fontSize: "clamp(10px, calc(0.97vw + 6.1px), 24px)" }}>{t.allCaughtUpSub}</div>
             </div>
           </div>
         </div>
       ) : (
-        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 280px))" }}>
           {visible.map((order, idx) => (
             <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <DrinksTicket order={order} t={t} catNameById={catNameById} isFocused={idx === focusedIndex} />
@@ -1847,35 +1847,35 @@ function ExpoScreen({ menu }) {
     <div style={S.kitchenRoot}>
       <div style={S.kitchenHeader}>
         <div style={S.kitchenHeaderLeft}>
-          <span style={S.kitchenTitle}>🎯 Expo / Entrega</span>
+          <span style={{ ...S.kitchenTitle, fontSize: "clamp(13px, calc(0.9vw + 6px), 22px)" }}>🎯 Expo / Entrega</span>
           {readyOrders.length > 0 && (
-            <span className="expo-badge-pulse" style={{ ...S.queuePill, background: "#15803D" }}>
+            <span className="expo-badge-pulse" style={{ ...S.queuePill, background: "#15803D", fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "3px 10px" }}>
               {readyOrders.length} LISTA{readyOrders.length > 1 ? "S" : ""}
             </span>
           )}
         </div>
         <div style={S.kitchenStats}>
-          <span style={S.statPillRed}>{activeOrders.length} en proceso</span>
-          <span style={S.statPillGreen}>{readyOrders.length} lista{readyOrders.length !== 1 ? "s" : ""}</span>
+          <span style={{ ...S.statPillRed, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{activeOrders.length} en proceso</span>
+          <span style={{ ...S.statPillGreen, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{readyOrders.length} lista{readyOrders.length !== 1 ? "s" : ""}</span>
           {lastCompleted && (
-            <button style={S.undoBtn} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
+            <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
           )}
         </div>
       </div>
 
       {orders.length === 0 ? (
         <div style={S.kitchenEmpty}>
-          <div style={S.emptyCheck}>
-            <div style={S.emptyCheckInner}>
-              <div style={S.emptyCheckTitle}>EXPO</div>
-              <div style={S.emptyCheckmark}>✓</div>
-              <div style={S.emptyCheckSub}>Todo al día</div>
-              <div style={S.emptyCheckSubSmall}>Sin órdenes pendientes</div>
+          <div style={{ ...S.emptyCheck, padding: "20px 32px" }}>
+            <div style={{ ...S.emptyCheckInner, gap: 6 }}>
+              <div style={{ ...S.emptyCheckTitle, fontSize: "clamp(10px, calc(0.75vw + 6.5px), 20px)" }}>EXPO</div>
+              <div style={{ ...S.emptyCheckmark, fontSize: "clamp(34px, calc(5.1vw + 15.5px), 112px)" }}>✓</div>
+              <div style={{ ...S.emptyCheckSub, fontSize: "clamp(13px, calc(1.9vw + 5.8px), 42px)" }}>Todo al día</div>
+              <div style={{ ...S.emptyCheckSubSmall, fontSize: "clamp(10px, calc(0.97vw + 6.1px), 24px)" }}>Sin órdenes pendientes</div>
             </div>
           </div>
         </div>
       ) : (
-        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14, padding: 16, alignItems: "start", overflowY: "auto" }}>
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 280px))", gap: 14, padding: 16, alignItems: "start", overflowY: "auto" }}>
           {/* Ready orders first (at top) */}
           {readyOrders.map(order => (
             <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} />
