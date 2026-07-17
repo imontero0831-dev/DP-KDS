@@ -2006,7 +2006,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
       </div>
 
       <div style={{ ...S.toGoRow, margin: "0 auto 16px" }}>
-        <button style={{ ...S.toGoCardBtn, width: "100%", background: BAR_BG, borderColor: "#DDD6FE", color: BAR_COLOR }} onClick={() => barOrders.length > 0 ? setBarPickerOpen(true) : onSelectBar()}>
+        <button style={{ ...S.toGoCardBtn, width: "100%", background: BAR_BG, borderColor: "#DDD6FE", color: BAR_COLOR }} onClick={() => barOrders.length === 1 ? onEditOrder(barOrders[0]) : barOrders.length > 1 ? setBarPickerOpen(true) : onSelectBar()}>
           🍺 Barra
           {barOrders.length > 0 && (
             <span style={{ ...S.toGoBadgeCount, background: BAR_COLOR }}>{barOrders.length} activa{barOrders.length !== 1 ? "s" : ""}</span>
@@ -2027,7 +2027,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
             <div
               key={num}
               style={{ ...S.tableCard, ...(occupied ? S.tableCardOccupied : S.tableCardFree) }}
-              onClick={() => occupied ? setDetailTable(key) : onSelectTable(key)}
+              onClick={() => tableOrders.length === 1 ? onEditOrder(tableOrders[0]) : occupied ? setDetailTable(key) : onSelectTable(key)}
             >
               <div style={S.tableCardNum}>{num}</div>
               <div style={{ ...S.tableCardLabel, color: occupied ? "#92400E" : "#15803D" }}>
@@ -2052,7 +2052,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
       </div>
 
       <div style={S.toGoRow}>
-        <button style={S.toGoCardBtn} onClick={() => toGoOrders.length > 0 ? setTogoPickerOpen(true) : onSelectToGo()}>
+        <button style={S.toGoCardBtn} onClick={() => toGoOrders.length === 1 ? onEditOrder(toGoOrders[0]) : toGoOrders.length > 1 ? setTogoPickerOpen(true) : onSelectToGo()}>
           🥡 Para Llevar
           {toGoOrders.length > 0 && (
             <span style={S.toGoBadgeCount}>{toGoOrders.length} activa{toGoOrders.length !== 1 ? "s" : ""}</span>
