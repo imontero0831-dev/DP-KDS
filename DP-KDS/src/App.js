@@ -252,9 +252,16 @@ async function fetchAllModifierGroups() {
   }
 }
 
-function getModifierGroupsForItem(itemName) {
-  if (!itemName || ALL_MODIFIER_GROUPS.length === 0) return [];
-  const name = itemName.toLowerCase();
+function getModifierGroupsForItem(item) {
+  if (!item || ALL_MODIFIER_GROUPS.length === 0) return [];
+  // Prefer the item's real Clover modifierGroup associations. Fall back to
+  // name-prefix matching only for items that don't carry that data (e.g.
+  // MOCK_MENU when the Clover fetch fails).
+  if (item.modifierGroupIds && item.modifierGroupIds.length > 0) {
+    const ids = new Set(item.modifierGroupIds);
+    return ALL_MODIFIER_GROUPS.filter(group => ids.has(group.id));
+  }
+  const name = (item.name || "").toLowerCase();
   return ALL_MODIFIER_GROUPS.filter(group => {
     const groupPrefix = group.name.split(" - ")[0].toLowerCase().trim();
     const normalizedGroup = groupPrefix.replace(/s$/, "");
@@ -321,7 +328,7 @@ function sortCategories(cats) {
 async function fetchMenuFromClover() {
   try {
     const [itemsRes, catsRes] = await Promise.all([
-      cloverRequest("items?expand=categories&limit=200"),
+      cloverRequest("items?expand=categories,modifierGroups&limit=200"),
       cloverRequest("categories?limit=100"),
     ]);
     const categories = (catsRes.elements || []).map(cat => ({
@@ -337,6 +344,7 @@ async function fetchMenuFromClover() {
         nameEs: null,
         price: item.price || 0,
         emoji: "🍽️",
+        modifierGroupIds: (item.modifierGroups?.elements || []).map(g => g.id),
       }));
     if (categories.length === 0) {
       return { categories: [{ id: "uncategorized", name: { es: "Menú", en: "Menu" } }], items };
@@ -536,23 +544,14 @@ async function closeTable(tableOrders) {
 }
 
 // ── PER-STATION COMPLETION ─────────────────────────────────────
-async function _completeOrder(orderId, startedAt, timestamp) {
+// Marking an order ready at a station only clears it off that station's
+// screen (kitchenReady/drinksReady) — it must NOT remove the order from
+// the table's active list or the waitress's view. Only an explicit
+// waitress action (Cerrar Mesa, or "Completar" on a specific order) or
+// the runner confirming delivery at Expo actually archives the order.
+async function _completeOrder(orderId) {
   const ref = doc(db, "orders", orderId);
-  const now = Date.now();
-  await updateDoc(ref, { allReady: true, allReadyAt: now });
-  setTimeout(async () => {
-    const snap = await getDoc(ref);
-    if (snap.exists() && snap.data().allReady) {
-      const data = snap.data();
-      const completedAt = Date.now();
-      await addDoc(collection(db, "completedOrders"), {
-        ...data,
-        completedAt,
-        duration: completedAt - (startedAt || timestamp),
-      });
-      await deleteDoc(ref);
-    }
-  }, 8000);
+  await updateDoc(ref, { allReady: true, allReadyAt: Date.now() });
 }
 
 async function markKitchenReady(order) {
@@ -560,7 +559,7 @@ async function markKitchenReady(order) {
   await updateDoc(ref, { kitchenReady: true });
   const hasDrinks = orderNeedsDrinksStation(order);
   if (!hasDrinks || order.drinksReady) {
-    await _completeOrder(order.firestoreId, order.startedAt, order.timestamp);
+    await _completeOrder(order.firestoreId);
   }
 }
 
@@ -569,8 +568,17 @@ async function markDrinksReady(order) {
   await updateDoc(ref, { drinksReady: true });
   const hasKitchen = orderHasKitchenItems(order);
   if (!hasKitchen || order.kitchenReady) {
-    await _completeOrder(order.firestoreId, order.startedAt, order.timestamp);
+    await _completeOrder(order.firestoreId);
   }
+}
+
+// Runner/expo confirms food physically reached the table. This clears the
+// order off the Expo screen's "ready to deliver" queue but — unlike
+// bumpOrder — deliberately does NOT archive/delete it, so it keeps showing
+// as an active order for that table until the waitress closes it out.
+async function markDelivered(order) {
+  const ref = doc(db, "orders", order.firestoreId);
+  await updateDoc(ref, { delivered: true, deliveredAt: Date.now() });
 }
 
 async function bumpOrder(order) {
@@ -785,13 +793,13 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose }) {
   const [specialNote, setSpecialNote] = useState("");
 
   useEffect(() => {
-    const groups = getModifierGroupsForItem(item.name);
+    const groups = getModifierGroupsForItem(item);
     setGroups(groups);
     const init = {};
     groups.forEach(g => { init[g.id] = new Set(); });
     setSelections(init);
     setLoading(false);
-  }, [item.id, item.name]);
+  }, [item]);
 
   function toggle(group, modId) {
     setSelections(prev => {
@@ -1724,7 +1732,7 @@ function ExpoTicket({ order, catNameById }) {
               🚀 LISTO PARA ENTREGAR
             </div>
             <button
-              onClick={() => bumpOrder(order)}
+              onClick={() => markDelivered(order)}
               style={{ background: "#FFFFFF", color: "#15803D", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 900, cursor: "pointer", letterSpacing: "0.06em", whiteSpace: "nowrap", flexShrink: 0, textTransform: "uppercase" }}
             >
               BUMP ✓
@@ -1765,10 +1773,11 @@ function ExpoScreen({ menu }) {
     });
   }, []);
 
-  // Auto-complete orders that have been allReady for >90s but weren't bumped
+  // Auto-mark stale ready orders as delivered after 90s if the runner forgot
+  // to bump — this only clears Expo's queue, it never touches the waitress side.
   useEffect(() => {
-    const stale = orders.filter(o => o.allReady && o.allReadyAt && Date.now() - o.allReadyAt > 90000);
-    stale.forEach(o => bumpOrder(o));
+    const stale = orders.filter(o => o.allReady && !o.delivered && o.allReadyAt && Date.now() - o.allReadyAt > 90000);
+    stale.forEach(o => markDelivered(o));
   }, [orders]);
 
   const catNameById = {};
@@ -1780,7 +1789,7 @@ function ExpoScreen({ menu }) {
     return (!hasK || !!o.kitchenReady) && (!hasD || !!o.drinksReady);
   };
 
-  const readyOrders  = orders.filter(isOrderReady);
+  const readyOrders  = orders.filter(o => isOrderReady(o) && !o.delivered);
   const activeOrders = orders.filter(o => !isOrderReady(o));
 
   return (
