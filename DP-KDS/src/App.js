@@ -257,17 +257,21 @@ function getModifierGroupsForItem(item) {
   // Prefer the item's real Clover modifierGroup associations. Fall back to
   // name-prefix matching only for items that don't carry that data (e.g.
   // MOCK_MENU when the Clover fetch fails).
+  let matched;
   if (item.modifierGroupIds && item.modifierGroupIds.length > 0) {
     const ids = new Set(item.modifierGroupIds);
-    return ALL_MODIFIER_GROUPS.filter(group => ids.has(group.id));
+    matched = ALL_MODIFIER_GROUPS.filter(group => ids.has(group.id));
+  } else {
+    const name = (item.name || "").toLowerCase();
+    matched = ALL_MODIFIER_GROUPS.filter(group => {
+      const groupPrefix = group.name.split(" - ")[0].toLowerCase().trim();
+      const normalizedGroup = groupPrefix.replace(/s$/, "");
+      const normalizedName = name.replace(/s$/, "");
+      return normalizedName.includes(normalizedGroup) || normalizedGroup.includes(normalizedName.split(" ")[0].replace(/s$/, ""));
+    });
   }
-  const name = (item.name || "").toLowerCase();
-  return ALL_MODIFIER_GROUPS.filter(group => {
-    const groupPrefix = group.name.split(" - ")[0].toLowerCase().trim();
-    const normalizedGroup = groupPrefix.replace(/s$/, "");
-    const normalizedName = name.replace(/s$/, "");
-    return normalizedName.includes(normalizedGroup) || normalizedGroup.includes(normalizedName.split(" ")[0].replace(/s$/, ""));
-  });
+  // Required groups (minRequired > 0) render before optional ones.
+  return [...matched].sort((a, b) => (a.minRequired > 0 ? 0 : 1) - (b.minRequired > 0 ? 0 : 1));
 }
 
 // ============================================================
