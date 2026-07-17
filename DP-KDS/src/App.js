@@ -1537,7 +1537,6 @@ function DrinksStationScreen({ lang, menu }) {
   const active  = orders.filter(o => !o.drinksReady && orderHasDrinksItems(o));
   const visible = active.slice(0, MAX_VISIBLE);
   const queued  = active.slice(MAX_VISIBLE);
-  useNewOrderChime(active.map(o => o.firestoreId));
 
   useEffect(() => {
     if (focusedIndex >= visible.length && visible.length > 0) setFocusedIndex(visible.length - 1);
@@ -1843,7 +1842,6 @@ function ExpoScreen({ menu }) {
 
   const readyOrders  = orders.filter(o => isOrderReady(o) && !o.delivered);
   const activeOrders = orders.filter(o => !isOrderReady(o));
-  useNewOrderChime(readyOrders.map(o => o.firestoreId));
 
   return (
     <div style={S.kitchenRoot}>
