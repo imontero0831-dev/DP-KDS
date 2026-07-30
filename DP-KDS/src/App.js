@@ -8,15 +8,36 @@ import {
 // ============================================================
 // FIREBASE CONFIG — Dona Patys KDS
 // ============================================================
-const firebaseConfig = {
-  apiKey: "AIzaSyBQmX7bB3Of758lfRdotynqPgwt8b87rj4",
-  authDomain: "dona-patys-kds.firebaseapp.com",
-  projectId: "dona-patys-kds",
-  storageBucket: "dona-patys-kds.firebasestorage.app",
-  messagingSenderId: "861821997056",
-  appId: "1:861821997056:web:43174af9611ef2be9d08e5",
-  measurementId: "G-NZ7F00L6MQ"
+// REACT_APP_FIREBASE_ENV picks which project this build talks to. Default
+// (plain `npm run build`, via .env.production) is "staging" — the isolated
+// dp-self-service-da3cb project used to test the guest-ordering integration
+// against this staff app before it ever touches live service. Pointing at
+// the real project requires the explicit `npm run build:production`.
+const firebaseConfigs = {
+  staging: {
+    apiKey: "AIzaSyBfFrN3wv2vvEmg48rif92XAihBWI2VfNM",
+    authDomain: "dp-self-service-da3cb.firebaseapp.com",
+    projectId: "dp-self-service-da3cb",
+    storageBucket: "dp-self-service-da3cb.firebasestorage.app",
+    messagingSenderId: "875641872073",
+    appId: "1:875641872073:web:38ee13bc7adc26592b3718",
+    measurementId: "G-3ZXRZHG095"
+  },
+  production: {
+    apiKey: "AIzaSyBQmX7bB3Of758lfRdotynqPgwt8b87rj4",
+    authDomain: "dona-patys-kds.firebaseapp.com",
+    projectId: "dona-patys-kds",
+    storageBucket: "dona-patys-kds.firebasestorage.app",
+    messagingSenderId: "861821997056",
+    appId: "1:861821997056:web:43174af9611ef2be9d08e5",
+    measurementId: "G-NZ7F00L6MQ"
+  }
 };
+
+const firebaseConfig =
+  process.env.REACT_APP_FIREBASE_ENV === "production"
+    ? firebaseConfigs.production
+    : firebaseConfigs.staging;
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
