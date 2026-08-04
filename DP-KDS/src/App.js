@@ -2223,8 +2223,26 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [modModalItem, setModModalItem] = useState(null);
   const rootRef = useRef(null);
   const [rootHeight, setRootHeight] = useState(null);
+  const headerRef = useRef(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
   const footerRef = useRef(null);
   const [footerHeight, setFooterHeight] = useState(0);
+
+  // The menu panel and cart panel are meant to scroll independently of each
+  // other, but on some tablet WebViews the flex cross-axis stretch that's
+  // supposed to bound their height wasn't reliable — both ended up scrolling
+  // together as one page instead of the cart's send button staying isolated
+  // from the food/drink list. Give both panels a literal measured pixel
+  // height (root height minus the header's real rendered height) instead of
+  // leaving that up to flex, so overflow:hidden has an unambiguous box to
+  // clip against no matter how that's implemented.
+  useEffect(() => {
+    if (!headerRef.current) return;
+    const ro = new ResizeObserver(([entry]) => setHeaderHeight(entry.contentRect.height));
+    ro.observe(headerRef.current);
+    return () => ro.disconnect();
+  }, []);
+  const mainHeight = rootHeight ? Math.max(200, rootHeight - headerHeight) : null;
 
   // The send-button footer is pinned with position:absolute (see cartFooterArea)
   // instead of relying on flex to keep it out of the scroll area — some tablet
@@ -2404,7 +2422,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       {modModalItem && (
         <ModifierModal item={modModalItem} displayName={getItemDisplayName(modModalItem)} lang={lang} onConfirm={handleModifierConfirm} onClose={() => setModModalItem(null)} />
       )}
-      <div style={S.waiterHeader}>
+      <div ref={headerRef} style={S.waiterHeader}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           {onBack && (
             <button style={S.backBtn} onClick={onBack}>← Mesas</button>
@@ -2466,9 +2484,9 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           )}
         </div>
       </div>
-      <div style={S.waiterMain}>
+      <div style={{ ...S.waiterMain, ...(mainHeight ? { height: mainHeight, maxHeight: mainHeight } : {}) }}>
         {/* LEFT: tab + category/item navigation */}
-        <div style={S.menuPanel}>
+        <div style={{ ...S.menuPanel, ...(mainHeight ? { height: mainHeight, maxHeight: mainHeight } : {}) }}>
           <div style={S.tabBar}>
             <button
               style={{ ...S.tabBtn, ...(activeTab === "drinks" ? S.tabBtnActive : {}) }}
@@ -2523,7 +2541,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         </div>
 
         {/* RIGHT: cart */}
-        <div style={S.cartPanel}>
+        <div style={{ ...S.cartPanel, ...(mainHeight ? { height: mainHeight, maxHeight: mainHeight } : {}) }}>
           <div style={S.cartTitle}>{t.orderSummary}</div>
           {orderType === "table" && (
             <div style={S.seatChipRow}>
