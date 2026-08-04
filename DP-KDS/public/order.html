@@ -445,28 +445,41 @@
   let cart = []; // [{ id, name, nameEs, emoji, price, qty }]
   let activeCategory = null;
 
+  // Clover paginates with limit/offset; fetching a single page with a
+  // hardcoded limit silently truncates the menu once it grows past that
+  // page size, so keep paging until a short page tells us we're done.
+  async function fetchAllCloverPages(basePath, pageSize = 200) {
+    const sep = basePath.includes("?") ? "&" : "?";
+    let offset = 0;
+    let all = [];
+    while (true) {
+      const res = await fetch("/api/clover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: `${basePath}${sep}limit=${pageSize}&offset=${offset}`, method: "GET" })
+      }).then(r => r.json());
+      const elements = res.elements || [];
+      all = all.concat(elements);
+      if (elements.length < pageSize) break;
+      offset += pageSize;
+    }
+    return all;
+  }
+
   // ── Load menu from Clover via your existing Vercel proxy ───
   async function loadMenu() {
     try {
-      const [itemsRes, catsRes] = await Promise.all([
-        fetch("/api/clover", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: "items?expand=categories&limit=200", method: "GET" })
-        }).then(r => r.json()),
-        fetch("/api/clover", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: "categories?limit=100", method: "GET" })
-        }).then(r => r.json()),
+      const [itemElements, catElements] = await Promise.all([
+        fetchAllCloverPages("items?expand=categories"),
+        fetchAllCloverPages("categories"),
       ]);
 
-      menu.categories = (catsRes.elements || []).map(cat => ({
+      menu.categories = catElements.map(cat => ({
         id: cat.id,
         name: cat.name,
       }));
 
-      menu.items = (itemsRes.elements || [])
+      menu.items = itemElements
         .filter(item => item.available !== false)
         .map(item => ({
           id: item.id,
@@ -475,6 +488,14 @@
           emoji: "🍽️",
           price: item.price || 0,
         }));
+
+      // Items with no category assigned in Clover fall back to the
+      // "uncategorized" sentinel id, which never matches a real Clover
+      // category — give them a real tab so they're actually reachable.
+      const usedCatIds = new Set(menu.items.map(i => i.categoryId));
+      if (usedCatIds.has("uncategorized") && !menu.categories.some(c => c.id === "uncategorized")) {
+        menu.categories.push({ id: "uncategorized", name: "Sin categoría" });
+      }
 
       // Try to translate item names to Spanish
       await translateMenu();

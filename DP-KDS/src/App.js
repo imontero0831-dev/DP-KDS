@@ -230,13 +230,31 @@ async function cloverRequest(endpoint, method = "GET", body = null) {
   return res.json();
 }
 
+// Clover paginates with limit/offset; a menu that's grown past a single
+// page (200 items) would otherwise get silently truncated at whatever the
+// hardcoded limit was, so keep fetching until a short page tells us we've
+// reached the end.
+async function cloverRequestAllPages(basePath, pageSize = 200) {
+  const sep = basePath.includes("?") ? "&" : "?";
+  let offset = 0;
+  let all = [];
+  while (true) {
+    const res = await cloverRequest(`${basePath}${sep}limit=${pageSize}&offset=${offset}`);
+    const elements = res.elements || [];
+    all = all.concat(elements);
+    if (elements.length < pageSize) break;
+    offset += pageSize;
+  }
+  return all;
+}
+
 // ============================================================
 // All modifier groups loaded once at startup
 let ALL_MODIFIER_GROUPS = [];
 async function fetchAllModifierGroups() {
   try {
-    const data = await cloverRequest("modifier_groups?expand=modifiers&limit=100");
-    ALL_MODIFIER_GROUPS = (data.elements || []).map(group => ({
+    const groupElements = await cloverRequestAllPages("modifier_groups?expand=modifiers");
+    ALL_MODIFIER_GROUPS = groupElements.map(group => ({
       id: group.id,
       name: group.name,
       minRequired: group.minRequired ?? 0,
@@ -331,15 +349,15 @@ function sortCategories(cats) {
 // ============================================================
 async function fetchMenuFromClover() {
   try {
-    const [itemsRes, catsRes] = await Promise.all([
-      cloverRequest("items?expand=categories,modifierGroups&limit=200"),
-      cloverRequest("categories?limit=100"),
+    const [itemElements, catElements] = await Promise.all([
+      cloverRequestAllPages("items?expand=categories,modifierGroups"),
+      cloverRequestAllPages("categories"),
     ]);
-    const categories = (catsRes.elements || []).map(cat => ({
+    const categories = catElements.map(cat => ({
       id: cat.id,
       name: { es: cat.name, en: cat.name },
     }));
-    const items = (itemsRes.elements || [])
+    const items = itemElements
       .filter(item => item.available !== false)
       .map(item => ({
         id: item.id,
@@ -354,7 +372,15 @@ async function fetchMenuFromClover() {
       return { categories: [{ id: "uncategorized", name: { es: "Menú", en: "Menu" } }], items };
     }
     const usedCatIds = new Set(items.map(i => i.categoryId));
-    return { categories: sortCategories(categories.filter(cat => usedCatIds.has(cat.id))), items };
+    const knownCategories = categories.filter(cat => usedCatIds.has(cat.id));
+    // Items with no category assigned in Clover fall back to the
+    // "uncategorized" sentinel id, which never matches a real Clover
+    // category — give them a real tab so they're actually reachable
+    // instead of loading into memory but never appearing anywhere.
+    if (usedCatIds.has("uncategorized")) {
+      knownCategories.push({ id: "uncategorized", name: { es: "Sin categoría", en: "Uncategorized" } });
+    }
+    return { categories: sortCategories(knownCategories), items };
   } catch (err) {
     console.warn("⚠️ Clover menu fetch failed, using mock menu:", err.message);
     return MOCK_MENU;
@@ -695,13 +721,27 @@ const STATUS_COLORS = { new: "#BE202E", in_progress: "#D97706", done: "#15803D" 
 // ============================================================
 // DRINKS / SIDES STATION — matching rules
 // ============================================================
+// Category keywords for real beverages (Bebidas). Deliberately excludes
+// "happy hour" and "bar" — Clover has some food items (nachos, pico de
+// gallo, guacamole) miscategorized under Happy Hour, and "bar" would
+// false-positive on "barbacoa"; either would wrongly hide food from the
+// kitchen ticket.
+const DRINK_ITEM_CATEGORY_KEYWORDS = [
+  "beverage", "bebida", "drink", "agua", "soda", "jugo", "juice", "refresco",
+  "beer", "cerveza", "wine", "vino", "liquor", "licor", "cocktail", "coctel", "cóctel",
+];
+
 const DRINKS_RULES = [
   {
     key: "nonalcoholic",
     color: "#7C3AED",
     bg: "#F5F3FF",
     label: "BEBIDA",
-    match: (name) => name.toLowerCase().includes("agua fresca"),
+    match: (name, catName = "") => {
+      if (name.toLowerCase().includes("agua fresca")) return true;
+      const c = catName.toLowerCase();
+      return DRINK_ITEM_CATEGORY_KEYWORDS.some(k => c.includes(k));
+    },
   },
   {
     key: "caldo",
@@ -1432,6 +1472,16 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
         </div>
       )}
       {order.modified && !order.cancelled && <div style={S.modifiedBanner}>⚡ {t.modified}</div>}
+
+      {/* Keyboard shortcut hint — only shown on focused ticket, matches Kitchen's hint bar */}
+      {isFocused && (
+        <div style={S.keyboardHintBar}>
+          <span style={S.keyboardHint}>🔢 <strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
+          <span style={S.keyboardHint}><strong>+</strong> = {t.shortcutNext}</span>
+          <span style={S.keyboardHint}><strong>−</strong> = {t.shortcutPrev}</span>
+          <span style={S.keyboardHint}><strong>*</strong> = {t.shortcutUndo}</span>
+        </div>
+      )}
 
       <div style={S.ticketTop}>
         <div style={S.ticketTopLeft}>
