@@ -41,6 +41,7 @@ const T = {
     shared: "Compartido",
     orderSummary: "Resumen de Orden",
     tapToAdd: "Toca los artículos para agregarlos",
+    tapToReplace: "Toca un platillo nuevo para reemplazar",
     specialInstructions: "Instrucciones especiales...",
     sendToKitchen: "Enviar a Cocina",
     updateOrder: "Actualizar Orden",
@@ -98,6 +99,7 @@ const T = {
     shortcutReset: "Primero",
     customizeItem: "Personalizar",
     addToOrder: "Agregar a Orden",
+    replaceInOrder: "Reemplazar",
     required: "Requerido",
     optional: "Opcional",
     chooseOne: "Elige 1",
@@ -136,6 +138,7 @@ const T = {
     shared: "Shared",
     orderSummary: "Order Summary",
     tapToAdd: "Tap items to add them",
+    tapToReplace: "Tap a new item to replace it",
     specialInstructions: "Special instructions...",
     sendToKitchen: "Send to Kitchen",
     updateOrder: "Update Order",
@@ -193,6 +196,7 @@ const T = {
     shortcutReset: "First",
     customizeItem: "Customize",
     addToOrder: "Add to Order",
+    replaceInOrder: "Replace",
     required: "Required",
     optional: "Optional",
     chooseOne: "Choose 1",
@@ -941,7 +945,7 @@ function parseSpecialNote(note) {
 // ============================================================
 // MODIFIER MODAL
 // ============================================================
-function ModifierModal({ item, displayName, lang, onConfirm, onClose }) {
+function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }) {
   const t = T[lang];
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1000,7 +1004,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose }) {
         <div style={S.modalHeader}>
           <div>
             <div style={S.modalTitle}>{item.emoji} {displayName}</div>
-            <div style={S.modalSubtitle}>{t.customizeItem}</div>
+            <div style={S.modalSubtitle}>{swapMode ? t.replaceInOrder : t.customizeItem}</div>
           </div>
           <button style={S.modalCloseBtn} onClick={onClose}>✕</button>
         </div>
@@ -1069,7 +1073,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose }) {
                 {modTotal > 0 && <span style={S.modalModPrice}> + {fmt(modTotal)}</span>}
               </div>
               <button style={{ ...S.modalConfirmBtn, ...(!canConfirm ? S.modalConfirmBtnDisabled : {}) }} onClick={handleConfirm} disabled={!canConfirm}>
-                {t.addToOrder} — {fmt(item.price + modTotal)}
+                {swapMode ? t.replaceInOrder : t.addToOrder} — {fmt(item.price + modTotal)}
               </button>
             </div>
           </div>
@@ -2228,6 +2232,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [note, setNote] = useState("");
   const [editingOrder, setEditingOrder] = useState(null);
   const [modModalItem, setModModalItem] = useState(null);
+  const [swapTargetKey, setSwapTargetKey] = useState(null);
   const rootRef = useRef(null);
   const [rootHeight, setRootHeight] = useState(null);
   const headerRef = useRef(null);
@@ -2264,6 +2269,14 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     ro.observe(footerRef.current);
     return () => ro.disconnect();
   }, []);
+
+  // Exit swap mode if the targeted line disappears from the cart (e.g. its
+  // qty was zeroed out via the − button while a replacement was pending).
+  useEffect(() => {
+    if (swapTargetKey && !cart.some(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === swapTargetKey)) {
+      setSwapTargetKey(null);
+    }
+  }, [cart, swapTargetKey]);
 
   // If we arrived here from the table/to-go/bar picker with an order to edit,
   // load it once on mount — this screen remounts fresh each time view === "waiter".
@@ -2305,6 +2318,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const identifier = orderType === "togo" ? toGoName : orderType === "bar" ? barSeat : tableNum;
   const canSend = identifier.trim() && (cart.length > 0 || isEditing);
   const isCancellingOrder = isEditing && cart.every(i => i.qty === 0);
+  const swapTargetItem = swapTargetKey ? cart.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === swapTargetKey) : null;
 
   function getItemDisplayName(item) {
     if (lang === "es" && item.nameEs) return item.nameEs;
@@ -2318,6 +2332,16 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     setModModalItem(null);
     const cat = menu.categories.find(c => c.id === item.categoryId);
     const catName = cat ? (cat.name.en || cat.name.es || "") : "";
+
+    if (swapTargetKey) {
+      const targetKey = swapTargetKey;
+      setSwapTargetKey(null);
+      setCart(prev => prev.map(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === targetKey
+        ? { ...item, catName, displayName: getItemDisplayName(item), qty: c.qty, modifiers: selectedMods, specialNote: specialNote || null, seat: c.seat }
+        : c));
+      return;
+    }
+
     const seat = orderType === "table" ? activeSeat : null;
     const newKey = cartLineKey(item.id, seat, selectedMods, specialNote || null);
     setCart(prev => {
@@ -2430,7 +2454,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   return (
     <div ref={rootRef} style={{ ...S.waiterRoot, ...(rootHeight ? { height: rootHeight } : {}) }}>
       {modModalItem && (
-        <ModifierModal item={modModalItem} displayName={getItemDisplayName(modModalItem)} lang={lang} onConfirm={handleModifierConfirm} onClose={() => setModModalItem(null)} />
+        <ModifierModal item={modModalItem} displayName={getItemDisplayName(modModalItem)} lang={lang} onConfirm={handleModifierConfirm} onClose={() => setModModalItem(null)} swapMode={!!swapTargetKey} />
       )}
       <div ref={headerRef} style={S.waiterHeader}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -2497,6 +2521,12 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       <div style={{ ...S.waiterMain, ...(mainHeight ? { height: mainHeight, maxHeight: mainHeight } : {}) }}>
         {/* LEFT: tab + category/item navigation */}
         <div style={{ ...S.menuPanel, ...(mainHeight ? { height: mainHeight, maxHeight: mainHeight } : {}) }}>
+          {swapTargetItem && (
+            <div style={S.swapBanner}>
+              <span>{t.tapToReplace}: <strong>{swapTargetItem.displayName || swapTargetItem.name}</strong></span>
+              <button style={S.swapBannerCancel} onClick={() => setSwapTargetKey(null)}>✕</button>
+            </div>
+          )}
           <div style={S.tabBar}>
             <button
               style={{ ...S.tabBtn, ...(activeTab === "drinks" ? S.tabBtnActive : {}) }}
@@ -2584,10 +2614,16 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                         <span>{fmt(group.items.reduce((s, i) => s + (i.price + (i.modifiers?.reduce((ms, m) => ms + m.price, 0) ?? 0)) * i.qty, 0))}</span>
                       </div>
                     )}
-                    {group.items.map(item => (
-                      <div key={cartLineKey(item.id, item.seat, item.modifiers, item.specialNote)} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none" }}>
-                        <div style={{ flex: 1 }}>
-                          <span style={S.cartName}>{item.emoji} {item.displayName || item.name}</span>
+                    {group.items.map(item => {
+                      const lineKey = cartLineKey(item.id, item.seat, item.modifiers, item.specialNote);
+                      const isSwapTarget = swapTargetKey === lineKey;
+                      return (
+                      <div key={lineKey} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none", ...(isSwapTarget ? S.cartRowSwapping : {}) }}>
+                        <div
+                          style={{ flex: 1, cursor: item.qty > 0 ? "pointer" : "default" }}
+                          onClick={() => { if (item.qty > 0) setSwapTargetKey(isSwapTarget ? null : lineKey); }}
+                        >
+                          <span style={S.cartName}>{item.emoji} {item.displayName || item.name} {item.qty > 0 && <span style={S.cartSwapHint}>✎</span>}</span>
                           {item.modifiers && item.modifiers.length > 0 && (
                             <div style={S.cartModifiers}>
                               {item.modifiers.map((mod, mi) => {
@@ -2617,7 +2653,8 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                           <span style={S.cartItemTotal}>{fmt((item.price + (item.modifiers?.reduce((s, m) => s + m.price, 0) ?? 0)) * item.qty)}</span>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ))}
               </div>
@@ -3102,6 +3139,8 @@ const S = {
   activeOrderEdit: { color: "#7C3AED", fontSize: 12, fontWeight: 700 },
   waiterMain: { display: "flex", flex: 1, overflow: "hidden", minHeight: 0 },
   menuPanel: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 },
+  swapBanner: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#EDE9FE", color: "#7C3AED", padding: "10px 14px", fontSize: 13, fontWeight: 700, flexShrink: 0 },
+  swapBannerCancel: { background: "none", border: "none", color: "#7C3AED", fontSize: 16, fontWeight: 800, cursor: "pointer", padding: "0 4px" },
   tabBar: { display: "flex", borderBottom: "2px solid #E5E0D8", background: "#FAFAF8", flexShrink: 0 },
   tabBtn: { flex: 1, background: "none", border: "none", borderBottom: "3px solid transparent", padding: "16px 0", fontSize: 17, fontWeight: 800, cursor: "pointer", color: "#999", letterSpacing: "0.03em", transition: "color 0.15s, border-color 0.15s" },
   tabBtnActive: { color: "#BE202E", borderBottom: "3px solid #BE202E", background: "#FFF" },
@@ -3128,7 +3167,9 @@ const S = {
   cartCancelWarning: { color: "#BE202E", fontSize: 13, fontWeight: 700, textAlign: "center", padding: "8px", background: "#FFF1F2", borderRadius: 8, marginBottom: 8 },
   cartItems: { display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 },
   cartRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #F0EDE8", flexWrap: "wrap", gap: 4 },
+  cartRowSwapping: { background: "#EDE9FE", borderRadius: 8, boxShadow: "0 0 0 2px #7C3AED" },
   cartName: { fontSize: 13, color: "#333" },
+  cartSwapHint: { fontSize: 11, color: "#AAA" },
   seatChipRow: { display: "flex", gap: 4, flexWrap: "wrap", padding: "0 14px 10px", flexShrink: 0 },
   seatChip: { background: "#F5F3F0", border: "1px solid #DDD", borderRadius: 8, padding: "4px 9px", fontSize: 11, fontWeight: 700, color: "#888", cursor: "pointer", whiteSpace: "nowrap" },
   seatChipActive: { background: "#BE202E", color: "#fff", borderColor: "#BE202E" },
