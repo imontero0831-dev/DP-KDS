@@ -606,9 +606,17 @@ async function markDrinksReady(order) {
 // order off the Expo screen's "ready to deliver" queue but — unlike
 // bumpOrder — deliberately does NOT archive/delete it, so it keeps showing
 // as an active order for that table until the waitress closes it out.
+//
+// Also force kitchenReady/drinksReady true here: an order can reach Expo's
+// "ready" state without ever setting drinksReady itself (e.g. a to-go order
+// with no real drink/side items still forces onto the Drinks/Sides screen
+// for bagging via orderHasDrinksItems, but never needs a real drinks-station
+// bump). Without this, such orders never leave the Drinks screen even after
+// Expo has already delivered them — this makes that completion flow over to
+// Kitchen/Drinks so they clear too.
 async function markDelivered(order) {
   const ref = doc(db, "orders", order.firestoreId);
-  await updateDoc(ref, { delivered: true, deliveredAt: Date.now() });
+  await updateDoc(ref, { delivered: true, deliveredAt: Date.now(), kitchenReady: true, drinksReady: true });
 }
 
 async function bumpOrder(order) {
@@ -1205,7 +1213,6 @@ function KitchenScreen({ lang, menu }) {
   const active = orders.filter(o => !o.kitchenReady);
   const visible = active.slice(0, MAX_VISIBLE);
   const queued = active.slice(MAX_VISIBLE);
-  const doneCount = orders.filter(o => o.kitchenReady).length;
   useNewOrderChime(active.map(o => o.firestoreId));
 
   // Keep focused index in bounds when orders change
@@ -1234,16 +1241,16 @@ function KitchenScreen({ lang, menu }) {
   // the Pi and the browser sees standard keydown events —
   // identical to pressing keys on a laptop keyboard.
   //
-  // NUMPAD MAPPING (what the cook presses):
-  //   Enter        → advance focused order (new→in_progress, in_progress→done)
-  //   +            → focus next ticket
-  //   -            → focus previous ticket
-  //   *            → undo: step the focused order back one status, or if there's
-  //                  nothing to step back, restore the last completed order
-  //   1–9          → jump directly to ticket by position
-  //   0            → reset focus to first ticket
-  //
-  //   Full keyboard fallbacks: ArrowRight/Left, Backspace, Escape also work.
+  // NUMPAD MAPPING (what the cook presses) — deliberately just two keys:
+  //   Enter → delete the focused/active order. This calls bumpOrder, the
+  //           same full archive the waitress's "Completar" button uses, so
+  //           the order disappears everywhere (Kitchen/Drinks/Expo) in one
+  //           press, not just off the Kitchen screen.
+  //   0     → undo the last delete, and can be pressed again to keep
+  //           undoing further back. This works because `lastCompleted` is a
+  //           live query for the single most recent completedOrders doc —
+  //           undoing one moves it back into `orders`, so the query
+  //           immediately re-points at the next most recent one.
   //
   const handleKeyDown = useCallback((e) => {
     // Don't steal keys when user is typing in an input/textarea
@@ -1252,95 +1259,29 @@ function KitchenScreen({ lang, menu }) {
     const order = visible[focusedIndex];
 
     // Normalize numpad keys — e.code is the physical key, e.key varies by OS/NumLock.
-    // Digit keys especially: with NumLock off, Numpad4/6/etc. send e.key
-    // "ArrowLeft"/"ArrowRight"/etc. instead of a digit, which used to make the
-    // jump-to-ticket shortcuts silently fail (and made a digit key act like a
-    // stray "back" arrow instead). Reading e.code keeps digits reliable either way.
     let key = e.key;
-    if (e.code === "NumpadEnter")    key = "Enter";
-    if (e.code === "NumpadAdd")      key = "+";
-    if (e.code === "NumpadSubtract") key = "-";
-    if (e.code === "NumpadMultiply") key = "*";
+    if (e.code === "NumpadEnter") key = "Enter";
     if (/^Numpad[0-9]$/.test(e.code)) key = e.code.slice(6);
 
     switch (key) {
-      // ── ENTER: advance order status ────────────────────────
+      // ── ENTER: delete the focused order (fully archives it) ────────
       case "Enter": {
         e.preventDefault();
         if (!order || order.cancelled) return;
-        if (order.status === "new") {
-          updateOrderStatus(order.firestoreId, "in_progress");
-          flash("🔥 Empezando...", "#D97706");
-        } else if (order.status === "in_progress") {
-          markKitchenReady(order);
-          flash("✓ Listo!", "#15803D");
-        }
+        bumpOrder(order);
+        flash("🗑 Orden Eliminada", "#BE202E");
         break;
       }
 
-      // ── + (NumpadAdd): next ticket ─────────────────────────
-      case "+": {
-        e.preventDefault();
-        setFocusedIndex(i => Math.min(i + 1, visible.length - 1));
-        break;
-      }
-
-      // ── - (NumpadSubtract): previous ticket ───────────────
-      case "-": {
-        e.preventDefault();
-        setFocusedIndex(i => Math.max(i - 1, 0));
-        break;
-      }
-
-      // ── * (NumpadMultiply): undo — step the focused ticket back one
-      //    status, or if there's nothing to step back (e.g. it was just
-      //    bumped to done and is already gone from view), restore the
-      //    last completed order instead, same as the header ↩ button.
-      case "*": {
-        e.preventDefault();
-        if (order && !order.cancelled && order.status === "in_progress") {
-          updateOrderStatus(order.firestoreId, "new");
-          flash("↩ Deshecho", "#D97706");
-        } else if (lastCompleted) {
-          undoCompletedOrder(lastCompleted);
-          flash("↩ Orden restaurada", "#7C3AED");
-        }
-        break;
-      }
-
-      // ── NUMBER KEYS 1–9: jump to ticket by position ────────
-      case "1": case "2": case "3": case "4": case "5":
-      case "6": case "7": case "8": case "9": {
-        e.preventDefault();
-        const idx = parseInt(key, 10) - 1;
-        if (idx < visible.length) setFocusedIndex(idx);
-        break;
-      }
-
-      // ── 0: reset focus to first ticket ────────────────────
+      // ── 0: undo the last delete (repeatable — keeps going back) ────
       case "0": {
         e.preventDefault();
-        setFocusedIndex(0);
-        break;
-      }
-
-      // ── Full-keyboard fallbacks ────────────────────────────
-      case "ArrowRight":
-      case "Tab":      { e.preventDefault(); setFocusedIndex(i => Math.min(i + 1, visible.length - 1)); break; }
-      case "ArrowLeft":{ e.preventDefault(); setFocusedIndex(i => Math.max(i - 1, 0)); break; }
-      case "Backspace":
-      case "Delete": {
-        e.preventDefault();
-        if (order && !order.cancelled && order.status === "in_progress") {
-          updateOrderStatus(order.firestoreId, "new");
-          flash("↩ Deshecho", "#D97706");
-        } else if (lastCompleted) {
+        if (lastCompleted) {
           undoCompletedOrder(lastCompleted);
-          flash("↩ Orden restaurada", "#7C3AED");
+          flash("↩ Orden Restaurada", "#7C3AED");
         }
         break;
       }
-      case "Escape":   { e.preventDefault(); setFocusedIndex(0); break; }
 
       default:
         break;
@@ -1364,7 +1305,6 @@ function KitchenScreen({ lang, menu }) {
         </div>
         <div style={S.kitchenStats}>
           <span style={{ ...S.statPillRed, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{active.length} {t.active}</span>
-          <span style={{ ...S.statPillGreen, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{doneCount} {t.done}</span>
           {lastCompleted && (
             <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
           )}
@@ -1378,14 +1318,13 @@ function KitchenScreen({ lang, menu }) {
         </div>
       )}
 
-      {/* Numpad shortcut legend — always visible at bottom of header */}
+      {/* Numpad shortcut legend — always visible at bottom of header.
+          Hardcoded to Spanish (not t.*) since this is the fixed cook-facing
+          instruction for KDS 1's two-key numpad, independent of the app-wide
+          EN/ES toggle. */}
       <div style={S.shortcutBar}>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>ENTER</kbd> {t.shortcutAdvance}</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>+</kbd> {t.shortcutNext}</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>−</kbd> {t.shortcutPrev}</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>*</kbd> {t.shortcutUndo}</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>1–9</kbd> {t.shortcutJump}</span>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>0</kbd> {t.shortcutReset}</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>ENTER</kbd> Eliminar orden activa</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>0</kbd> Atrás (deshacer)</span>
       </div>
 
       {active.length === 0 ? (
@@ -1925,7 +1864,7 @@ function ExpoScreen({ menu }) {
           </div>
         </div>
       ) : (
-        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 280px))", gap: 14, padding: 16, alignItems: "start", overflowY: "auto" }}>
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 440px))", gap: 14, padding: 16, alignItems: "start", overflowY: "auto" }}>
           {/* Ready orders first (at top) */}
           {readyOrders.map(order => (
             <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} />
