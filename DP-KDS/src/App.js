@@ -1098,6 +1098,21 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
     ? order.latestDiff
     : order.items.map(i => ({ ...i, changeType: "unchanged" }));
 
+  // Cluster items by seat so each guest's plate reads as one obvious block
+  // on the ticket instead of a tiny inline tag per item — only when the
+  // order actually has per-guest tagging; otherwise render flat as before.
+  const hasSeats = items.some(i => i.seat);
+  const seatGroups = [];
+  const seatIndex = new Map();
+  items.forEach(item => {
+    const key = item.seat ?? null;
+    if (!seatIndex.has(key)) {
+      seatIndex.set(key, seatGroups.length);
+      seatGroups.push({ seat: key, items: [] });
+    }
+    seatGroups[seatIndex.get(key)].items.push(item);
+  });
+
   const changeStyle = (changeType) => {
     switch (changeType) {
       case "added":     return { color: "#15803D", bg: "#F0FDF4" };
@@ -1169,44 +1184,55 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
       <div style={S.ruledLine} />
 
       <div style={S.itemsList}>
-        {items.map((item, idx) => {
-          const cs = changeStyle(item.changeType);
-          const isRemoved = item.changeType === "removed";
-          const dimmed = item.changeType === "unchanged" && isKitchenDimmed(item.name, item.catName || catNameById[item.categoryId] || "");
-          return (
-            <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : cs.bg, borderBottom: idx < items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: dimmed ? 0.35 : 1 }}>
-              <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color }}>{item.qty}</span>
-              <div style={{ flex: 1 }}>
-                <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
-                  {item.name}
-                  {item.seat && <span style={S.seatTagBadge}>{t.plato} {item.seat}</span>}
-                  {cs.tagBg && !order.cancelled && <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>}
+        {seatGroups.map((group, gi) => (
+          <div key={group.seat ?? "shared"}>
+            {hasSeats && gi > 0 && <div style={S.plateDivider} />}
+            {hasSeats && (
+              <div style={S.plateHeader}>
+                <span style={S.plateHeaderText}>
+                  {group.seat ? `${t.plato} ${group.seat}` : t.shared}
                 </span>
-                {item.modifiers && item.modifiers.length > 0 && (
-                  <div style={S.ticketModifiers}>
-                    {item.modifiers.map((mod, mi) => {
-                      const isRemoval = REMOVE_TRIGGERS.some(w => mod.name.toLowerCase().includes(w));
-                      return (
-                        <span key={mi} style={{ ...S.ticketModifierChip, color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800, textTransform: "uppercase" }}>
-                          {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-                {item.specialNote && (
-                  <div style={S.ticketSpecialNoteBlock}>
-                    {parseSpecialNote(item.specialNote).map((seg, si) => (
-                      <div key={si} style={{ ...S.ticketSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
-                        {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
-            </div>
-          );
-        })}
+            )}
+            {group.items.map((item, idx) => {
+              const cs = changeStyle(item.changeType);
+              const isRemoved = item.changeType === "removed";
+              const dimmed = item.changeType === "unchanged" && isKitchenDimmed(item.name, item.catName || catNameById[item.categoryId] || "");
+              return (
+                <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: dimmed ? 0.35 : 1 }}>
+                  <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color }}>{item.qty}</span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
+                      {item.name}
+                      {cs.tagBg && !order.cancelled && <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>}
+                    </span>
+                    {item.modifiers && item.modifiers.length > 0 && (
+                      <div style={S.ticketModifiers}>
+                        {item.modifiers.map((mod, mi) => {
+                          const isRemoval = REMOVE_TRIGGERS.some(w => mod.name.toLowerCase().includes(w));
+                          return (
+                            <span key={mi} style={{ ...S.ticketModifierChip, color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800, textTransform: "uppercase" }}>
+                              {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {item.specialNote && (
+                      <div style={S.ticketSpecialNoteBlock}>
+                        {parseSpecialNote(item.specialNote).map((seg, si) => (
+                          <div key={si} style={{ ...S.ticketSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
+                            {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
 
       {order.note && (
@@ -3080,7 +3106,9 @@ const S = {
   seatChipActive: { background: "#BE202E", color: "#fff", borderColor: "#BE202E" },
   seatChipAdd: { background: "#F5F3F0", border: "1px dashed #AAA", borderRadius: 8, padding: "4px 11px", fontSize: 13, fontWeight: 900, color: "#555", cursor: "pointer", whiteSpace: "nowrap" },
   cartGroupHeader: { fontSize: 10, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.1em", textTransform: "uppercase", padding: "10px 0 2px", display: "flex", justifyContent: "space-between" },
-  seatTagBadge: { fontSize: 9, fontWeight: 800, color: "#fff", background: "#9B8B72", borderRadius: 5, padding: "1px 5px", marginLeft: 6, verticalAlign: "middle" },
+  plateHeader: { padding: "10px 14px 5px", background: "#F5EFE0" },
+  plateHeaderText: { fontSize: "clamp(30px, calc(20cqw - 20px), 75px)", fontWeight: 900, letterSpacing: "0.07em", color: "#1A1A1A", textTransform: "uppercase" },
+  plateDivider: { borderBottom: "5px solid #1A1A1A", margin: "6px 14px 0" },
   cartQtyRow: { display: "flex", alignItems: "center", gap: 6 },
   qtyBtn: { background: "#F5F3F0", border: "1px solid #DDD", color: "#444", width: 28, height: 28, borderRadius: 7, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" },
   cartQty: { fontSize: 14, fontWeight: 700, minWidth: 20, textAlign: "center" },
