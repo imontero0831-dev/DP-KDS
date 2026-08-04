@@ -2204,6 +2204,13 @@ function getCategoryEmoji(cat) {
   return "🍴";
 }
 
+// Distinguishes cart lines by item + seat + exact modifier set + note, so the
+// same item with different modifiers gets its own line instead of merging qty.
+function cartLineKey(id, seat, modifiers, specialNote) {
+  const modKey = (modifiers || []).map(m => m.id).sort().join(",");
+  return `${id}|${seat ?? ""}|${modKey}|${specialNote || ""}`;
+}
+
 function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType, initialEditOrder, onBack }) {
   const t = T[lang];
   const [activeTab, setActiveTab] = useState("drinks");
@@ -2312,26 +2319,29 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     const cat = menu.categories.find(c => c.id === item.categoryId);
     const catName = cat ? (cat.name.en || cat.name.es || "") : "";
     const seat = orderType === "table" ? activeSeat : null;
+    const newKey = cartLineKey(item.id, seat, selectedMods, specialNote || null);
     setCart(prev => {
-      const existing = prev.find(c => c.id === item.id && c.seat === seat);
-      if (existing) return prev.map(c => c.id === item.id && c.seat === seat ? { ...c, qty: c.qty + 1 } : c);
+      const existing = prev.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === newKey);
+      if (existing) return prev.map(c => c === existing ? { ...c, qty: c.qty + 1 } : c);
       return [...prev, { ...item, catName, displayName: getItemDisplayName(item), qty: 1, modifiers: selectedMods, specialNote: specialNote || null, seat }];
     });
   }
 
-  function removeFromCart(id, seat) {
+  function removeFromCart(target) {
+    const key = cartLineKey(target.id, target.seat, target.modifiers, target.specialNote);
     setCart(prev => {
-      const existing = prev.find(c => c.id === id && c.seat === seat);
+      const existing = prev.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === key);
       if (existing?.qty === 1) {
-        if (isEditing) return prev.map(c => c.id === id && c.seat === seat ? { ...c, qty: 0 } : c);
-        return prev.filter(c => !(c.id === id && c.seat === seat));
+        if (isEditing) return prev.map(c => c === existing ? { ...c, qty: 0 } : c);
+        return prev.filter(c => c !== existing);
       }
-      return prev.map(c => c.id === id && c.seat === seat ? { ...c, qty: c.qty - 1 } : c);
+      return prev.map(c => c === existing ? { ...c, qty: c.qty - 1 } : c);
     });
   }
 
-  function incrementCartItem(id, seat) {
-    setCart(prev => prev.map(c => c.id === id && c.seat === seat ? { ...c, qty: c.qty + 1 } : c));
+  function incrementCartItem(target) {
+    const key = cartLineKey(target.id, target.seat, target.modifiers, target.specialNote);
+    setCart(prev => prev.map(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === key ? { ...c, qty: c.qty + 1 } : c));
   }
 
   function loadOrderForEdit(order) {
@@ -2575,7 +2585,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                       </div>
                     )}
                     {group.items.map(item => (
-                      <div key={item.id + "-" + (item.seat ?? "shared")} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none" }}>
+                      <div key={cartLineKey(item.id, item.seat, item.modifiers, item.specialNote)} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none" }}>
                         <div style={{ flex: 1 }}>
                           <span style={S.cartName}>{item.emoji} {item.displayName || item.name}</span>
                           {item.modifiers && item.modifiers.length > 0 && (
@@ -2601,9 +2611,9 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                           )}
                         </div>
                         <div style={S.cartQtyRow}>
-                          <button style={S.qtyBtn} onClick={() => removeFromCart(item.id, item.seat)}>−</button>
+                          <button style={S.qtyBtn} onClick={() => removeFromCart(item)}>−</button>
                           <span style={S.cartQty}>{item.qty}</span>
-                          <button style={S.qtyBtn} onClick={() => incrementCartItem(item.id, item.seat)}>+</button>
+                          <button style={S.qtyBtn} onClick={() => incrementCartItem(item)}>+</button>
                           <span style={S.cartItemTotal}>{fmt((item.price + (item.modifiers?.reduce((s, m) => s + m.price, 0) ?? 0)) * item.qty)}</span>
                         </div>
                       </div>
