@@ -2197,6 +2197,22 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [modModalItem, setModModalItem] = useState(null);
   const rootRef = useRef(null);
   const [rootHeight, setRootHeight] = useState(null);
+  const footerRef = useRef(null);
+  const [footerHeight, setFooterHeight] = useState(0);
+
+  // The send-button footer is pinned with position:absolute (see cartFooterArea)
+  // instead of relying on flex to keep it out of the scroll area — some tablet
+  // WebViews weren't reliably clamping the scroll area's height even with
+  // minHeight:0 set, letting cart content push the footer below the fold.
+  // Absolute positioning can't be pushed around by content, so measure its
+  // real rendered height and reserve that much space at the bottom of the
+  // scroll area instead.
+  useEffect(() => {
+    if (!footerRef.current) return;
+    const ro = new ResizeObserver(([entry]) => setFooterHeight(entry.contentRect.height));
+    ro.observe(footerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   // If we arrived here from the table/to-go/bar picker with an order to edit,
   // load it once on mount — this screen remounts fresh each time view === "waiter".
@@ -2494,7 +2510,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               )}
             </div>
           )}
-          <div style={S.cartScrollArea}>
+          <div style={{ ...S.cartScrollArea, paddingBottom: footerHeight + 14 }}>
             {cart.filter(i => i.qty > 0).length === 0 && isEditing ? (
               <div style={S.cartCancelWarning}>🚫 All items removed — this will cancel the order</div>
             ) : cart.length === 0 ? (
@@ -2553,7 +2569,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               </div>
             )}
           </div>
-          <div style={S.cartFooterArea}>
+          <div ref={footerRef} style={S.cartFooterArea}>
             <textarea style={S.noteField} placeholder={t.specialInstructions} value={note} onChange={e => setNote(e.target.value)} rows={2} />
             <div style={S.cartFooter}>
               <span style={S.cartTotal}>{fmt(cartTotal)}</span>
@@ -3050,9 +3066,9 @@ const S = {
   menuBadge: { position: "absolute", top: 8, right: 8, background: "#BE202E", color: "#fff", borderRadius: 10, fontSize: 14, fontWeight: 800, padding: "3px 8px" },
 
   // CART
-  cartPanel: { width: 300, flexShrink: 0, background: "#FFFFFF", borderLeft: "2px solid #E5E0D8", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 },
+  cartPanel: { width: 300, flexShrink: 0, background: "#FFFFFF", borderLeft: "2px solid #E5E0D8", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, position: "relative" },
   cartScrollArea: { flex: 1, overflowY: "auto", padding: "0 14px", minHeight: 0 },
-  cartFooterArea: { borderTop: "1px solid #E5E0D8", padding: "10px 14px", flexShrink: 0, position: "sticky", bottom: 0, background: "#FFFFFF", zIndex: 2 },
+  cartFooterArea: { borderTop: "1px solid #E5E0D8", padding: "10px 14px", position: "absolute", left: 0, right: 0, bottom: 0, background: "#FFFFFF", zIndex: 2, boxShadow: "0 -2px 8px rgba(0,0,0,0.06)" },
   cartTitle: { fontSize: 10, fontWeight: 800, color: "#AAA", letterSpacing: "0.12em", textTransform: "uppercase", padding: "12px 14px 8px", flexShrink: 0 },
   cartEmpty: { color: "#BBB", fontSize: 13, textAlign: "center", padding: "6px 0" },
   cartCancelWarning: { color: "#BE202E", fontSize: 13, fontWeight: 700, textAlign: "center", padding: "8px", background: "#FFF1F2", borderRadius: 8, marginBottom: 8 },
