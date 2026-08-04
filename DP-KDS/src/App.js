@@ -736,11 +736,19 @@ function useAutoUpdate(viewRef) {
     if (!currentBundleRef.current) return; // dev server: no hashed bundle to compare
     async function check() {
       try {
-        const res = await fetch("/", { cache: "no-store" });
+        // Kiosk wrapper apps (FullKiosk, etc.) run their own WebView cache
+        // that can ignore both HTTP cache headers and the fetch cache option,
+        // serving a stale "/" response even right after a reboot. A query
+        // string this app has never requested before can't have a cached
+        // entry, so it forces a real network hit — same trick applied to
+        // the reload navigation below.
+        const res = await fetch("/?_cb=" + Date.now(), { cache: "no-store" });
         const html = await res.text();
         const match = html.match(/\/static\/js\/main\.[^"]+\.js/);
         if (match && match[0] !== currentBundleRef.current && viewRef.current !== "waiter") {
-          window.location.reload();
+          const url = new URL(window.location.href);
+          url.searchParams.set("_r", Date.now());
+          window.location.href = url.toString();
         }
       } catch (err) {
         console.warn("⚠️ update check failed:", err.message);
