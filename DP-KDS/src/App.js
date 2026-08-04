@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, doc, onSnapshot,
-  addDoc, updateDoc, deleteDoc, getDoc, query, orderBy, limit, serverTimestamp
+  addDoc, updateDoc, deleteDoc, getDoc, getDocs, query, orderBy, limit, serverTimestamp
 } from "firebase/firestore";
 
 // ============================================================
@@ -696,6 +696,59 @@ function useNewOrderChime(ids) {
     prevIds.current = current;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+}
+
+// Same idea as useNewOrderChime, but also alerts on an EDIT to an order
+// already in the queue (e.g. the waitress adds items to a table that
+// already sent drinks), not just a brand-new order arriving. Keyed on
+// id+lastModified so an edit (which bumps lastModified) reads as a new
+// signature even though the doc id is unchanged.
+function useOrderAlertChime(orders) {
+  const prevSigs = useRef(null);
+  const sigs = orders.map(o => `${o.firestoreId}:${o.lastModified || o.timestamp}`);
+  const key = sigs.join(",");
+  useEffect(() => {
+    const current = new Set(sigs);
+    if (prevSigs.current !== null) {
+      const hasNew = sigs.some(s => !prevSigs.current.has(s));
+      if (hasNew) playOrderChime();
+    }
+    prevSigs.current = current;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+}
+
+// ── AUTO-UPDATE ON DEPLOY ────────────────────────────────────────
+// Kiosk Pis and waitress tablets are just a browser tab left open for a
+// whole shift — nothing reloads them when a new build ships, so they can
+// silently run stale code for days. This polls the deployed page for a
+// new build (CRA hashes its JS bundle filename, so the hash changes on
+// every deploy) and reloads automatically once one shows up. It never
+// reloads while view === "waiter" — that screen's cart only lives in
+// local state, and yanking the page out from under a waitress mid-order
+// would lose whatever she'd typed so far. The check just runs again next
+// interval until she's back on a safe screen.
+function useAutoUpdate(viewRef) {
+  const currentBundleRef = useRef(
+    document.querySelector('script[src*="/static/js/main."]')?.getAttribute("src") || null
+  );
+  useEffect(() => {
+    if (!currentBundleRef.current) return; // dev server: no hashed bundle to compare
+    async function check() {
+      try {
+        const res = await fetch("/", { cache: "no-store" });
+        const html = await res.text();
+        const match = html.match(/\/static\/js\/main\.[^"]+\.js/);
+        if (match && match[0] !== currentBundleRef.current && viewRef.current !== "waiter") {
+          window.location.reload();
+        }
+      } catch (err) {
+        console.warn("⚠️ update check failed:", err.message);
+      }
+    }
+    const interval = setInterval(check, 120000);
+    return () => clearInterval(interval);
+  }, [viewRef]);
 }
 
 async function undoCompletedOrder(order) {
@@ -1451,7 +1504,7 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
           const bg    = rule ? rule.bg    : order.isToGo ? TOGO_BG    : "transparent";
           const label = rule ? rule.label : null;
           const dimmed = !rule && !order.isToGo;
-          const showDetails = rule?.key === "caldo" && item.modifiers && item.modifiers.length > 0;
+          const showDetails = item.modifiers && item.modifiers.length > 0;
           return (
             <div key={idx} style={{
               ...S.itemRow,
@@ -1471,14 +1524,17 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
                 </span>
                 {showDetails && (
                   <div style={S.ticketModifiers}>
-                    {item.modifiers.map((mod, mi) => (
-                      <span key={mi} style={{ ...S.ticketModifierChip, color: "#15803D", fontWeight: 800, textTransform: "uppercase" }}>
-                        + {mod.name.toUpperCase()}
-                      </span>
-                    ))}
+                    {item.modifiers.map((mod, mi) => {
+                      const isRemoval = REMOVE_TRIGGERS.some(w => mod.name.toLowerCase().includes(w));
+                      return (
+                        <span key={mi} style={{ ...S.ticketModifierChip, color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800, textTransform: "uppercase" }}>
+                          {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
-                {rule?.key === "caldo" && item.specialNote && (
+                {item.specialNote && (
                   <div style={S.ticketSpecialNoteBlock}>
                     {parseSpecialNote(item.specialNote).map((seg, si) => (
                       <div key={si} style={{ ...S.ticketSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
@@ -1814,6 +1870,7 @@ function ExpoTicket({ order, catNameById }) {
 function ExpoScreen({ menu }) {
   const [orders, setOrders] = useState([]);
   const lastCompleted = useLastCompletedOrder();
+  useOrderAlertChime(orders);
 
   function handleUndoLastCompleted() {
     if (!lastCompleted) return;
@@ -2242,17 +2299,35 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       setSending(false); setSent(true);
       setTimeout(() => { setSent(false); cancelEdit(); }, 2000);
     } else {
-      const order = {
-        id: genId(), table: orderType === "table" ? tableNum : orderType === "bar" ? barSeat : null,
-        isToGo: orderType === "togo", toGoName: orderType === "togo" ? toGoName : null,
-        isBar: orderType === "bar",
-        items: cart.map(i => ({ ...i, name: i.name })), note, total: cartTotal,
-        timestamp: Date.now(), status: "new", editHistory: [],
-      };
-      const cloverOrderId = await sendOrderToClover(order);
-      await pushOrderToKitchen({ ...order, cloverOrderId: cloverOrderId || null });
-      setSending(false); setSent(true);
-      onOrderSent?.(order);
+      // A table/to-go/bar can already have an active order (e.g. the
+      // waitress sent drinks earlier and is now back to add food) even
+      // though she didn't explicitly tap "Editar Orden". Sending a second
+      // fresh order in that case used to create a second Clover ticket for
+      // the same table — so check for one first and merge into it instead.
+      const existing = await findActiveOrderForIdentifier();
+      if (existing) {
+        const mergedItems = [...existing.items, ...cart.map(i => ({ ...i, name: i.name }))];
+        const mergedNote = [existing.note, note].filter(Boolean).join(" | ");
+        await editKitchenOrder(existing.firestoreId, existing.items, mergedItems, mergedNote);
+        const newCloverOrderId = await updateOrderInClover({ ...existing, items: mergedItems, note: mergedNote });
+        if (newCloverOrderId) {
+          await updateDoc(doc(db, "orders", existing.firestoreId), { cloverOrderId: newCloverOrderId });
+        }
+        setSending(false); setSent(true);
+        onOrderSent?.({ ...existing, items: mergedItems });
+      } else {
+        const order = {
+          id: genId(), table: orderType === "table" ? tableNum : orderType === "bar" ? barSeat : null,
+          isToGo: orderType === "togo", toGoName: orderType === "togo" ? toGoName : null,
+          isBar: orderType === "bar",
+          items: cart.map(i => ({ ...i, name: i.name })), note, total: cartTotal,
+          timestamp: Date.now(), status: "new", editHistory: [],
+        };
+        const cloverOrderId = await sendOrderToClover(order);
+        await pushOrderToKitchen({ ...order, cloverOrderId: cloverOrderId || null });
+        setSending(false); setSent(true);
+        onOrderSent?.(order);
+      }
       setTimeout(() => {
         setCart([]); setNote(""); setSent(false); setActiveSeat(null); setSeatCount(0);
         if (!initialTable && orderType !== "togo" && orderType !== "bar") { setTableNum(""); }
@@ -2260,6 +2335,18 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         if (orderType === "bar") setBarSeat("");
       }, 2000);
     }
+  }
+
+  async function findActiveOrderForIdentifier() {
+    const snap = await getDocs(collection(db, "orders"));
+    const orders = snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+    return orders.find(o => {
+      if (o.status === "done" || o.cancelled) return false;
+      if (orderType === "table") return !o.isToGo && !o.isBar && o.table === tableNum;
+      if (orderType === "togo") return o.isToGo && o.toGoName === toGoName;
+      if (orderType === "bar") return o.isBar && o.table === barSeat;
+      return false;
+    }) || null;
   }
 
   return (
@@ -2638,6 +2725,10 @@ export default function App() {
   const [pinOpen, setPinOpen] = useState(false);
   const translationCache = useRef({});
   const t = T[lang];
+
+  const viewRef = useRef(view);
+  useEffect(() => { viewRef.current = view; }, [view]);
+  useAutoUpdate(viewRef);
 
   useEffect(() => {
     fetchAllModifierGroups();
