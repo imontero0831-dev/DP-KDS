@@ -273,19 +273,22 @@ async function fetchAllModifierGroups() {
 function getModifierGroupsForItem(item) {
   if (!item || ALL_MODIFIER_GROUPS.length === 0) return [];
   // Prefer the item's real Clover modifierGroup associations. Fall back to
-  // name-prefix matching only for items that don't carry that data (e.g.
-  // MOCK_MENU when the Clover fetch fails).
+  // whole-word name matching only for items that don't carry that data (e.g.
+  // MOCK_MENU when the Clover fetch fails). Must be a whole-word match, not a
+  // substring: a loose substring check let a lone "A" in "A La Mexicana
+  // Omelette" match nearly every group prefix (each contains the letter A),
+  // and let "Mole" match inside "Guacamole" — pulling in dozens of unrelated
+  // required choices (Chilaquiles Egg Style, Guacamole Spice Level, etc.) on
+  // an item that should show none.
   let matched;
   if (item.modifierGroupIds && item.modifierGroupIds.length > 0) {
     const ids = new Set(item.modifierGroupIds);
     matched = ALL_MODIFIER_GROUPS.filter(group => ids.has(group.id));
   } else {
-    const name = (item.name || "").toLowerCase();
+    const nameWords = new Set((item.name || "").toLowerCase().split(/\s+/).map(w => w.replace(/s$/, "")));
     matched = ALL_MODIFIER_GROUPS.filter(group => {
-      const groupPrefix = group.name.split(" - ")[0].toLowerCase().trim();
-      const normalizedGroup = groupPrefix.replace(/s$/, "");
-      const normalizedName = name.replace(/s$/, "");
-      return normalizedName.includes(normalizedGroup) || normalizedGroup.includes(normalizedName.split(" ")[0].replace(/s$/, ""));
+      const groupPrefix = group.name.split(" - ")[0].toLowerCase().trim().replace(/s$/, "");
+      return nameWords.has(groupPrefix);
     });
   }
   // Required groups (minRequired > 0) render before optional ones.
@@ -396,7 +399,7 @@ const CLOVER_ORDER_TYPES = {
 };
 
 function buildCloverOrderNote(order) {
-  if (order.isToGo) return `PARA LLEVAR: ${order.toGoName}${order.note ? " | " + order.note : ""}`;
+  if (order.isToGo) return `${order.toGoName}${order.note ? " | " + order.note : ""}`;
   if (order.isBar) return `BARRA ${order.table}${order.note ? " | " + order.note : ""}`;
   return `MESA ${order.table}${order.note ? " | " + order.note : ""}`;
 }
@@ -769,24 +772,18 @@ const DRINKS_RULES = [
     match: (name) => name.toLowerCase().includes("guacamol"),
   },
   {
-    key: "appetizer",
-    color: "#C2410C",
-    bg: "#FFF7ED",
-    label: "ENTRADA",
-    match: (name, catName = "") => {
-      const c = catName.toLowerCase();
-      const n = name.toLowerCase();
-      if (c.includes("appetizer")) return true;
-      if (c.includes("happy hour") && !n.startsWith("hh ")) return true;
-      return false;
-    },
+    key: "pico_de_gallo",
+    color: "#15803D",
+    bg: "#F0FDF4",
+    label: "PICO DE GALLO",
+    match: (name) => name.toLowerCase().includes("pico de gallo"),
   },
   {
-    key: "sides",
+    key: "side_salsa",
     color: "#D97706",
     bg: "#FFFBEB",
-    label: "SIDES",
-    match: (name, catName = "") => catName.toLowerCase().includes("extra"),
+    label: "SIDE DE SALSA",
+    match: (name) => name.toLowerCase().includes("side de salsa"),
   },
 ];
 
@@ -1454,6 +1451,7 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
           const bg    = rule ? rule.bg    : order.isToGo ? TOGO_BG    : "transparent";
           const label = rule ? rule.label : null;
           const dimmed = !rule && !order.isToGo;
+          const showDetails = rule?.key === "caldo" && item.modifiers && item.modifiers.length > 0;
           return (
             <div key={idx} style={{
               ...S.itemRow,
@@ -1471,6 +1469,24 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
                     </span>
                   )}
                 </span>
+                {showDetails && (
+                  <div style={S.ticketModifiers}>
+                    {item.modifiers.map((mod, mi) => (
+                      <span key={mi} style={{ ...S.ticketModifierChip, color: "#15803D", fontWeight: 800, textTransform: "uppercase" }}>
+                        + {mod.name.toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {rule?.key === "caldo" && item.specialNote && (
+                  <div style={S.ticketSpecialNoteBlock}>
+                    {parseSpecialNote(item.specialNote).map((seg, si) => (
+                      <div key={si} style={{ ...S.ticketSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
+                        {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -1713,13 +1729,13 @@ function ExpoTicket({ order, catNameById }) {
       {/* Station columns */}
       <div style={{ display: "flex", flex: 1, minHeight: 100 }}>
         {hasKitchen && (
-          <div style={{ flex: 1, padding: "10px 12px", background: order.kitchenReady ? "#F0FDF4" : "#FFFBEB", borderRight: hasDrinks ? "1px solid #E0D8C4" : "none" }}>
+          <div style={{ flex: 1, minWidth: 0, padding: "10px 12px", background: order.kitchenReady ? "#F0FDF4" : "#FFFBEB", borderRight: hasDrinks ? "1px solid #E0D8C4" : "none", containerType: "inline-size" }}>
             <div style={{ fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, letterSpacing: "0.1em", color: order.kitchenReady ? "#15803D" : "#D97706", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", textTransform: "uppercase" }}>
               🍳 COCINA
               {order.kitchenReady && <span>✅</span>}
             </div>
             {kitchenItems.map((item, i) => (
-              <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: order.kitchenReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.kitchenReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase" }}>
+              <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: order.kitchenReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.kitchenReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "break-word" }}>
                 <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}
               </div>
             ))}
@@ -1730,13 +1746,13 @@ function ExpoTicket({ order, catNameById }) {
         )}
 
         {hasDrinks && (
-          <div style={{ flex: 1, padding: "10px 12px", background: order.drinksReady ? "#F0FDF4" : "#F5F3FF" }}>
+          <div style={{ flex: 1, minWidth: 0, padding: "10px 12px", background: order.drinksReady ? "#F0FDF4" : "#F5F3FF", containerType: "inline-size" }}>
             <div style={{ fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, letterSpacing: "0.1em", color: order.drinksReady ? "#15803D" : "#7C3AED", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", textTransform: "uppercase" }}>
               🥤 BEBIDAS
               {order.drinksReady && <span>✅</span>}
             </div>
             {drinksItems.map((item, i) => (
-              <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: order.drinksReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.drinksReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase" }}>
+              <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: order.drinksReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.drinksReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "break-word" }}>
                 <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}
               </div>
             ))}
@@ -1829,8 +1845,15 @@ function ExpoScreen({ menu }) {
     return (!hasK || !!o.kitchenReady) && (!hasD || !!o.drinksReady);
   };
 
-  const readyOrders  = orders.filter(o => isOrderReady(o) && !o.delivered);
-  const activeOrders = orders.filter(o => !isOrderReady(o));
+  // Once Kitchen marks its part of an order done, Expo stops tracking that
+  // order entirely — even if drinks/sides for it aren't ready yet. This is
+  // a display-only cutoff (nothing is archived), so the waitress's active
+  // table list and billing are untouched; only orders with no kitchen items
+  // (drinks/bar-only) still wait on the ready+deliver flow below.
+  const expoOrders = orders.filter(o => !(orderHasKitchenItems(o) && o.kitchenReady));
+
+  const readyOrders  = expoOrders.filter(o => isOrderReady(o) && !o.delivered);
+  const activeOrders = expoOrders.filter(o => !isOrderReady(o));
 
   return (
     <div style={S.kitchenRoot}>
