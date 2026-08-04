@@ -3022,8 +3022,8 @@ const S = {
   toGoChipSmall: { background: "#E0F2FE", color: "#0369A1", borderRadius: 6, padding: "2px 7px", fontSize: 12, fontWeight: 800 },
   activeOrderItems: { flex: 1, fontSize: 14, color: "#888" },
   activeOrderEdit: { color: "#7C3AED", fontSize: 12, fontWeight: 700 },
-  waiterMain: { display: "flex", flex: 1, overflow: "hidden" },
-  menuPanel: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" },
+  waiterMain: { display: "flex", flex: 1, overflow: "hidden", minHeight: 0 },
+  menuPanel: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 },
   tabBar: { display: "flex", borderBottom: "2px solid #E5E0D8", background: "#FAFAF8", flexShrink: 0 },
   tabBtn: { flex: 1, background: "none", border: "none", borderBottom: "3px solid transparent", padding: "16px 0", fontSize: 17, fontWeight: 800, cursor: "pointer", color: "#999", letterSpacing: "0.03em", transition: "color 0.15s, border-color 0.15s" },
   tabBtnActive: { color: "#BE202E", borderBottom: "3px solid #BE202E", background: "#FFF" },
@@ -3042,8 +3042,8 @@ const S = {
   menuBadge: { position: "absolute", top: 8, right: 8, background: "#BE202E", color: "#fff", borderRadius: 10, fontSize: 14, fontWeight: 800, padding: "3px 8px" },
 
   // CART
-  cartPanel: { width: 300, flexShrink: 0, background: "#FFFFFF", borderLeft: "2px solid #E5E0D8", display: "flex", flexDirection: "column", overflow: "hidden" },
-  cartScrollArea: { flex: 1, overflowY: "auto", padding: "0 14px" },
+  cartPanel: { width: 300, flexShrink: 0, background: "#FFFFFF", borderLeft: "2px solid #E5E0D8", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 },
+  cartScrollArea: { flex: 1, overflowY: "auto", padding: "0 14px", minHeight: 0 },
   cartFooterArea: { borderTop: "1px solid #E5E0D8", padding: "10px 14px", flexShrink: 0, position: "sticky", bottom: 0, background: "#FFFFFF", zIndex: 2 },
   cartTitle: { fontSize: 10, fontWeight: 800, color: "#AAA", letterSpacing: "0.12em", textTransform: "uppercase", padding: "12px 14px 8px", flexShrink: 0 },
   cartEmpty: { color: "#BBB", fontSize: 13, textAlign: "center", padding: "6px 0" },
