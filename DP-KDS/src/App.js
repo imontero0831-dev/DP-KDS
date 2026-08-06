@@ -858,6 +858,7 @@ const DINEIN_COLOR = "#1D4ED8";
 const DINEIN_BG    = "#EFF6FF";
 const BAR_COLOR    = "#7C3AED";
 const BAR_BG       = "#F3E8FF";
+const PATIO_COLOR  = "#0D9488";
 
 function getOrderAccentColor(order) {
   if (order.isToGo) return TOGO_COLOR;
@@ -2042,14 +2043,46 @@ function ActiveOrdersModal({ title, orders, lang, onEditOrder, onNewOrder, newOr
 // TABLE SELECT SCREEN
 // ============================================================
 const TABLES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const PATIO_TABLES = [10, 11, 12, 13];
+const BAR_SEATS = [1, 2, 3, 4];
+
+// Shared tile for a single table/seat, reused by the Mesas, Patio, and
+// Barra sections — they all follow the same open/occupied/close pattern,
+// just against a different orders-by-key map and free-state accent color.
+function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onClose, closeLabel, freeStyle }) {
+  return (
+    <div
+      style={{ ...S.tableCard, ...(occupied ? S.tableCardOccupied : (freeStyle || S.tableCardFree)) }}
+      onClick={onOpen}
+    >
+      <div style={S.tableCardNum}>{num}</div>
+      <div style={{ ...S.tableCardLabel, color: occupied ? "#92400E" : "#15803D" }}>
+        {occupied ? "OCUPADA" : "LIBRE"}
+      </div>
+      {occupied && (
+        <>
+          <div style={S.tableCardItems}>{itemCount} artículo{itemCount !== 1 ? "s" : ""}</div>
+          <div style={S.tableCardTimer}>⏱ {elapsed(earliest)}</div>
+          <button
+            style={{ ...S.tableCardCloseBtn, opacity: isClosing ? 0.5 : 1 }}
+            onClick={onClose}
+            disabled={isClosing}
+          >
+            {isClosing ? "..." : closeLabel}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onEditOrder }) {
   const t = T[lang];
   const [orders, setOrders] = useState([]);
   const [closing, setClosing] = useState(null);
   const [detailTable, setDetailTable] = useState(null);
+  const [detailBarSeat, setDetailBarSeat] = useState(null);
   const [togoPickerOpen, setTogoPickerOpen] = useState(false);
-  const [barPickerOpen, setBarPickerOpen] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
@@ -2064,14 +2097,40 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
     if (!activeByTable[o.table]) activeByTable[o.table] = [];
     activeByTable[o.table].push(o);
   });
+  const activeByBarSeat = {};
+  orders.filter(o => o.status !== "done" && o.isBar).forEach(o => {
+    if (!activeByBarSeat[o.table]) activeByBarSeat[o.table] = [];
+    activeByBarSeat[o.table].push(o);
+  });
   const toGoOrders = orders.filter(o => o.status !== "done" && o.isToGo);
-  const barOrders = orders.filter(o => o.status !== "done" && o.isBar);
 
-  async function handleClose(tableNum, e) {
+  async function handleClose(key, ordersByKey, e) {
     e.stopPropagation();
-    setClosing(tableNum);
-    await closeTable(activeByTable[tableNum] || []);
+    setClosing(key);
+    await closeTable(ordersByKey[key] || []);
     setClosing(null);
+  }
+
+  function renderFloorTile(num, ordersByKey, { onSelect, onDetail, closeLabel, freeStyle }) {
+    const key = num.toString();
+    const tileOrders = ordersByKey[key] || [];
+    const occupied = tileOrders.length > 0;
+    const itemCount = tileOrders.reduce((s, o) => s + (o.items?.length || 0), 0);
+    const earliest = occupied ? Math.min(...tileOrders.map(o => o.timestamp)) : null;
+    return (
+      <FloorTile
+        key={num}
+        num={num}
+        occupied={occupied}
+        itemCount={itemCount}
+        earliest={earliest}
+        isClosing={closing === key}
+        onOpen={() => tileOrders.length === 1 ? onEditOrder(tileOrders[0]) : occupied ? onDetail(key) : onSelect(key)}
+        onClose={(e) => handleClose(key, ordersByKey, e)}
+        closeLabel={closeLabel}
+        freeStyle={freeStyle}
+      />
+    );
   }
 
   return (
@@ -2085,6 +2144,15 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
           onClose={() => setDetailTable(null)}
         />
       )}
+      {detailBarSeat && (
+        <ActiveOrdersModal
+          title={`🍺 Barra ${detailBarSeat} — ${lang === "es" ? "Órdenes de la Barra" : "Bar Orders"}`}
+          orders={activeByBarSeat[detailBarSeat] || []}
+          lang={lang}
+          onEditOrder={(order) => { setDetailBarSeat(null); onEditOrder(order); }}
+          onClose={() => setDetailBarSeat(null)}
+        />
+      )}
       {togoPickerOpen && (
         <ActiveOrdersModal
           title={`🥡 ${t.toGoLabel}`}
@@ -2096,67 +2164,33 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
           onClose={() => setTogoPickerOpen(false)}
         />
       )}
-      {barPickerOpen && (
-        <ActiveOrdersModal
-          title={`🍺 ${t.barLabel}`}
-          orders={barOrders}
-          lang={lang}
-          onEditOrder={(order) => { setBarPickerOpen(false); onEditOrder(order); }}
-          onNewOrder={() => { setBarPickerOpen(false); onSelectBar(); }}
-          newOrderLabel={t.newBarOrder}
-          onClose={() => setBarPickerOpen(false)}
-        />
-      )}
       <div style={S.tableSelectHeader}>
         <span style={S.tableSelectTitle}>🍽️ Dona Paty's</span>
         <span style={S.tableSelectSub}>Selecciona una mesa para ordenar</span>
       </div>
 
-      <div style={{ ...S.toGoRow, margin: "0 auto 16px" }}>
-        <button style={{ ...S.toGoCardBtn, width: "100%", background: BAR_BG, borderColor: "#DDD6FE", color: BAR_COLOR }} onClick={() => barOrders.length === 1 ? onEditOrder(barOrders[0]) : barOrders.length > 1 ? setBarPickerOpen(true) : onSelectBar()}>
-          🍺 Barra
-          {barOrders.length > 0 && (
-            <span style={{ ...S.toGoBadgeCount, background: BAR_COLOR }}>{barOrders.length} activa{barOrders.length !== 1 ? "s" : ""}</span>
-          )}
-        </button>
-      </div>
-
+      <div style={S.sectionLabel}>🍽️ Mesas</div>
       <div style={S.tableGrid}>
-        {TABLES.map(num => {
-          const key = num.toString();
-          const tableOrders = activeByTable[key] || [];
-          const occupied = tableOrders.length > 0;
-          const itemCount = tableOrders.reduce((s, o) => s + (o.items?.length || 0), 0);
-          const earliest = occupied ? Math.min(...tableOrders.map(o => o.timestamp)) : null;
-          const isClosing = closing === key;
-
-          return (
-            <div
-              key={num}
-              style={{ ...S.tableCard, ...(occupied ? S.tableCardOccupied : S.tableCardFree) }}
-              onClick={() => tableOrders.length === 1 ? onEditOrder(tableOrders[0]) : occupied ? setDetailTable(key) : onSelectTable(key)}
-            >
-              <div style={S.tableCardNum}>{num}</div>
-              <div style={{ ...S.tableCardLabel, color: occupied ? "#92400E" : "#15803D" }}>
-                {occupied ? "OCUPADA" : "LIBRE"}
-              </div>
-              {occupied && (
-                <>
-                  <div style={S.tableCardItems}>{itemCount} artículo{itemCount !== 1 ? "s" : ""}</div>
-                  <div style={S.tableCardTimer}>⏱ {elapsed(earliest)}</div>
-                  <button
-                    style={{ ...S.tableCardCloseBtn, opacity: isClosing ? 0.5 : 1 }}
-                    onClick={(e) => handleClose(key, e)}
-                    disabled={isClosing}
-                  >
-                    {isClosing ? "..." : "✓ Cerrar Mesa"}
-                  </button>
-                </>
-              )}
-            </div>
-          );
-        })}
+        {TABLES.map(num => renderFloorTile(num, activeByTable, {
+          onSelect: onSelectTable, onDetail: setDetailTable, closeLabel: "✓ Cerrar Mesa",
+        }))}
       </div>
+
+      <div style={{ ...S.sectionLabel, color: PATIO_COLOR }}>🌿 Patio</div>
+      <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
+        {PATIO_TABLES.map(num => renderFloorTile(num, activeByTable, {
+          onSelect: onSelectTable, onDetail: setDetailTable, closeLabel: "✓ Cerrar Mesa", freeStyle: S.tableCardFreePatio,
+        }))}
+      </div>
+
+      <div style={{ ...S.sectionLabel, color: BAR_COLOR }}>🍺 Barra</div>
+      <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
+        {BAR_SEATS.map(num => renderFloorTile(num, activeByBarSeat, {
+          onSelect: onSelectBar, onDetail: setDetailBarSeat, closeLabel: "✓ Cerrar Asiento", freeStyle: S.tableCardFreeBar,
+        }))}
+      </div>
+
+      <div style={S.floorDivider} />
 
       <div style={S.toGoRow}>
         <button style={S.toGoCardBtn} onClick={() => toGoOrders.length === 1 ? onEditOrder(toGoOrders[0]) : toGoOrders.length > 1 ? setTogoPickerOpen(true) : onSelectToGo()}>
@@ -2226,7 +2260,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [orderType, setOrderType] = useState(initialOrderType || "table");
   const [tableNum, setTableNum] = useState(initialTable || "");
   const [toGoName, setToGoName] = useState("");
-  const [barSeat, setBarSeat] = useState("");
+  const [barSeat, setBarSeat] = useState(initialOrderType === "bar" ? (initialTable || "") : "");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [note, setNote] = useState("");
@@ -2446,7 +2480,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       if (o.status === "done" || o.cancelled) return false;
       if (orderType === "table") return !o.isToGo && !o.isBar && String(o.table) === String(tableNum);
       if (orderType === "togo") return o.isToGo && o.toGoName === toGoName;
-      if (orderType === "bar") return o.isBar && o.table === barSeat;
+      if (orderType === "bar") return o.isBar && String(o.table) === String(barSeat);
       return false;
     }) || null;
   }
@@ -2461,12 +2495,12 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           {onBack && (
             <button style={S.backBtn} onClick={onBack}>← Mesas</button>
           )}
-          {initialTable ? (
+          {initialOrderType === "bar" ? (
+            <span style={{ ...S.waiterTableBig, color: BAR_COLOR }}>🍺 Barra{initialTable ? ` ${initialTable}` : ""}</span>
+          ) : initialTable ? (
             <span style={S.waiterTableBig}>🪑 Mesa {initialTable}</span>
           ) : initialOrderType === "togo" ? (
             <span style={S.waiterTableBig}>🥡 Para Llevar</span>
-          ) : initialOrderType === "bar" ? (
-            <span style={{ ...S.waiterTableBig, color: BAR_COLOR }}>🍺 Barra</span>
           ) : (
             <span style={S.waiterLogo}>🍽️ {t.orderStation}</span>
           )}
@@ -2492,7 +2526,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               />
             </div>
           )}
-          {initialOrderType === "bar" && (
+          {initialOrderType === "bar" && !initialTable && (
             <div style={{ ...S.tableInput, background: BAR_BG, borderColor: "#DDD6FE" }}>
               <span style={{ ...S.tableLabel, color: BAR_COLOR }}>🍺</span>
               <input
@@ -2941,8 +2975,8 @@ export default function App() {
             setOrderContext({ table: null, orderType: "togo" });
             setView("waiter");
           }}
-          onSelectBar={() => {
-            setOrderContext({ table: null, orderType: "bar" });
+          onSelectBar={(seat) => {
+            setOrderContext({ table: seat, orderType: "bar" });
             setView("waiter");
           }}
           onEditOrder={(order) => {
@@ -2983,9 +3017,13 @@ const S = {
   tableSelectHeader: { marginBottom: 24, textAlign: "center" },
   tableSelectTitle: { fontSize: 26, fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em" },
   tableSelectSub: { display: "block", fontSize: 13, color: "#888", marginTop: 4 },
+  sectionLabel: { fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", color: "#999", textTransform: "uppercase", maxWidth: 600, width: "100%", margin: "22px auto 10px", textAlign: "left" },
+  floorDivider: { height: 1, background: "#E5E0D8", maxWidth: 600, width: "100%", margin: "24px auto 0" },
   tableGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18, maxWidth: 600, margin: "0 auto", width: "100%" },
   tableCard: { borderRadius: 16, padding: "24px 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", border: "2px solid transparent", transition: "all 0.15s", userSelect: "none" },
   tableCardFree: { background: "#FFFFFF", border: "2px solid #D1FAE5", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
+  tableCardFreePatio: { background: "#FFFFFF", border: "2px solid #99F6E4", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
+  tableCardFreeBar: { background: "#FFFFFF", border: "2px solid #DDD6FE", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
   tableCardOccupied: { background: "#FFFBEB", border: "2px solid #FCD34D", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" },
   tableCardNum: { fontSize: 54, fontWeight: 900, color: "#1A1A1A", lineHeight: 1 },
   tableCardLabel: { fontSize: 10, fontWeight: 900, letterSpacing: "0.12em" },
