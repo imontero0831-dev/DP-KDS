@@ -2444,7 +2444,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     const orders = snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
     return orders.find(o => {
       if (o.status === "done" || o.cancelled) return false;
-      if (orderType === "table") return !o.isToGo && !o.isBar && o.table === tableNum;
+      if (orderType === "table") return !o.isToGo && !o.isBar && String(o.table) === String(tableNum);
       if (orderType === "togo") return o.isToGo && o.toGoName === toGoName;
       if (orderType === "bar") return o.isBar && o.table === barSeat;
       return false;
