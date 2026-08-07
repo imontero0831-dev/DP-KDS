@@ -59,7 +59,7 @@ const T = {
     inProgress: "EN PROCESO",
     completed: "LISTA",
     modified: "MODIFICADA",
-    cancelled: "🚫 ORDEN CANCELADA",
+    cancelled: "ORDEN CANCELADA",
     added: "AGREGADO",
     removed: "ELIMINADO",
     decreased: "MENOS",
@@ -120,7 +120,6 @@ const T = {
     backToCategories: "← Categorías",
     tableOrders: "Órdenes de la Mesa",
     noActiveOrders: "Sin órdenes activas",
-    newToGoOrder: "+ Nueva Orden Para Llevar",
     newBarOrder: "+ Nueva Orden de Barra",
   },
   en: {
@@ -157,7 +156,7 @@ const T = {
     inProgress: "IN PROGRESS",
     completed: "DONE",
     modified: "MODIFIED",
-    cancelled: "🚫 ORDER CANCELLED",
+    cancelled: "ORDER CANCELLED",
     added: "ADDED",
     removed: "REMOVED",
     decreased: "LESS",
@@ -218,7 +217,6 @@ const T = {
     backToCategories: "← Categories",
     tableOrders: "Table Orders",
     noActiveOrders: "No active orders",
-    newToGoOrder: "+ New To-Go Order",
     newBarOrder: "+ New Bar Order",
   },
 };
@@ -272,7 +270,7 @@ async function fetchAllModifierGroups() {
       })),
     }));
   } catch (err) {
-    console.error("❌ fetchAllModifierGroups FAILED:", err.message, err);
+    console.error("fetchAllModifierGroups FAILED:", err.message, err);
   }
 }
 
@@ -317,7 +315,7 @@ async function translateMenuItemsToSpanish(items) {
     if (!Array.isArray(translated) || translated.length !== names.length) return null;
     return translated;
   } catch (err) {
-    console.warn("⚠️ Menu translation failed:", err.message);
+    console.warn("Menu translation failed:", err.message);
     return null;
   }
 }
@@ -374,7 +372,6 @@ async function fetchMenuFromClover() {
         name: item.name,
         nameEs: null,
         price: item.price || 0,
-        emoji: "🍽️",
         modifierGroupIds: (item.modifierGroups?.elements || []).map(g => g.id),
       }));
     if (categories.length === 0) {
@@ -391,7 +388,7 @@ async function fetchMenuFromClover() {
     }
     return { categories: sortCategories(knownCategories), items };
   } catch (err) {
-    console.warn("⚠️ Clover menu fetch failed, using mock menu:", err.message);
+    console.warn("Clover menu fetch failed, using mock menu:", err.message);
     return MOCK_MENU;
   }
 }
@@ -405,7 +402,7 @@ const CLOVER_ORDER_TYPES = {
 };
 
 function buildCloverOrderNote(order) {
-  if (order.isToGo) return `${order.toGoName}${order.note ? " | " + order.note : ""}`;
+  if (order.isToGo) return `PARA LLEVAR - ${order.toGoName}${order.note ? " | " + order.note : ""}`;
   if (order.isBar) return `BARRA ${order.table}${order.note ? " | " + order.note : ""}`;
   if (order.isPatio) return `PATIO ${order.table}${order.note ? " | " + order.note : ""}`;
   return `MESA ${order.table}${order.note ? " | " + order.note : ""}`;
@@ -447,7 +444,7 @@ async function sendOrderToClover(order) {
     if (!cloverOrderId) throw new Error("No order ID returned from Clover");
     return cloverOrderId;
   } catch (err) {
-    console.warn("⚠️ Clover order push failed (saved to Firebase only):", err.message);
+    console.warn("Clover order push failed (saved to Firebase only):", err.message);
   }
 }
 
@@ -463,7 +460,7 @@ async function updateOrderInClover(order) {
   try {
     await cloverRequest(`orders/${order.cloverOrderId}`, "DELETE");
   } catch (err) {
-    console.warn("⚠️ Clover order delete failed during edit sync:", err.message);
+    console.warn("Clover order delete failed during edit sync:", err.message);
   }
   return (await sendOrderToClover(order)) || null;
 }
@@ -479,19 +476,19 @@ const MOCK_MENU = {
     { id: "cat4", name: { es: "Postres", en: "Desserts" } },
   ],
   items: [
-    { id: "i1", categoryId: "cat1", name: "Chips & Salsa", nameEs: "Totopos con Salsa", price: 599, emoji: "🌮" },
-    { id: "i2", categoryId: "cat1", name: "Sopa del Día", nameEs: "Sopa del Día", price: 699, emoji: "🍲" },
-    { id: "i3", categoryId: "cat1", name: "Alitas de Pollo", nameEs: "Alitas de Pollo", price: 1099, emoji: "🍗" },
-    { id: "i4", categoryId: "cat2", name: "Hamburguesa", nameEs: "Hamburguesa", price: 1299, emoji: "🍔" },
-    { id: "i5", categoryId: "cat2", name: "Grilled Salmon", nameEs: "Salmón a la Parrilla", price: 1899, emoji: "🐟" },
-    { id: "i6", categoryId: "cat2", name: "Pasta Primavera", nameEs: "Pasta Primavera", price: 1499, emoji: "🍝" },
-    { id: "i7", categoryId: "cat2", name: "BBQ Ribs", nameEs: "Costillas BBQ", price: 2199, emoji: "🥩" },
-    { id: "i8", categoryId: "cat3", name: "Lemonade", nameEs: "Limonada", price: 349, emoji: "🍋" },
-    { id: "i9", categoryId: "cat3", name: "Iced Tea", nameEs: "Té Helado", price: 299, emoji: "🧋" },
-    { id: "i10", categoryId: "cat3", name: "Craft Beer", nameEs: "Cerveza Artesanal", price: 699, emoji: "🍺" },
-    { id: "i11", categoryId: "cat3", name: "Margarita", nameEs: "Margarita", price: 999, emoji: "🍹" },
-    { id: "i12", categoryId: "cat4", name: "Cheesecake", nameEs: "Pastel de Queso", price: 799, emoji: "🍰" },
-    { id: "i13", categoryId: "cat4", name: "Brownie with Ice Cream", nameEs: "Brownie con Helado", price: 849, emoji: "🍫" },
+    { id: "i1", categoryId: "cat1", name: "Chips & Salsa", nameEs: "Totopos con Salsa", price: 599 },
+    { id: "i2", categoryId: "cat1", name: "Sopa del Día", nameEs: "Sopa del Día", price: 699 },
+    { id: "i3", categoryId: "cat1", name: "Alitas de Pollo", nameEs: "Alitas de Pollo", price: 1099 },
+    { id: "i4", categoryId: "cat2", name: "Hamburguesa", nameEs: "Hamburguesa", price: 1299 },
+    { id: "i5", categoryId: "cat2", name: "Grilled Salmon", nameEs: "Salmón a la Parrilla", price: 1899 },
+    { id: "i6", categoryId: "cat2", name: "Pasta Primavera", nameEs: "Pasta Primavera", price: 1499 },
+    { id: "i7", categoryId: "cat2", name: "BBQ Ribs", nameEs: "Costillas BBQ", price: 2199 },
+    { id: "i8", categoryId: "cat3", name: "Lemonade", nameEs: "Limonada", price: 349 },
+    { id: "i9", categoryId: "cat3", name: "Iced Tea", nameEs: "Té Helado", price: 299 },
+    { id: "i10", categoryId: "cat3", name: "Craft Beer", nameEs: "Cerveza Artesanal", price: 699 },
+    { id: "i11", categoryId: "cat3", name: "Margarita", nameEs: "Margarita", price: 999 },
+    { id: "i12", categoryId: "cat4", name: "Cheesecake", nameEs: "Pastel de Queso", price: 799 },
+    { id: "i13", categoryId: "cat4", name: "Brownie with Ice Cream", nameEs: "Brownie con Helado", price: 849 },
   ],
 };
 
@@ -683,7 +680,7 @@ function playOrderChime() {
       osc.stop(start + 0.32);
     });
   } catch (err) {
-    console.warn("⚠️ chime playback failed:", err.message);
+    console.warn("chime playback failed:", err.message);
   }
 }
 
@@ -758,7 +755,7 @@ function useAutoUpdate(viewRef) {
           window.location.href = url.toString();
         }
       } catch (err) {
-        console.warn("⚠️ update check failed:", err.message);
+        console.warn("update check failed:", err.message);
       }
     }
     const interval = setInterval(check, 120000);
@@ -1010,7 +1007,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
       <div style={S.modalBox} onClick={e => e.stopPropagation()}>
         <div style={S.modalHeader}>
           <div>
-            <div style={S.modalTitle}>{item.emoji} {displayName}</div>
+            <div style={S.modalTitle}>{displayName}</div>
             <div style={S.modalSubtitle}>{swapMode ? t.replaceInOrder : t.customizeItem}</div>
           </div>
           <button style={S.modalCloseBtn} onClick={onClose}>✕</button>
@@ -1045,7 +1042,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
                       const isSelected = selected.has(mod.id);
                       return (
                         <button key={mod.id} style={{ ...S.modOption, ...(isSelected ? S.modOptionSelected : {}) }} onClick={() => toggle(group, mod.id)}>
-                          <span style={S.modOptionIndicator}>{isSingle ? (isSelected ? "●" : "○") : (isSelected ? "☑" : "☐")}</span>
+                          <span style={S.modOptionIndicator}>{isSingle ? (isSelected ? "●" : "○") : (isSelected ? "✓" : "☐")}</span>
                           <span style={S.modOptionName}>{mod.name}</span>
                           <span style={S.modOptionPrice}>{mod.price > 0 ? `+${fmt(mod.price)}` : t.free}</span>
                         </button>
@@ -1057,7 +1054,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
             })
           )}
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#1A1A1A", marginBottom: 6 }}>✏️ Nota especial</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#1A1A1A", marginBottom: 6 }}>Nota especial</div>
             <textarea
               style={{ width: "100%", background: "#F5F3F0", border: "2px solid #E5E0D8", borderRadius: 10, color: "#333", fontSize: 14, padding: "10px 12px", resize: "none", outline: "none", boxSizing: "border-box", fontFamily: "inherit", transition: "border-color 0.15s" }}
               onFocus={e => e.target.style.borderColor = "#BE202E"}
@@ -1072,7 +1069,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
         {!loading && (
           <div style={S.modalFooter}>
             {!canConfirm && (
-              <div style={S.modalValidationMsg}>⚠️ {t.selectRequired}: {missingGroups.map(g => g.name).join(", ")}</div>
+              <div style={S.modalValidationMsg}>{t.selectRequired}: {missingGroups.map(g => g.name).join(", ")}</div>
             )}
             <div style={S.modalFooterRow}>
               <div style={S.modalPriceBreakdown}>
@@ -1154,15 +1151,15 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
         : "0 2px 10px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
     }}>
       {order.cancelled && <div style={S.cancelledBanner}>{t.cancelled}</div>}
-      {order.isToGo && <div style={S.toGoBanner}>🥡 {t.toGoLabel} — {order.toGoName}</div>}
-      {order.isBar && <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>🍺 {t.barLabel} — {order.table}</div>}
-      {order.isPatio && <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>🌿 {t.patioLabel} — {order.table}</div>}
-      {order.modified && !order.cancelled && <div style={S.modifiedBanner}>⚡ {t.modified}</div>}
+      {order.isToGo && <div style={S.toGoBanner}>{t.toGoLabel} — {order.toGoName}</div>}
+      {order.isBar && <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>{t.barLabel} — {order.table}</div>}
+      {order.isPatio && <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>{t.patioLabel} — {order.table}</div>}
+      {order.modified && !order.cancelled && <div style={S.modifiedBanner}>{t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket */}
       {isFocused && !isQueue && (
         <div style={S.keyboardHintBar}>
-          <span style={S.keyboardHint}>🔢 <strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
+          <span style={S.keyboardHint}><strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
           <span style={S.keyboardHint}><strong>+</strong> = {t.shortcutNext}</span>
           <span style={S.keyboardHint}><strong>−</strong> = {t.shortcutPrev}</span>
           <span style={S.keyboardHint}><strong>*</strong> = {t.shortcutUndo}</span>
@@ -1176,9 +1173,9 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
             {order.isToGo
               ? <span style={S.toGoNameBig}>{order.toGoName}</span>
               : order.isBar
-              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>🍺 {order.table}</span>
+              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>{order.table}</span>
               : order.isPatio
-              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>🌿 {order.table}</span>
+              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>{order.table}</span>
               : <span style={S.tableNumberBig}>{t.table2} {order.table}</span>
             }
           </div>
@@ -1186,7 +1183,7 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
         <div style={S.ticketTopRight}>
           <div style={S.checkNoLabel}>{t.checkNo}</div>
           <div style={S.checkNoValue}>{order.id}</div>
-          <div style={{ ...S.timerBig, color: timerColor }}>⏱ {elapsed(order.timestamp)}</div>
+          <div style={{ ...S.timerBig, color: timerColor }}>{elapsed(order.timestamp)}</div>
         </div>
       </div>
 
@@ -1263,13 +1260,13 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
 
       <div style={S.ticketFooter}>
         <div style={{ ...S.statusStamp, borderColor: order.cancelled ? "#BE202E" : order.modified ? "#7C3AED" : STATUS_COLORS[order.status], color: order.cancelled ? "#BE202E" : order.modified ? "#7C3AED" : STATUS_COLORS[order.status] }}>
-          {order.cancelled ? "🚫 CANCELLED" : order.modified ? `⚡ ${t.modified}` : order.status === "new" ? t.new : t.inProgress}
+          {order.cancelled ? "CANCELLED" : order.modified ? t.modified : order.status === "new" ? t.new : t.inProgress}
         </div>
         {!isQueue && !order.cancelled && (
           <div style={S.ticketBtns}>
             {order.status === "new" && (
               <button style={S.btnStart} onClick={() => updateOrderStatus(order.firestoreId, "in_progress")}>
-                🔥 {t.startCooking}
+                {t.startCooking}
               </button>
             )}
             {order.status === "in_progress" && (
@@ -1331,7 +1328,7 @@ function KitchenScreen({ lang, menu }) {
     const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : lastCompleted.isPatio ? `Patio ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
     if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
     undoCompletedOrder(lastCompleted);
-    flash("↩ Orden restaurada", "#7C3AED");
+    flash("Orden restaurada", "#7C3AED");
   }
 
   // ── Keyboard / numpad handler ──────────────────────────────
@@ -1367,7 +1364,7 @@ function KitchenScreen({ lang, menu }) {
         e.preventDefault();
         if (!order || order.cancelled) return;
         bumpOrder(order);
-        flash("🗑 Orden Eliminada", "#BE202E");
+        flash("Orden Eliminada", "#BE202E");
         break;
       }
 
@@ -1376,7 +1373,7 @@ function KitchenScreen({ lang, menu }) {
         e.preventDefault();
         if (lastCompleted) {
           undoCompletedOrder(lastCompleted);
-          flash("↩ Orden Restaurada", "#7C3AED");
+          flash("Orden Restaurada", "#7C3AED");
         }
         break;
       }
@@ -1396,15 +1393,15 @@ function KitchenScreen({ lang, menu }) {
     <div style={S.kitchenRoot}>
       <div style={S.kitchenHeader}>
         <div style={S.kitchenHeaderLeft}>
-          <span style={{ ...S.kitchenTitle, fontSize: "clamp(13px, calc(0.9vw + 6px), 22px)" }}>👨‍🍳 {t.kitchenDisplay}</span>
+          <span style={{ ...S.kitchenTitle, fontSize: "clamp(13px, calc(0.9vw + 6px), 22px)" }}>{t.kitchenDisplay}</span>
           {queued.length > 0 && <span style={{ ...S.queuePill, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "3px 10px" }}>+{queued.length} {t.inQueue}</span>}
           {/* Keyboard mode indicator */}
-          <span style={S.keyboardModePill}>⌨️ {t.keyboardMode}</span>
+          <span style={S.keyboardModePill}>{t.keyboardMode}</span>
         </div>
         <div style={S.kitchenStats}>
           <span style={{ ...S.statPillRed, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{active.length} {t.active}</span>
           {lastCompleted && (
-            <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
+            <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>Deshacer</button>
           )}
         </div>
       </div>
@@ -1458,7 +1455,7 @@ function KitchenScreen({ lang, menu }) {
           {queued.map(order => (
             <div key={order.firestoreId} style={S.queueItem}>
               <span style={S.queueOrderId}>#{order.id}</span>
-              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : order.isPatio ? `🌿 ${order.table}` : `${t.table2} ${order.table}`}</span>
+              <span style={S.queueOrderTable}>{order.isToGo ? order.toGoName : order.isBar ? order.table : order.isPatio ? order.table : `${t.table2} ${order.table}`}</span>
               <span style={S.queueOrderItems}>{order.items.map(i => `${i.qty}× ${i.name}`).join(", ")}</span>
               <span style={S.queueOrderTime}>{elapsed(order.timestamp)}</span>
             </div>
@@ -1500,25 +1497,25 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
     }}>
       {order.isToGo && (
         <div style={{ ...S.toGoBanner, background: TOGO_COLOR }}>
-          🥡 PARA LLEVAR — {order.toGoName}
+          PARA LLEVAR — {order.toGoName}
         </div>
       )}
       {order.isBar && (
         <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>
-          🍺 BARRA — {order.table}
+          BARRA — {order.table}
         </div>
       )}
       {order.isPatio && (
         <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>
-          🌿 PATIO — {order.table}
+          PATIO — {order.table}
         </div>
       )}
-      {order.modified && !order.cancelled && <div style={S.modifiedBanner}>⚡ {t.modified}</div>}
+      {order.modified && !order.cancelled && <div style={S.modifiedBanner}>{t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket, matches Kitchen's hint bar */}
       {isFocused && (
         <div style={S.keyboardHintBar}>
-          <span style={S.keyboardHint}>🔢 <strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
+          <span style={S.keyboardHint}><strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
           <span style={S.keyboardHint}><strong>+</strong> = {t.shortcutNext}</span>
           <span style={S.keyboardHint}><strong>−</strong> = {t.shortcutPrev}</span>
           <span style={S.keyboardHint}><strong>*</strong> = {t.shortcutUndo}</span>
@@ -1532,16 +1529,16 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
             {order.isToGo
               ? <span style={{ ...S.toGoNameBig, color: TOGO_COLOR }}>{order.toGoName}</span>
               : order.isBar
-              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>🍺 {order.table}</span>
+              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>{order.table}</span>
               : order.isPatio
-              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>🌿 {order.table}</span>
+              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>{order.table}</span>
               : <span style={S.tableNumberBig}>{t.table2} {order.table}</span>}
           </div>
         </div>
         <div style={S.ticketTopRight}>
           <div style={S.checkNoLabel}>{t.checkNo}</div>
           <div style={S.checkNoValue}>{order.id}</div>
-          <div style={{ ...S.timerBig, color: timerColor }}>⏱ {elapsed(order.timestamp)}</div>
+          <div style={{ ...S.timerBig, color: timerColor }}>{elapsed(order.timestamp)}</div>
         </div>
       </div>
 
@@ -1613,7 +1610,7 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
           <div style={S.ticketBtns}>
             {order.status === "new" && (
               <button style={S.btnStart} onClick={() => updateOrderStatus(order.firestoreId, "in_progress")}>
-                🔥 {t.startCooking}
+                {t.startCooking}
               </button>
             )}
             {order.status === "in_progress" && (
@@ -1668,7 +1665,7 @@ function DrinksStationScreen({ lang, menu }) {
     const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : lastCompleted.isPatio ? `Patio ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
     if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
     undoCompletedOrder(lastCompleted);
-    flash("↩ Orden restaurada", "#7C3AED");
+    flash("Orden restaurada", "#7C3AED");
   }
 
   const handleKeyDown = useCallback((e) => {
@@ -1683,7 +1680,7 @@ function DrinksStationScreen({ lang, menu }) {
       case "Enter": {
         e.preventDefault();
         if (!order || order.cancelled) return;
-        if (order.status === "new") { updateOrderStatus(order.firestoreId, "in_progress"); flash("🔥 Empezando...", "#D97706"); }
+        if (order.status === "new") { updateOrderStatus(order.firestoreId, "in_progress"); flash("Empezando...", "#D97706"); }
         else if (order.status === "in_progress") { markDrinksReady(order); flash("✓ Listo!", "#15803D"); }
         break;
       }
@@ -1693,10 +1690,10 @@ function DrinksStationScreen({ lang, menu }) {
         e.preventDefault();
         if (order && !order.cancelled && order.status === "in_progress") {
           updateOrderStatus(order.firestoreId, "new");
-          flash("↩ Deshecho", "#D97706");
+          flash("Deshecho", "#D97706");
         } else if (lastCompleted) {
           undoCompletedOrder(lastCompleted);
-          flash("↩ Orden restaurada", "#7C3AED");
+          flash("Orden restaurada", "#7C3AED");
         }
         break;
       }
@@ -1713,23 +1710,23 @@ function DrinksStationScreen({ lang, menu }) {
     <div style={S.kitchenRoot}>
       <div style={S.kitchenHeader}>
         <div style={S.kitchenHeaderLeft}>
-          <span style={{ ...S.kitchenTitle, fontSize: "clamp(13px, calc(0.9vw + 6px), 22px)" }}>🥤 Bebidas / Sides</span>
+          <span style={{ ...S.kitchenTitle, fontSize: "clamp(13px, calc(0.9vw + 6px), 22px)" }}>Bebidas / Sides</span>
           {queued.length > 0 && <span style={{ ...S.queuePill, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "3px 10px" }}>+{queued.length} {t.inQueue}</span>}
         </div>
         <div style={S.kitchenStats}>
           <span style={{ ...S.statPillRed, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{active.length} {t.active}</span>
           {lastCompleted && (
-            <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
+            <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>Deshacer</button>
           )}
         </div>
       </div>
 
       {/* Color legend */}
       <div style={{ display: "flex", gap: 16, padding: "6px 16px", background: "#1E293B", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#C4B5FD", fontWeight: 800 }}>🟣 BEBIDA NO ALC.</span>
-        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#FCA5A5", fontWeight: 800 }}>🔴 CALDO</span>
-        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#FCD34D", fontWeight: 800 }}>🟤 PARA LLEVAR</span>
-        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#86EFAC", fontWeight: 800 }}>🟢 GUACAMOLE</span>
+        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#C4B5FD", fontWeight: 800 }}>BEBIDA NO ALC.</span>
+        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#FCA5A5", fontWeight: 800 }}>CALDO</span>
+        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#FCD34D", fontWeight: 800 }}>PARA LLEVAR</span>
+        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#86EFAC", fontWeight: 800 }}>GUACAMOLE</span>
       </div>
 
       {actionFlash && (
@@ -1763,7 +1760,7 @@ function DrinksStationScreen({ lang, menu }) {
           {queued.map(order => (
             <div key={order.firestoreId} style={S.queueItem}>
               <span style={S.queueOrderId}>#{order.id}</span>
-              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : order.isPatio ? `🌿 ${order.table}` : `${t.table2} ${order.table}`}</span>
+              <span style={S.queueOrderTable}>{order.isToGo ? order.toGoName : order.isBar ? order.table : order.isPatio ? order.table : `${t.table2} ${order.table}`}</span>
               <span style={S.queueOrderItems}>
                 {order.items?.filter(i => getDrinksRule(i.name) || order.isToGo).map(i => `${i.qty}× ${i.name}`).join(", ")}
               </span>
@@ -1831,19 +1828,19 @@ function ExpoTicket({ order, catNameById }) {
         </div>
         <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 10 }}>
           <div style={{ fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 800, color: "#BE202E", letterSpacing: "0.05em" }}>#{order.id}</div>
-          <div style={{ fontSize: "clamp(21px, calc(18.750cqw - 42.50px), 70px)", fontWeight: 900, color: timerColor, marginTop: 2, whiteSpace: "nowrap" }}>⏱ {elapsed(order.timestamp)}</div>
+          <div style={{ fontSize: "clamp(21px, calc(18.750cqw - 42.50px), 70px)", fontWeight: 900, color: timerColor, marginTop: 2, whiteSpace: "nowrap" }}>{elapsed(order.timestamp)}</div>
         </div>
       </div>
 
-      {order.modified && <div style={{ background: "#7C3AED", color: "#fff", fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>⚡ MODIFICADA</div>}
+      {order.modified && <div style={{ background: "#7C3AED", color: "#fff", fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>MODIFICADA</div>}
 
       {/* Station columns */}
       <div style={{ display: "flex", flex: 1, minHeight: 100 }}>
         {hasKitchen && (
           <div style={{ flex: 1, minWidth: 0, padding: "10px 12px", background: order.kitchenReady ? "#F0FDF4" : "#FFFBEB", borderRight: hasDrinks ? "1px solid #E0D8C4" : "none", containerType: "inline-size" }}>
             <div style={{ fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, letterSpacing: "0.1em", color: order.kitchenReady ? "#15803D" : "#D97706", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", textTransform: "uppercase" }}>
-              🍳 COCINA
-              {order.kitchenReady && <span>✅</span>}
+              COCINA
+              {order.kitchenReady && <span>✓</span>}
             </div>
             {kitchenItems.map((item, i) => (
               <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: order.kitchenReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.kitchenReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "break-word" }}>
@@ -1851,7 +1848,7 @@ function ExpoTicket({ order, catNameById }) {
               </div>
             ))}
             <div style={{ marginTop: 8, background: order.kitchenReady ? "#DCFCE7" : order.status === "in_progress" ? "#FEF3C7" : "#F5F3F0", color: order.kitchenReady ? "#15803D" : order.status === "in_progress" ? "#D97706" : "#9CA3AF", borderRadius: 6, padding: "4px 8px", fontSize: "clamp(22px, calc(12.500cqw - 20.00px), 55px)", fontWeight: 800, textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-              {order.kitchenReady ? "✅ LISTO" : order.status === "in_progress" ? "🔥 COCINANDO" : "⏳ EN COLA"}
+              {order.kitchenReady ? "LISTO" : order.status === "in_progress" ? "COCINANDO" : "EN COLA"}
             </div>
           </div>
         )}
@@ -1859,8 +1856,8 @@ function ExpoTicket({ order, catNameById }) {
         {hasDrinks && (
           <div style={{ flex: 1, minWidth: 0, padding: "10px 12px", background: order.drinksReady ? "#F0FDF4" : "#F5F3FF", containerType: "inline-size" }}>
             <div style={{ fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, letterSpacing: "0.1em", color: order.drinksReady ? "#15803D" : "#7C3AED", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", textTransform: "uppercase" }}>
-              🥤 BEBIDAS
-              {order.drinksReady && <span>✅</span>}
+              BEBIDAS
+              {order.drinksReady && <span>✓</span>}
             </div>
             {drinksItems.map((item, i) => (
               <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: order.drinksReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.drinksReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "break-word" }}>
@@ -1868,7 +1865,7 @@ function ExpoTicket({ order, catNameById }) {
               </div>
             ))}
             <div style={{ marginTop: 8, background: order.drinksReady ? "#DCFCE7" : "#EDE9FE", color: order.drinksReady ? "#15803D" : "#7C3AED", borderRadius: 6, padding: "4px 8px", fontSize: "clamp(22px, calc(12.500cqw - 20.00px), 55px)", fontWeight: 800, textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-              {order.drinksReady ? "✅ LISTO" : "⏳ PREPARANDO"}
+              {order.drinksReady ? "LISTO" : "PREPARANDO"}
             </div>
           </div>
         )}
@@ -1887,7 +1884,7 @@ function ExpoTicket({ order, catNameById }) {
       {/* Notes */}
       {order.note && (
         <div style={{ padding: "5px 12px", background: "#FFFBEB", borderTop: "1px solid #E0D8C4", fontSize: "clamp(22px, calc(12.500cqw - 20.00px), 55px)", color: "#666", fontStyle: "italic", textTransform: "uppercase" }}>
-          📝 {order.note}
+          {order.note}
         </div>
       )}
 
@@ -1896,7 +1893,7 @@ function ExpoTicket({ order, catNameById }) {
         {allDone ? (
           <>
             <div style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 900, color: "#FFFFFF", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-              🚀 LISTO PARA ENTREGAR
+              LISTO PARA ENTREGAR
             </div>
             <button
               onClick={() => markDelivered(order)}
@@ -1971,7 +1968,7 @@ function ExpoScreen({ menu }) {
     <div style={S.kitchenRoot}>
       <div style={S.kitchenHeader}>
         <div style={S.kitchenHeaderLeft}>
-          <span style={{ ...S.kitchenTitle, fontSize: "clamp(13px, calc(0.9vw + 6px), 22px)" }}>🎯 Expo / Entrega</span>
+          <span style={{ ...S.kitchenTitle, fontSize: "clamp(13px, calc(0.9vw + 6px), 22px)" }}>Expo / Entrega</span>
           {readyOrders.length > 0 && (
             <span className="expo-badge-pulse" style={{ ...S.queuePill, background: "#15803D", fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "3px 10px" }}>
               {readyOrders.length} LISTA{readyOrders.length > 1 ? "S" : ""}
@@ -1982,7 +1979,7 @@ function ExpoScreen({ menu }) {
           <span style={{ ...S.statPillRed, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{activeOrders.length} en proceso</span>
           <span style={{ ...S.statPillGreen, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{readyOrders.length} lista{readyOrders.length !== 1 ? "s" : ""}</span>
           {lastCompleted && (
-            <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>↩ Deshacer</button>
+            <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>Deshacer</button>
           )}
         </div>
       </div>
@@ -2016,7 +2013,7 @@ function ExpoScreen({ menu }) {
 // ============================================================
 // ACTIVE ORDERS PICKER MODAL — shared by table / to-go / bar
 // ============================================================
-function ActiveOrdersModal({ title, orders, lang, onEditOrder, onNewOrder, newOrderLabel, onClose }) {
+function ActiveOrdersModal({ title, orders, lang, onEditOrder, onClose }) {
   const t = T[lang];
   return (
     <div style={S.modalOverlay} onClick={onClose}>
@@ -2031,10 +2028,10 @@ function ActiveOrdersModal({ title, orders, lang, onEditOrder, onNewOrder, newOr
             <div key={order.firestoreId} style={S.activeOrderRow}>
               <button style={S.activeOrderMain} onClick={() => onEditOrder(order)}>
                 <span style={order.isToGo ? S.toGoChipSmall : order.isBar ? { ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR } : order.isPatio ? { ...S.toGoChipSmall, background: PATIO_BG, color: PATIO_COLOR } : S.tableChipSmall}>
-                  {order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : order.isPatio ? `🌿 ${order.table}` : `${t.table2} ${order.table}`}
+                  {order.isToGo ? order.toGoName : order.isBar ? order.table : order.isPatio ? order.table : `${t.table2} ${order.table}`}
                 </span>
-                <span style={S.activeOrderItems}>{order.items.map(i => `${i.emoji}×${i.qty}`).join(" ")}</span>
-                <span style={S.activeOrderEdit}>✏️ {t.editOrder}</span>
+                <span style={S.activeOrderItems}>{order.items.map(i => `${i.qty}× ${i.name}`).join(", ")}</span>
+                <span style={S.activeOrderEdit}>{t.editOrder}</span>
               </button>
               <button
                 style={S.activeOrderComplete}
@@ -2045,11 +2042,6 @@ function ActiveOrdersModal({ title, orders, lang, onEditOrder, onNewOrder, newOr
             </div>
           ))}
         </div>
-        {onNewOrder && (
-          <div style={S.modalFooter}>
-            <button style={S.modalConfirmBtn} onClick={onNewOrder}>{newOrderLabel}</button>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -2061,11 +2053,12 @@ function ActiveOrdersModal({ title, orders, lang, onEditOrder, onNewOrder, newOr
 const TABLES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const PATIO_TABLES = [1, 2, 3, 4];
 const BAR_SEATS = [1, 2, 3, 4];
+const TOGO_SLOTS = [1, 2, 3, 4];
 
 // Shared tile for a single table/seat, reused by the Mesas, Patio, and
 // Barra sections — they all follow the same open/occupied/close pattern,
 // just against a different orders-by-key map and free-state accent color.
-function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onClose, closeLabel, freeStyle }) {
+function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onClose, closeLabel, freeStyle, subtitle }) {
   return (
     <div
       style={{ ...S.tableCard, ...(occupied ? S.tableCardOccupied : (freeStyle || S.tableCardFree)) }}
@@ -2077,8 +2070,9 @@ function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onCl
       </div>
       {occupied && (
         <>
+          {subtitle && <div style={S.tableCardSubtitle}>{subtitle}</div>}
           <div style={S.tableCardItems}>{itemCount} artículo{itemCount !== 1 ? "s" : ""}</div>
-          <div style={S.tableCardTimer}>⏱ {elapsed(earliest)}</div>
+          <div style={S.tableCardTimer}>{elapsed(earliest)}</div>
           <button
             style={{ ...S.tableCardCloseBtn, opacity: isClosing ? 0.5 : 1 }}
             onClick={onClose}
@@ -2099,7 +2093,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
   const [detailTable, setDetailTable] = useState(null);
   const [detailBarSeat, setDetailBarSeat] = useState(null);
   const [detailPatio, setDetailPatio] = useState(null);
-  const [togoPickerOpen, setTogoPickerOpen] = useState(false);
+  const [detailToGo, setDetailToGo] = useState(null);
 
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
@@ -2124,7 +2118,11 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
     if (!activeByPatio[o.table]) activeByPatio[o.table] = [];
     activeByPatio[o.table].push(o);
   });
-  const toGoOrders = orders.filter(o => o.status !== "done" && o.isToGo);
+  const activeByToGoSlot = {};
+  orders.filter(o => o.status !== "done" && o.isToGo).forEach(o => {
+    if (!activeByToGoSlot[o.toGoSlot]) activeByToGoSlot[o.toGoSlot] = [];
+    activeByToGoSlot[o.toGoSlot].push(o);
+  });
 
   async function handleClose(key, ordersByKey, e) {
     e.stopPropagation();
@@ -2133,7 +2131,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
     setClosing(null);
   }
 
-  function renderFloorTile(num, ordersByKey, { onSelect, onDetail, closeLabel, freeStyle }) {
+  function renderFloorTile(num, ordersByKey, { onSelect, onDetail, closeLabel, freeStyle, getSubtitle }) {
     const key = num.toString();
     const tileOrders = ordersByKey[key] || [];
     const occupied = tileOrders.length > 0;
@@ -2151,6 +2149,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
         onClose={(e) => handleClose(key, ordersByKey, e)}
         closeLabel={closeLabel}
         freeStyle={freeStyle}
+        subtitle={occupied && getSubtitle ? getSubtitle(tileOrders[0]) : null}
       />
     );
   }
@@ -2168,7 +2167,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
       )}
       {detailBarSeat && (
         <ActiveOrdersModal
-          title={`🍺 Barra ${detailBarSeat} — ${lang === "es" ? "Órdenes de la Barra" : "Bar Orders"}`}
+          title={`Barra ${detailBarSeat} — ${lang === "es" ? "Órdenes de la Barra" : "Bar Orders"}`}
           orders={activeByBarSeat[detailBarSeat] || []}
           lang={lang}
           onEditOrder={(order) => { setDetailBarSeat(null); onEditOrder(order); }}
@@ -2177,59 +2176,56 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
       )}
       {detailPatio && (
         <ActiveOrdersModal
-          title={`🌿 Patio ${detailPatio} — ${lang === "es" ? "Órdenes del Patio" : "Patio Orders"}`}
+          title={`Patio ${detailPatio} — ${lang === "es" ? "Órdenes del Patio" : "Patio Orders"}`}
           orders={activeByPatio[detailPatio] || []}
           lang={lang}
           onEditOrder={(order) => { setDetailPatio(null); onEditOrder(order); }}
           onClose={() => setDetailPatio(null)}
         />
       )}
-      {togoPickerOpen && (
+      {detailToGo && (
         <ActiveOrdersModal
-          title={`🥡 ${t.toGoLabel}`}
-          orders={toGoOrders}
+          title={`${t.toGoLabel} ${detailToGo}`}
+          orders={activeByToGoSlot[detailToGo] || []}
           lang={lang}
-          onEditOrder={(order) => { setTogoPickerOpen(false); onEditOrder(order); }}
-          onNewOrder={() => { setTogoPickerOpen(false); onSelectToGo(); }}
-          newOrderLabel={t.newToGoOrder}
-          onClose={() => setTogoPickerOpen(false)}
+          onEditOrder={(order) => { setDetailToGo(null); onEditOrder(order); }}
+          onClose={() => setDetailToGo(null)}
         />
       )}
       <div style={S.tableSelectHeader}>
-        <span style={S.tableSelectTitle}>🍽️ Dona Paty's</span>
+        <span style={S.tableSelectTitle}>Dona Paty's</span>
         <span style={S.tableSelectSub}>Selecciona una mesa para ordenar</span>
       </div>
 
-      <div style={S.sectionLabel}>🍽️ Mesas</div>
-      <div style={S.tableGrid}>
-        {TABLES.map(num => renderFloorTile(num, activeByTable, {
-          onSelect: onSelectTable, onDetail: setDetailTable, closeLabel: "✓ Cerrar Mesa",
-        }))}
-      </div>
-
-      <div style={{ ...S.sectionLabel, color: PATIO_COLOR }}>🌿 Patio</div>
-      <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
-        {PATIO_TABLES.map(num => renderFloorTile(num, activeByPatio, {
-          onSelect: onSelectPatio, onDetail: setDetailPatio, closeLabel: "✓ Cerrar Mesa", freeStyle: S.tableCardFreePatio,
-        }))}
-      </div>
-
-      <div style={{ ...S.sectionLabel, color: BAR_COLOR }}>🍺 Barra</div>
+      <div style={{ ...S.sectionLabel, color: BAR_COLOR }}>Barra</div>
       <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
         {BAR_SEATS.map(num => renderFloorTile(num, activeByBarSeat, {
-          onSelect: onSelectBar, onDetail: setDetailBarSeat, closeLabel: "✓ Cerrar Asiento", freeStyle: S.tableCardFreeBar,
+          onSelect: onSelectBar, onDetail: setDetailBarSeat, closeLabel: "Cerrar Asiento", freeStyle: S.tableCardFreeBar,
+        }))}
+      </div>
+
+      <div style={S.sectionLabel}>Mesas</div>
+      <div style={S.tableGrid}>
+        {TABLES.map(num => renderFloorTile(num, activeByTable, {
+          onSelect: onSelectTable, onDetail: setDetailTable, closeLabel: "Cerrar Mesa",
+        }))}
+      </div>
+
+      <div style={{ ...S.sectionLabel, color: PATIO_COLOR }}>Patio</div>
+      <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
+        {PATIO_TABLES.map(num => renderFloorTile(num, activeByPatio, {
+          onSelect: onSelectPatio, onDetail: setDetailPatio, closeLabel: "Cerrar Mesa", freeStyle: S.tableCardFreePatio,
         }))}
       </div>
 
       <div style={S.floorDivider} />
 
-      <div style={S.toGoRow}>
-        <button style={S.toGoCardBtn} onClick={() => toGoOrders.length === 1 ? onEditOrder(toGoOrders[0]) : toGoOrders.length > 1 ? setTogoPickerOpen(true) : onSelectToGo()}>
-          🥡 Para Llevar
-          {toGoOrders.length > 0 && (
-            <span style={S.toGoBadgeCount}>{toGoOrders.length} activa{toGoOrders.length !== 1 ? "s" : ""}</span>
-          )}
-        </button>
+      <div style={{ ...S.sectionLabel, color: TOGO_COLOR }}>Para Llevar</div>
+      <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
+        {TOGO_SLOTS.map(num => renderFloorTile(num, activeByToGoSlot, {
+          onSelect: onSelectToGo, onDetail: setDetailToGo, closeLabel: "Cerrar", freeStyle: S.tableCardFreeToGo,
+          getSubtitle: (order) => order.toGoName,
+        }))}
       </div>
     </div>
   );
@@ -2247,30 +2243,6 @@ const DRINK_CAT_KEYWORDS = [
 function isDrinkCategory(cat) {
   const name = (cat.name.en || cat.name.es || "").toLowerCase();
   return DRINK_CAT_KEYWORDS.some(k => name.includes(k));
-}
-
-function getCategoryEmoji(cat) {
-  const name = (cat.name.en || cat.name.es || "").toLowerCase();
-  if (name.includes("cocktail") || name.includes("coctel") || name.includes("cóctel")) return "🍹";
-  if (name.includes("beer") || name.includes("cerveza")) return "🍺";
-  if (name.includes("wine") || name.includes("vino")) return "🍷";
-  if (name.includes("liquor") || name.includes("licor")) return "🥃";
-  if (name.includes("beverage") || name.includes("bebida") || name.includes("drink")) return "🥤";
-  if (name.includes("agua") || name.includes("water")) return "💧";
-  if (name.includes("juice") || name.includes("jugo")) return "🧃";
-  if (name.includes("soda")) return "🥤";
-  if (name.includes("appetizer") || name.includes("starter") || name.includes("entrada")) return "🥗";
-  if (name.includes("soup") || name.includes("sopa")) return "🍲";
-  if (name.includes("taco")) return "🌮";
-  if (name.includes("burrito")) return "🌯";
-  if (name.includes("fajita")) return "🥘";
-  if (name.includes("dessert") || name.includes("postre")) return "🍰";
-  if (name.includes("breakfast") || name.includes("desayuno")) return "🍳";
-  if (name.includes("side") || name.includes("extra")) return "🥙";
-  if (name.includes("kid")) return "👧";
-  if (name.includes("festival")) return "🎉";
-  if (name.includes("main") || name.includes("dinner") || name.includes("plato")) return "🍽️";
-  return "🍴";
 }
 
 // Distinguishes cart lines by item + seat + exact modifier set + note, so the
@@ -2291,6 +2263,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [orderType, setOrderType] = useState(initialOrderType || "table");
   const [tableNum, setTableNum] = useState(initialTable || "");
   const [toGoName, setToGoName] = useState("");
+  const [toGoSlot, setToGoSlot] = useState(initialOrderType === "togo" ? (initialTable || null) : null);
   const [barSeat, setBarSeat] = useState(initialOrderType === "bar" ? (initialTable || "") : "");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -2438,7 +2411,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     setCart([...order.items.map(i => ({ ...i }))]);
     setNote(order.note || "");
     setOrderType(order.isToGo ? "togo" : order.isBar ? "bar" : order.isPatio ? "patio" : "table");
-    if (order.isToGo) setToGoName(order.toGoName || "");
+    if (order.isToGo) { setToGoName(order.toGoName || ""); setToGoSlot(order.toGoSlot || null); }
     else if (order.isBar) setBarSeat(order.table || "");
     else setTableNum(order.table || "");
     const maxSeat = order.items.reduce((max, i) => i.seat ? Math.max(max, i.seat) : max, 0);
@@ -2446,7 +2419,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   }
 
   function cancelEdit() {
-    setEditingOrder(null); setCart([]); setNote(""); setTableNum(""); setToGoName(""); setBarSeat(""); setActiveSeat(null); setSeatCount(0);
+    setEditingOrder(null); setCart([]); setNote(""); setTableNum(""); setToGoName(""); setToGoSlot(null); setBarSeat(""); setActiveSeat(null); setSeatCount(0);
   }
 
   async function handleSend() {
@@ -2486,6 +2459,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         const order = {
           id: genId(), table: orderType === "bar" ? barSeat : (orderType === "table" || orderType === "patio") ? tableNum : null,
           isToGo: orderType === "togo", toGoName: orderType === "togo" ? toGoName : null,
+          toGoSlot: orderType === "togo" ? toGoSlot : null,
           isBar: orderType === "bar",
           isPatio: orderType === "patio",
           items: cart.map(i => ({ ...i, name: i.name })), note, total: cartTotal,
@@ -2499,7 +2473,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       setTimeout(() => {
         setCart([]); setNote(""); setSent(false); setActiveSeat(null); setSeatCount(0);
         if (!initialTable && orderType !== "togo" && orderType !== "bar") { setTableNum(""); }
-        if (orderType === "togo") setToGoName("");
+        if (orderType === "togo") { setToGoName(""); setToGoSlot(null); }
         if (orderType === "bar") setBarSeat("");
       }, 2000);
     }
@@ -2511,7 +2485,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     return orders.find(o => {
       if (o.status === "done" || o.cancelled) return false;
       if (orderType === "table") return !o.isToGo && !o.isBar && !o.isPatio && String(o.table) === String(tableNum);
-      if (orderType === "togo") return o.isToGo && o.toGoName === toGoName;
+      if (orderType === "togo") return o.isToGo && String(o.toGoSlot) === String(toGoSlot);
       if (orderType === "bar") return o.isBar && String(o.table) === String(barSeat);
       if (orderType === "patio") return o.isPatio && String(o.table) === String(tableNum);
       return false;
@@ -2529,29 +2503,29 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
             <button style={S.backBtn} onClick={onBack}>← Mesas</button>
           )}
           {initialOrderType === "bar" ? (
-            <span style={{ ...S.waiterTableBig, color: BAR_COLOR }}>🍺 Barra{initialTable ? ` ${initialTable}` : ""}</span>
+            <span style={{ ...S.waiterTableBig, color: BAR_COLOR }}>Barra{initialTable ? ` ${initialTable}` : ""}</span>
           ) : initialOrderType === "patio" ? (
-            <span style={{ ...S.waiterTableBig, color: PATIO_COLOR }}>🌿 Patio{initialTable ? ` ${initialTable}` : ""}</span>
-          ) : initialTable ? (
-            <span style={S.waiterTableBig}>🪑 Mesa {initialTable}</span>
+            <span style={{ ...S.waiterTableBig, color: PATIO_COLOR }}>Patio{initialTable ? ` ${initialTable}` : ""}</span>
           ) : initialOrderType === "togo" ? (
-            <span style={S.waiterTableBig}>🥡 Para Llevar</span>
+            <span style={{ ...S.waiterTableBig, color: TOGO_COLOR }}>Para Llevar{initialTable ? ` ${initialTable}` : ""}</span>
+          ) : initialTable ? (
+            <span style={S.waiterTableBig}>Mesa {initialTable}</span>
           ) : (
-            <span style={S.waiterLogo}>🍽️ {t.orderStation}</span>
+            <span style={S.waiterLogo}>{t.orderStation}</span>
           )}
-          {isEditing && <span style={S.editingBadge}>✏️ {t.editOrder}</span>}
+          {isEditing && <span style={S.editingBadge}>{t.editOrder}</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {!initialTable && !initialOrderType && (
             <div style={S.orderTypeToggle}>
-              <button style={{ ...S.typeBtn, ...(orderType === "table" ? S.typeBtnActive : {}) }} onClick={() => setOrderType("table")}>🪑 {t.table}</button>
-              <button style={{ ...S.typeBtn, ...(orderType === "bar" ? { background: BAR_COLOR, color: "#fff" } : {}) }} onClick={() => { setOrderType("bar"); setActiveSeat(null); }}>🍺 {t.bar}</button>
-              <button style={{ ...S.typeBtn, ...(orderType === "togo" ? S.typeBtnToGo : {}) }} onClick={() => { setOrderType("togo"); setActiveSeat(null); }}>🥡 {t.toGo}</button>
+              <button style={{ ...S.typeBtn, ...(orderType === "table" ? S.typeBtnActive : {}) }} onClick={() => setOrderType("table")}>{t.table}</button>
+              <button style={{ ...S.typeBtn, ...(orderType === "bar" ? { background: BAR_COLOR, color: "#fff" } : {}) }} onClick={() => { setOrderType("bar"); setActiveSeat(null); }}>{t.bar}</button>
+              <button style={{ ...S.typeBtn, ...(orderType === "togo" ? S.typeBtnToGo : {}) }} onClick={() => { setOrderType("togo"); setActiveSeat(null); }}>{t.toGo}</button>
             </div>
           )}
           {initialOrderType === "togo" && (
             <div style={{ ...S.tableInput, ...S.tableInputToGo }}>
-              <span style={{ ...S.tableLabel, color: "#0369A1" }}>🥡</span>
+              <span style={{ ...S.tableLabel, color: "#0369A1" }}>{t.toGo}</span>
               <input
                 style={{ ...S.tableField, width: 130 }}
                 value={toGoName}
@@ -2563,7 +2537,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           )}
           {initialOrderType === "bar" && !initialTable && (
             <div style={{ ...S.tableInput, background: BAR_BG, borderColor: "#DDD6FE" }}>
-              <span style={{ ...S.tableLabel, color: BAR_COLOR }}>🍺</span>
+              <span style={{ ...S.tableLabel, color: BAR_COLOR }}>{t.bar}</span>
               <input
                 style={{ ...S.tableField, width: 90 }}
                 value={barSeat}
@@ -2575,7 +2549,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           )}
           {!initialTable && !initialOrderType && (
             <div style={{ ...S.tableInput, ...(orderType === "togo" ? S.tableInputToGo : {}), ...(orderType === "bar" ? { background: BAR_BG, borderColor: "#DDD6FE" } : {}) }}>
-              <span style={{ ...S.tableLabel, ...(orderType === "togo" ? { color: "#0369A1" } : {}), ...(orderType === "bar" ? { color: BAR_COLOR } : {}) }}>{orderType === "togo" ? "🥡" : orderType === "bar" ? "🍺" : t.table}</span>
+              <span style={{ ...S.tableLabel, ...(orderType === "togo" ? { color: "#0369A1" } : {}), ...(orderType === "bar" ? { color: BAR_COLOR } : {}) }}>{orderType === "togo" ? t.toGo : orderType === "bar" ? t.bar : t.table}</span>
               <input
                 style={{ ...S.tableField, width: orderType === "togo" ? 130 : orderType === "bar" ? 90 : 48 }}
                 value={orderType === "togo" ? toGoName : orderType === "bar" ? barSeat : tableNum}
@@ -2601,13 +2575,13 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               style={{ ...S.tabBtn, ...(activeTab === "drinks" ? S.tabBtnActive : {}) }}
               onClick={() => { setActiveTab("drinks"); setActiveCategory(null); }}
             >
-              🥤 {t.tabDrinks}
+              {t.tabDrinks}
             </button>
             <button
               style={{ ...S.tabBtn, ...(activeTab === "food" ? S.tabBtnActive : {}) }}
               onClick={() => { setActiveTab("food"); setActiveCategory(null); }}
             >
-              🍽️ {t.tabFood}
+              {t.tabFood}
             </button>
           </div>
           <div style={S.catArea}>
@@ -2615,7 +2589,6 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               <div style={S.categoryGrid}>
                 {tabCategories.map(cat => (
                   <button key={cat.id} style={S.catTile} onClick={() => setActiveCategory(cat.id)}>
-                    <span style={S.catTileEmoji}>{getCategoryEmoji(cat)}</span>
                     <span style={S.catTileName}>{cat.name[lang] || cat.name.en}</span>
                   </button>
                 ))}
@@ -2636,7 +2609,6 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                     const displayName = getItemDisplayName(item);
                     return (
                       <button key={item.id} style={{ ...S.menuItem, ...(inCartQty > 0 ? S.menuItemActive : {}) }} onClick={() => handleItemTap(item)}>
-                        <span style={S.menuEmoji}>{item.emoji}</span>
                         <span style={S.menuName}>{displayName}</span>
                         <span style={S.menuPrice}>{fmt(item.price)}</span>
                         {inCartQty > 0 && <span style={S.menuBadge}>×{inCartQty}</span>}
@@ -2665,7 +2637,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           )}
           <div style={{ ...S.cartScrollArea, paddingBottom: footerHeight + 14 }}>
             {cart.filter(i => i.qty > 0).length === 0 && isEditing ? (
-              <div style={S.cartCancelWarning}>🚫 All items removed — this will cancel the order</div>
+              <div style={S.cartCancelWarning}>All items removed — this will cancel the order</div>
             ) : cart.length === 0 ? (
               <div style={S.cartEmpty}>{t.tapToAdd}</div>
             ) : (
@@ -2692,7 +2664,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                           style={{ flex: 1, cursor: item.qty > 0 ? "pointer" : "default" }}
                           onClick={() => { if (item.qty > 0) setSwapTargetKey(isSwapTarget ? null : lineKey); }}
                         >
-                          <span style={S.cartName}>{item.emoji} {item.displayName || item.name} {item.qty > 0 && <span style={S.cartSwapHint}>✎</span>}</span>
+                          <span style={S.cartName}>{item.displayName || item.name} {item.qty > 0 && <span style={S.cartSwapHint}>✎</span>}</span>
                           {item.modifiers && item.modifiers.length > 0 && (
                             <div style={S.cartModifiers}>
                               {item.modifiers.map((mod, mi) => {
@@ -2735,12 +2707,12 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               <span style={S.cartTotal}>{fmt(cartTotal)}</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {isEditing && <button style={S.cancelBtn} onClick={cancelEdit}>{t.cancelEdit}</button>}
-                {isEditing && <button style={S.cancelOrderBtn} onClick={() => setCart(cart.map(i => ({ ...i, qty: 0 })))}>🚫 Cancel Order</button>}
+                {isEditing && <button style={S.cancelOrderBtn} onClick={() => setCart(cart.map(i => ({ ...i, qty: 0 })))}>Cancel Order</button>}
                 <button
                   style={{ ...S.sendBtn, ...(isCancellingOrder ? S.sendBtnCancel : isEditing ? S.sendBtnEdit : {}), ...(sent ? S.sendBtnSent : {}), ...(!canSend ? S.sendBtnDisabled : {}) }}
                   onClick={handleSend} disabled={sending || !canSend}
                 >
-                  {sent ? (isEditing ? t.updated : t.sent) : sending ? t.sending : isCancellingOrder ? "🚫 Confirm Cancel" : isEditing ? t.updateOrder : t.sendToKitchen}
+                  {sent ? (isEditing ? t.updated : t.sent) : sending ? t.sending : isCancellingOrder ? "Confirm Cancel" : isEditing ? t.updateOrder : t.sendToKitchen}
                 </button>
               </div>
             </div>
@@ -2772,7 +2744,7 @@ function HistoryScreen({ lang }) {
   const itemStats = {};
   history.forEach(order => {
     order.items?.forEach(item => {
-      if (!itemStats[item.name]) itemStats[item.name] = { count: 0, totalTime: 0, emoji: item.emoji };
+      if (!itemStats[item.name]) itemStats[item.name] = { count: 0, totalTime: 0 };
       itemStats[item.name].count += item.qty;
       itemStats[item.name].totalTime += order.duration || 0;
     });
@@ -2793,16 +2765,16 @@ function HistoryScreen({ lang }) {
             <div key={order.firestoreId} style={S.historyCard}>
               <button style={S.historyCardHeader} onClick={() => setExpandedId(expandedId === order.firestoreId ? null : order.firestoreId)}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  {order.isToGo ? <span style={S.toGoChipSmall}>🥡 {order.toGoName}</span> : order.isBar ? <span style={{ ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR }}>🍺 {order.table}</span> : order.isPatio ? <span style={{ ...S.toGoChipSmall, background: PATIO_BG, color: PATIO_COLOR }}>🌿 {order.table}</span> : <span style={S.historyTable}>{t.table2} {order.table}</span>}
-                  {order.modified && <span style={S.modifiedChip}>⚡ {t.modified}</span>}
+                  {order.isToGo ? <span style={S.toGoChipSmall}>{order.toGoName}</span> : order.isBar ? <span style={{ ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR }}>{order.table}</span> : order.isPatio ? <span style={{ ...S.toGoChipSmall, background: PATIO_BG, color: PATIO_COLOR }}>{order.table}</span> : <span style={S.historyTable}>{t.table2} {order.table}</span>}
+                  {order.modified && <span style={S.modifiedChip}>{t.modified}</span>}
                   <span style={S.historyId}>#{order.id}</span>
                 </div>
                 <span style={S.historyTotal}>{fmt(order.total)}</span>
               </button>
-              <div style={S.historyItems}>{order.items?.map((item, i) => <span key={i} style={S.historyItem}>{item.emoji} {item.name} ×{item.qty}</span>)}</div>
+              <div style={S.historyItems}>{order.items?.map((item, i) => <span key={i} style={S.historyItem}>{item.name} ×{item.qty}</span>)}</div>
               <div style={S.historyMeta}>
-                <span>⏱ {t.duration}: {fmtDuration(order.duration, lang)}</span>
-                {order.note && <span>📝 {order.note}</span>}
+                <span>{t.duration}: {fmtDuration(order.duration, lang)}</span>
+                {order.note && <span>{order.note}</span>}
               </div>
             </div>
           ))}
@@ -2811,7 +2783,6 @@ function HistoryScreen({ lang }) {
           <div style={S.panelTitle}>{t.itemAnalysis}</div>
           {itemList.length === 0 ? <div style={S.historyEmpty}>{t.noHistory}</div> : itemList.map(item => (
             <div key={item.name} style={S.itemStatCard}>
-              <span style={S.itemStatEmoji}>{item.emoji}</span>
               <div style={S.itemStatInfo}>
                 <div style={S.itemStatName}>{item.name}</div>
                 <div style={S.itemStatMeta}>{item.count} {t.orders} · {t.prepTime}: {fmtDuration(item.avgTime, lang)}</div>
@@ -2855,7 +2826,7 @@ function PinModal({ onSuccess, onClose }) {
   return (
     <div style={S.modalOverlay} onClick={onClose}>
       <div style={{ background: "#1E293B", borderRadius: 20, padding: "32px 28px", width: 280, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }} onClick={e => e.stopPropagation()}>
-        <div style={{ fontSize: 11, fontWeight: 900, color: "#64748B", letterSpacing: "0.2em", marginBottom: 24 }}>🔒 HISTORIAL — ACCESO RESTRINGIDO</div>
+        <div style={{ fontSize: 11, fontWeight: 900, color: "#64748B", letterSpacing: "0.2em", marginBottom: 24 }}>HISTORIAL — ACCESO RESTRINGIDO</div>
         <div style={{ display: "flex", justifyContent: "center", gap: 14, marginBottom: 28, ...(shaking ? { animation: "shake 0.5s ease" } : {}) }}>
           {[0, 1, 2, 3].map(i => (
             <div key={i} style={{ width: 16, height: 16, borderRadius: "50%", background: shaking ? "#BE202E" : pin.length > i ? "#FFFFFF" : "#334155", transition: "background 0.15s" }} />
@@ -2972,14 +2943,14 @@ export default function App() {
       {pinOpen && <PinModal onSuccess={() => { setPinOpen(false); setView("history"); }} onClose={() => setPinOpen(false)} />}
       <div style={S.nav}>
         <div style={S.navLeft}>
-          <button style={{ ...S.navBtn, ...((view === "tables" || view === "waiter") ? S.navBtnActive : {}) }} onClick={() => { setOrderContext(null); setView("tables"); }}>🍽️ {t.orderStation}</button>
+          <button style={{ ...S.navBtn, ...((view === "tables" || view === "waiter") ? S.navBtnActive : {}) }} onClick={() => { setOrderContext(null); setView("tables"); }}>{t.orderStation}</button>
           <button style={{ ...S.navBtn, ...(view === "kitchen" ? S.navBtnActive : {}) }} onClick={() => setView("kitchen")}>
-            👨‍🍳 {t.kitchenDisplay}
+            {t.kitchenDisplay}
             {activeOrders > 0 && <span style={S.navBadge}>{activeOrders}</span>}
           </button>
-          <button style={{ ...S.navBtn, ...(view === "drinks" ? S.navBtnActive : {}), ...(view === "drinks" ? { color: "#7C3AED", borderBottom: "3px solid #7C3AED" } : {}) }} onClick={() => setView("drinks")}>🥤 Bebidas/Sides</button>
+          <button style={{ ...S.navBtn, ...(view === "drinks" ? S.navBtnActive : {}), ...(view === "drinks" ? { color: "#7C3AED", borderBottom: "3px solid #7C3AED" } : {}) }} onClick={() => setView("drinks")}>Bebidas/Sides</button>
           <button style={{ ...S.navBtn, ...(view === "expo" ? S.navBtnActive : {}), ...(view === "expo" ? { color: "#15803D", borderBottom: "3px solid #15803D" } : {}) }} onClick={() => setView("expo")}>
-            🎯 {t.expoDisplay}
+            {t.expoDisplay}
             {readyCount > 0 && (
               <span className="expo-badge-pulse" style={{ ...S.navBadge, background: "#15803D" }}>
                 {readyCount}
@@ -2988,15 +2959,15 @@ export default function App() {
           </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {translating && <span style={S.translatingPill}>🌐 {t.translating}</span>}
+          {translating && <span style={S.translatingPill}>{t.translating}</span>}
           <button
             style={{ ...S.langBtn, ...(view === "history" ? { background: "#BE202E", color: "#fff", border: "1px solid #BE202E" } : {}) }}
             onClick={() => view === "history" ? setView("tables") : setPinOpen(true)}
             title="Historial (restringido)"
           >
-            🔒
+            Historial
           </button>
-          <button style={S.langBtn} onClick={() => setLang(l => l === "es" ? "en" : "es")}>{lang === "es" ? "🇺🇸 EN" : "🇲🇽 ES"}</button>
+          <button style={S.langBtn} onClick={() => setLang(l => l === "es" ? "en" : "es")}>{lang === "es" ? "EN" : "ES"}</button>
         </div>
       </div>
       {view === "tables" && (
@@ -3006,8 +2977,8 @@ export default function App() {
             setOrderContext({ table: tableNum, orderType: "table" });
             setView("waiter");
           }}
-          onSelectToGo={() => {
-            setOrderContext({ table: null, orderType: "togo" });
+          onSelectToGo={(slotNum) => {
+            setOrderContext({ table: slotNum, orderType: "togo" });
             setView("waiter");
           }}
           onSelectBar={(seat) => {
@@ -3020,7 +2991,7 @@ export default function App() {
           }}
           onEditOrder={(order) => {
             setOrderContext({
-              table: order.isToGo ? null : order.table,
+              table: order.isToGo ? order.toGoSlot : order.table,
               orderType: order.isToGo ? "togo" : order.isBar ? "bar" : order.isPatio ? "patio" : "table",
               editOrder: order,
             });
@@ -3063,15 +3034,14 @@ const S = {
   tableCardFree: { background: "#FFFFFF", border: "2px solid #D1FAE5", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
   tableCardFreePatio: { background: "#FFFFFF", border: "2px solid #99F6E4", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
   tableCardFreeBar: { background: "#FFFFFF", border: "2px solid #DDD6FE", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
+  tableCardFreeToGo: { background: "#FFFFFF", border: "2px solid #FDE68A", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
   tableCardOccupied: { background: "#FFFBEB", border: "2px solid #FCD34D", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" },
   tableCardNum: { fontSize: 54, fontWeight: 900, color: "#1A1A1A", lineHeight: 1 },
   tableCardLabel: { fontSize: 10, fontWeight: 900, letterSpacing: "0.12em" },
   tableCardItems: { fontSize: 12, color: "#666", fontWeight: 600 },
+  tableCardSubtitle: { fontSize: 13, color: "#1A1A1A", fontWeight: 800 },
   tableCardTimer: { fontSize: 12, fontWeight: 700, color: "#D97706" },
   tableCardCloseBtn: { marginTop: 6, background: "#15803D", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 11, fontWeight: 800, cursor: "pointer", letterSpacing: "0.04em" },
-  toGoRow: { maxWidth: 600, margin: "20px auto 0", width: "100%" },
-  toGoCardBtn: { width: "100%", background: "#EFF6FF", border: "2px solid #BFDBFE", borderRadius: 16, padding: "18px 24px", fontSize: 18, fontWeight: 800, color: "#1D4ED8", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", gap: 12 },
-  toGoBadgeCount: { background: "#1D4ED8", color: "#fff", borderRadius: 20, fontSize: 11, padding: "2px 10px", fontWeight: 800, position: "absolute", right: 18, top: "50%", transform: "translateY(-50%)" },
   backBtn: { background: "#F5F3F0", border: "1px solid #DDD", color: "#444", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   waiterTableBig: { fontSize: 20, fontWeight: 900, color: "#BE202E", letterSpacing: "-0.01em" },
 
@@ -3224,13 +3194,11 @@ const S = {
   catArea: { flex: 1, overflowY: "auto", padding: "16px" },
   categoryGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
   catTile: { background: "#FFFFFF", border: "2px solid #E5E0D8", borderRadius: 16, padding: "28px 16px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, minHeight: 150, transition: "border-color 0.15s, box-shadow 0.15s" },
-  catTileEmoji: { fontSize: 44 },
   catTileName: { fontSize: 17, fontWeight: 700, textAlign: "center", color: "#1A1A1A", lineHeight: 1.3 },
   backToCats: { display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#BE202E", fontWeight: 800, fontSize: 18, cursor: "pointer", padding: "12px 0 14px 0", letterSpacing: "0.02em" },
   menuGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 },
   menuItem: { background: "#FFFFFF", border: "2px solid #E5E0D8", borderRadius: 14, padding: "18px 12px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 7, position: "relative", transition: "border-color 0.15s, box-shadow 0.15s", minHeight: 140 },
   menuItemActive: { background: "#FFF1F2", border: "2px solid #BE202E", boxShadow: "0 0 0 2px rgba(190,32,46,0.12)" },
-  menuEmoji: { fontSize: 46 },
   menuName: { fontSize: 20, fontWeight: 600, textAlign: "center", color: "#333", lineHeight: 1.3 },
   menuPrice: { fontSize: 21, color: "#BE202E", fontWeight: 700 },
   menuBadge: { position: "absolute", top: 8, right: 8, background: "#BE202E", color: "#fff", borderRadius: 10, fontSize: 14, fontWeight: 800, padding: "3px 8px" },
@@ -3290,7 +3258,6 @@ const S = {
   historyItem: { background: "#F5F3F0", borderRadius: 6, padding: "2px 7px", fontSize: 11, color: "#666" },
   historyMeta: { display: "flex", gap: 10, fontSize: 11, color: "#AAA", flexWrap: "wrap" },
   itemStatCard: { background: "#FFFFFF", border: "1px solid #E5E0D8", borderRadius: 12, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" },
-  itemStatEmoji: { fontSize: 24 },
   itemStatInfo: { flex: 1 },
   itemStatName: { fontSize: 14, fontWeight: 700, color: "#1A1A1A", marginBottom: 2 },
   itemStatMeta: { fontSize: 11, color: "#AAA" },
