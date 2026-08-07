@@ -35,6 +35,7 @@ const T = {
     bar: "BARRA",
     barSeat: "Asiento",
     barLabel: "BARRA",
+    patioLabel: "PATIO",
     seat: "Asiento",
     guest: "Invitado",
     plato: "Plato",
@@ -132,6 +133,7 @@ const T = {
     bar: "BAR",
     barSeat: "Seat",
     barLabel: "BAR",
+    patioLabel: "PATIO",
     seat: "Seat",
     guest: "Guest",
     plato: "Plato",
@@ -405,6 +407,7 @@ const CLOVER_ORDER_TYPES = {
 function buildCloverOrderNote(order) {
   if (order.isToGo) return `${order.toGoName}${order.note ? " | " + order.note : ""}`;
   if (order.isBar) return `BARRA ${order.table}${order.note ? " | " + order.note : ""}`;
+  if (order.isPatio) return `PATIO ${order.table}${order.note ? " | " + order.note : ""}`;
   return `MESA ${order.table}${order.note ? " | " + order.note : ""}`;
 }
 
@@ -859,16 +862,19 @@ const DINEIN_BG    = "#EFF6FF";
 const BAR_COLOR    = "#7C3AED";
 const BAR_BG       = "#F3E8FF";
 const PATIO_COLOR  = "#0D9488";
+const PATIO_BG     = "#CCFBF1";
 
 function getOrderAccentColor(order) {
   if (order.isToGo) return TOGO_COLOR;
   if (order.isBar) return BAR_COLOR;
+  if (order.isPatio) return PATIO_COLOR;
   return DINEIN_COLOR;
 }
 
 function getOrderAccentBg(order) {
   if (order.isToGo) return TOGO_BG;
   if (order.isBar) return BAR_BG;
+  if (order.isPatio) return PATIO_BG;
   return DINEIN_BG;
 }
 
@@ -1150,6 +1156,7 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
       {order.cancelled && <div style={S.cancelledBanner}>{t.cancelled}</div>}
       {order.isToGo && <div style={S.toGoBanner}>🥡 {t.toGoLabel} — {order.toGoName}</div>}
       {order.isBar && <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>🍺 {t.barLabel} — {order.table}</div>}
+      {order.isPatio && <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>🌿 {t.patioLabel} — {order.table}</div>}
       {order.modified && !order.cancelled && <div style={S.modifiedBanner}>⚡ {t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket */}
@@ -1170,6 +1177,8 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
               ? <span style={S.toGoNameBig}>{order.toGoName}</span>
               : order.isBar
               ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>🍺 {order.table}</span>
+              : order.isPatio
+              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>🌿 {order.table}</span>
               : <span style={S.tableNumberBig}>{t.table2} {order.table}</span>
             }
           </div>
@@ -1319,7 +1328,7 @@ function KitchenScreen({ lang, menu }) {
 
   function handleUndoLastCompleted() {
     if (!lastCompleted) return;
-    const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
+    const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : lastCompleted.isPatio ? `Patio ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
     if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
     undoCompletedOrder(lastCompleted);
     flash("↩ Orden restaurada", "#7C3AED");
@@ -1428,7 +1437,7 @@ function KitchenScreen({ lang, menu }) {
           </div>
         </div>
       ) : (
-        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 280px))" }}>
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
           {visible.map((order, idx) => (
             <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <GuestCheckTicket
@@ -1449,7 +1458,7 @@ function KitchenScreen({ lang, menu }) {
           {queued.map(order => (
             <div key={order.firestoreId} style={S.queueItem}>
               <span style={S.queueOrderId}>#{order.id}</span>
-              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : `${t.table2} ${order.table}`}</span>
+              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : order.isPatio ? `🌿 ${order.table}` : `${t.table2} ${order.table}`}</span>
               <span style={S.queueOrderItems}>{order.items.map(i => `${i.qty}× ${i.name}`).join(", ")}</span>
               <span style={S.queueOrderTime}>{elapsed(order.timestamp)}</span>
             </div>
@@ -1499,6 +1508,11 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
           🍺 BARRA — {order.table}
         </div>
       )}
+      {order.isPatio && (
+        <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>
+          🌿 PATIO — {order.table}
+        </div>
+      )}
       {order.modified && !order.cancelled && <div style={S.modifiedBanner}>⚡ {t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket, matches Kitchen's hint bar */}
@@ -1519,6 +1533,8 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
               ? <span style={{ ...S.toGoNameBig, color: TOGO_COLOR }}>{order.toGoName}</span>
               : order.isBar
               ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>🍺 {order.table}</span>
+              : order.isPatio
+              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>🌿 {order.table}</span>
               : <span style={S.tableNumberBig}>{t.table2} {order.table}</span>}
           </div>
         </div>
@@ -1649,7 +1665,7 @@ function DrinksStationScreen({ lang, menu }) {
 
   function handleUndoLastCompleted() {
     if (!lastCompleted) return;
-    const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
+    const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : lastCompleted.isPatio ? `Patio ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
     if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
     undoCompletedOrder(lastCompleted);
     flash("↩ Orden restaurada", "#7C3AED");
@@ -1747,7 +1763,7 @@ function DrinksStationScreen({ lang, menu }) {
           {queued.map(order => (
             <div key={order.firestoreId} style={S.queueItem}>
               <span style={S.queueOrderId}>#{order.id}</span>
-              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : `${t.table2} ${order.table}`}</span>
+              <span style={S.queueOrderTable}>{order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : order.isPatio ? `🌿 ${order.table}` : `${t.table2} ${order.table}`}</span>
               <span style={S.queueOrderItems}>
                 {order.items?.filter(i => getDrinksRule(i.name) || order.isToGo).map(i => `${i.qty}× ${i.name}`).join(", ")}
               </span>
@@ -1807,9 +1823,9 @@ function ExpoTicket({ order, catNameById }) {
       <div style={{ background: allDone ? "#DCFCE7" : "#F5EFE0", padding: "10px 14px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 800, color: "#9B8B72", letterSpacing: "0.18em", textTransform: "uppercase" }}>
-            {order.isToGo ? "Para Llevar" : order.isBar ? "Barra" : "Mesa"}
+            {order.isToGo ? "Para Llevar" : order.isBar ? "Barra" : order.isPatio ? "Patio" : "Mesa"}
           </div>
-          <div style={{ fontSize: order.isToGo ? "clamp(20px, calc(17.308cqw - 38.85px), 65px)" : "clamp(39px, calc(35.096cqw - 80.57px), 130px)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : (order.isBar ? BAR_COLOR : "#1A1A1A"), textTransform: "uppercase", wordBreak: "break-word" }}>
+          <div style={{ fontSize: order.isToGo ? "clamp(20px, calc(17.308cqw - 38.85px), 65px)" : "clamp(39px, calc(35.096cqw - 80.57px), 130px)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : (order.isBar ? BAR_COLOR : order.isPatio ? PATIO_COLOR : "#1A1A1A"), textTransform: "uppercase", wordBreak: "break-word" }}>
             {order.isToGo ? order.toGoName : order.table}
           </div>
         </div>
@@ -1913,7 +1929,7 @@ function ExpoScreen({ menu }) {
 
   function handleUndoLastCompleted() {
     if (!lastCompleted) return;
-    const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
+    const label = lastCompleted.isToGo ? lastCompleted.toGoName : lastCompleted.isBar ? `Barra ${lastCompleted.table}` : lastCompleted.isPatio ? `Patio ${lastCompleted.table}` : `Mesa ${lastCompleted.table}`;
     if (!window.confirm(`¿Deshacer la última orden completada (${label})?`)) return;
     undoCompletedOrder(lastCompleted);
   }
@@ -2014,8 +2030,8 @@ function ActiveOrdersModal({ title, orders, lang, onEditOrder, onNewOrder, newOr
           {orders.map(order => (
             <div key={order.firestoreId} style={S.activeOrderRow}>
               <button style={S.activeOrderMain} onClick={() => onEditOrder(order)}>
-                <span style={order.isToGo ? S.toGoChipSmall : order.isBar ? { ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR } : S.tableChipSmall}>
-                  {order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : `${t.table2} ${order.table}`}
+                <span style={order.isToGo ? S.toGoChipSmall : order.isBar ? { ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR } : order.isPatio ? { ...S.toGoChipSmall, background: PATIO_BG, color: PATIO_COLOR } : S.tableChipSmall}>
+                  {order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : order.isPatio ? `🌿 ${order.table}` : `${t.table2} ${order.table}`}
                 </span>
                 <span style={S.activeOrderItems}>{order.items.map(i => `${i.emoji}×${i.qty}`).join(" ")}</span>
                 <span style={S.activeOrderEdit}>✏️ {t.editOrder}</span>
@@ -2043,7 +2059,7 @@ function ActiveOrdersModal({ title, orders, lang, onEditOrder, onNewOrder, newOr
 // TABLE SELECT SCREEN
 // ============================================================
 const TABLES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-const PATIO_TABLES = [10, 11, 12, 13];
+const PATIO_TABLES = [1, 2, 3, 4];
 const BAR_SEATS = [1, 2, 3, 4];
 
 // Shared tile for a single table/seat, reused by the Mesas, Patio, and
@@ -2076,12 +2092,13 @@ function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onCl
   );
 }
 
-function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onEditOrder }) {
+function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onSelectPatio, onEditOrder }) {
   const t = T[lang];
   const [orders, setOrders] = useState([]);
   const [closing, setClosing] = useState(null);
   const [detailTable, setDetailTable] = useState(null);
   const [detailBarSeat, setDetailBarSeat] = useState(null);
+  const [detailPatio, setDetailPatio] = useState(null);
   const [togoPickerOpen, setTogoPickerOpen] = useState(false);
 
   useEffect(() => {
@@ -2093,7 +2110,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
   }, []);
 
   const activeByTable = {};
-  orders.filter(o => o.status !== "done" && !o.isToGo && !o.isBar).forEach(o => {
+  orders.filter(o => o.status !== "done" && !o.isToGo && !o.isBar && !o.isPatio).forEach(o => {
     if (!activeByTable[o.table]) activeByTable[o.table] = [];
     activeByTable[o.table].push(o);
   });
@@ -2101,6 +2118,11 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
   orders.filter(o => o.status !== "done" && o.isBar).forEach(o => {
     if (!activeByBarSeat[o.table]) activeByBarSeat[o.table] = [];
     activeByBarSeat[o.table].push(o);
+  });
+  const activeByPatio = {};
+  orders.filter(o => o.status !== "done" && o.isPatio).forEach(o => {
+    if (!activeByPatio[o.table]) activeByPatio[o.table] = [];
+    activeByPatio[o.table].push(o);
   });
   const toGoOrders = orders.filter(o => o.status !== "done" && o.isToGo);
 
@@ -2153,6 +2175,15 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
           onClose={() => setDetailBarSeat(null)}
         />
       )}
+      {detailPatio && (
+        <ActiveOrdersModal
+          title={`🌿 Patio ${detailPatio} — ${lang === "es" ? "Órdenes del Patio" : "Patio Orders"}`}
+          orders={activeByPatio[detailPatio] || []}
+          lang={lang}
+          onEditOrder={(order) => { setDetailPatio(null); onEditOrder(order); }}
+          onClose={() => setDetailPatio(null)}
+        />
+      )}
       {togoPickerOpen && (
         <ActiveOrdersModal
           title={`🥡 ${t.toGoLabel}`}
@@ -2178,8 +2209,8 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onE
 
       <div style={{ ...S.sectionLabel, color: PATIO_COLOR }}>🌿 Patio</div>
       <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
-        {PATIO_TABLES.map(num => renderFloorTile(num, activeByTable, {
-          onSelect: onSelectTable, onDetail: setDetailTable, closeLabel: "✓ Cerrar Mesa", freeStyle: S.tableCardFreePatio,
+        {PATIO_TABLES.map(num => renderFloorTile(num, activeByPatio, {
+          onSelect: onSelectPatio, onDetail: setDetailPatio, closeLabel: "✓ Cerrar Mesa", freeStyle: S.tableCardFreePatio,
         }))}
       </div>
 
@@ -2406,7 +2437,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     setEditingOrder(order);
     setCart([...order.items.map(i => ({ ...i }))]);
     setNote(order.note || "");
-    setOrderType(order.isToGo ? "togo" : order.isBar ? "bar" : "table");
+    setOrderType(order.isToGo ? "togo" : order.isBar ? "bar" : order.isPatio ? "patio" : "table");
     if (order.isToGo) setToGoName(order.toGoName || "");
     else if (order.isBar) setBarSeat(order.table || "");
     else setTableNum(order.table || "");
@@ -2453,9 +2484,10 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         onOrderSent?.({ ...existing, items: mergedItems });
       } else {
         const order = {
-          id: genId(), table: orderType === "table" ? tableNum : orderType === "bar" ? barSeat : null,
+          id: genId(), table: orderType === "bar" ? barSeat : (orderType === "table" || orderType === "patio") ? tableNum : null,
           isToGo: orderType === "togo", toGoName: orderType === "togo" ? toGoName : null,
           isBar: orderType === "bar",
+          isPatio: orderType === "patio",
           items: cart.map(i => ({ ...i, name: i.name })), note, total: cartTotal,
           timestamp: Date.now(), status: "new", editHistory: [],
         };
@@ -2478,9 +2510,10 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     const orders = snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
     return orders.find(o => {
       if (o.status === "done" || o.cancelled) return false;
-      if (orderType === "table") return !o.isToGo && !o.isBar && String(o.table) === String(tableNum);
+      if (orderType === "table") return !o.isToGo && !o.isBar && !o.isPatio && String(o.table) === String(tableNum);
       if (orderType === "togo") return o.isToGo && o.toGoName === toGoName;
       if (orderType === "bar") return o.isBar && String(o.table) === String(barSeat);
+      if (orderType === "patio") return o.isPatio && String(o.table) === String(tableNum);
       return false;
     }) || null;
   }
@@ -2497,6 +2530,8 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           )}
           {initialOrderType === "bar" ? (
             <span style={{ ...S.waiterTableBig, color: BAR_COLOR }}>🍺 Barra{initialTable ? ` ${initialTable}` : ""}</span>
+          ) : initialOrderType === "patio" ? (
+            <span style={{ ...S.waiterTableBig, color: PATIO_COLOR }}>🌿 Patio{initialTable ? ` ${initialTable}` : ""}</span>
           ) : initialTable ? (
             <span style={S.waiterTableBig}>🪑 Mesa {initialTable}</span>
           ) : initialOrderType === "togo" ? (
@@ -2758,7 +2793,7 @@ function HistoryScreen({ lang }) {
             <div key={order.firestoreId} style={S.historyCard}>
               <button style={S.historyCardHeader} onClick={() => setExpandedId(expandedId === order.firestoreId ? null : order.firestoreId)}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  {order.isToGo ? <span style={S.toGoChipSmall}>🥡 {order.toGoName}</span> : order.isBar ? <span style={{ ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR }}>🍺 {order.table}</span> : <span style={S.historyTable}>{t.table2} {order.table}</span>}
+                  {order.isToGo ? <span style={S.toGoChipSmall}>🥡 {order.toGoName}</span> : order.isBar ? <span style={{ ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR }}>🍺 {order.table}</span> : order.isPatio ? <span style={{ ...S.toGoChipSmall, background: PATIO_BG, color: PATIO_COLOR }}>🌿 {order.table}</span> : <span style={S.historyTable}>{t.table2} {order.table}</span>}
                   {order.modified && <span style={S.modifiedChip}>⚡ {t.modified}</span>}
                   <span style={S.historyId}>#{order.id}</span>
                 </div>
@@ -2979,10 +3014,14 @@ export default function App() {
             setOrderContext({ table: seat, orderType: "bar" });
             setView("waiter");
           }}
+          onSelectPatio={(tableNum) => {
+            setOrderContext({ table: tableNum, orderType: "patio" });
+            setView("waiter");
+          }}
           onEditOrder={(order) => {
             setOrderContext({
               table: order.isToGo ? null : order.table,
-              orderType: order.isToGo ? "togo" : order.isBar ? "bar" : "table",
+              orderType: order.isToGo ? "togo" : order.isBar ? "bar" : order.isPatio ? "patio" : "table",
               editOrder: order,
             });
             setView("waiter");
