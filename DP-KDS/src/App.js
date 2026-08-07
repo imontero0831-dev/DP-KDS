@@ -372,6 +372,7 @@ async function fetchMenuFromClover() {
         name: item.name,
         nameEs: null,
         price: item.price || 0,
+        emoji: "🍽️",
         modifierGroupIds: (item.modifierGroups?.elements || []).map(g => g.id),
       }));
     if (categories.length === 0) {
@@ -476,19 +477,19 @@ const MOCK_MENU = {
     { id: "cat4", name: { es: "Postres", en: "Desserts" } },
   ],
   items: [
-    { id: "i1", categoryId: "cat1", name: "Chips & Salsa", nameEs: "Totopos con Salsa", price: 599 },
-    { id: "i2", categoryId: "cat1", name: "Sopa del Día", nameEs: "Sopa del Día", price: 699 },
-    { id: "i3", categoryId: "cat1", name: "Alitas de Pollo", nameEs: "Alitas de Pollo", price: 1099 },
-    { id: "i4", categoryId: "cat2", name: "Hamburguesa", nameEs: "Hamburguesa", price: 1299 },
-    { id: "i5", categoryId: "cat2", name: "Grilled Salmon", nameEs: "Salmón a la Parrilla", price: 1899 },
-    { id: "i6", categoryId: "cat2", name: "Pasta Primavera", nameEs: "Pasta Primavera", price: 1499 },
-    { id: "i7", categoryId: "cat2", name: "BBQ Ribs", nameEs: "Costillas BBQ", price: 2199 },
-    { id: "i8", categoryId: "cat3", name: "Lemonade", nameEs: "Limonada", price: 349 },
-    { id: "i9", categoryId: "cat3", name: "Iced Tea", nameEs: "Té Helado", price: 299 },
-    { id: "i10", categoryId: "cat3", name: "Craft Beer", nameEs: "Cerveza Artesanal", price: 699 },
-    { id: "i11", categoryId: "cat3", name: "Margarita", nameEs: "Margarita", price: 999 },
-    { id: "i12", categoryId: "cat4", name: "Cheesecake", nameEs: "Pastel de Queso", price: 799 },
-    { id: "i13", categoryId: "cat4", name: "Brownie with Ice Cream", nameEs: "Brownie con Helado", price: 849 },
+    { id: "i1", categoryId: "cat1", name: "Chips & Salsa", nameEs: "Totopos con Salsa", price: 599, emoji: "🌮" },
+    { id: "i2", categoryId: "cat1", name: "Sopa del Día", nameEs: "Sopa del Día", price: 699, emoji: "🍲" },
+    { id: "i3", categoryId: "cat1", name: "Alitas de Pollo", nameEs: "Alitas de Pollo", price: 1099, emoji: "🍗" },
+    { id: "i4", categoryId: "cat2", name: "Hamburguesa", nameEs: "Hamburguesa", price: 1299, emoji: "🍔" },
+    { id: "i5", categoryId: "cat2", name: "Grilled Salmon", nameEs: "Salmón a la Parrilla", price: 1899, emoji: "🐟" },
+    { id: "i6", categoryId: "cat2", name: "Pasta Primavera", nameEs: "Pasta Primavera", price: 1499, emoji: "🍝" },
+    { id: "i7", categoryId: "cat2", name: "BBQ Ribs", nameEs: "Costillas BBQ", price: 2199, emoji: "🥩" },
+    { id: "i8", categoryId: "cat3", name: "Lemonade", nameEs: "Limonada", price: 349, emoji: "🍋" },
+    { id: "i9", categoryId: "cat3", name: "Iced Tea", nameEs: "Té Helado", price: 299, emoji: "🧋" },
+    { id: "i10", categoryId: "cat3", name: "Craft Beer", nameEs: "Cerveza Artesanal", price: 699, emoji: "🍺" },
+    { id: "i11", categoryId: "cat3", name: "Margarita", nameEs: "Margarita", price: 999, emoji: "🍹" },
+    { id: "i12", categoryId: "cat4", name: "Cheesecake", nameEs: "Pastel de Queso", price: 799, emoji: "🍰" },
+    { id: "i13", categoryId: "cat4", name: "Brownie with Ice Cream", nameEs: "Brownie con Helado", price: 849, emoji: "🍫" },
   ],
 };
 
@@ -1007,7 +1008,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
       <div style={S.modalBox} onClick={e => e.stopPropagation()}>
         <div style={S.modalHeader}>
           <div>
-            <div style={S.modalTitle}>{displayName}</div>
+            <div style={S.modalTitle}>{item.emoji} {displayName}</div>
             <div style={S.modalSubtitle}>{swapMode ? t.replaceInOrder : t.customizeItem}</div>
           </div>
           <button style={S.modalCloseBtn} onClick={onClose}>✕</button>
@@ -1042,7 +1043,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
                       const isSelected = selected.has(mod.id);
                       return (
                         <button key={mod.id} style={{ ...S.modOption, ...(isSelected ? S.modOptionSelected : {}) }} onClick={() => toggle(group, mod.id)}>
-                          <span style={S.modOptionIndicator}>{isSingle ? (isSelected ? "●" : "○") : (isSelected ? "✓" : "☐")}</span>
+                          <span style={S.modOptionIndicator}>{isSingle ? (isSelected ? "●" : "○") : (isSelected ? "☑" : "☐")}</span>
                           <span style={S.modOptionName}>{mod.name}</span>
                           <span style={S.modOptionPrice}>{mod.price > 0 ? `+${fmt(mod.price)}` : t.free}</span>
                         </button>
@@ -1054,7 +1055,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
             })
           )}
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#1A1A1A", marginBottom: 6 }}>Nota especial</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#1A1A1A", marginBottom: 6 }}>✏️ Nota especial</div>
             <textarea
               style={{ width: "100%", background: "#F5F3F0", border: "2px solid #E5E0D8", borderRadius: 10, color: "#333", fontSize: 14, padding: "10px 12px", resize: "none", outline: "none", boxSizing: "border-box", fontFamily: "inherit", transition: "border-color 0.15s" }}
               onFocus={e => e.target.style.borderColor = "#BE202E"}
@@ -1069,7 +1070,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
         {!loading && (
           <div style={S.modalFooter}>
             {!canConfirm && (
-              <div style={S.modalValidationMsg}>{t.selectRequired}: {missingGroups.map(g => g.name).join(", ")}</div>
+              <div style={S.modalValidationMsg}>⚠️ {t.selectRequired}: {missingGroups.map(g => g.name).join(", ")}</div>
             )}
             <div style={S.modalFooterRow}>
               <div style={S.modalPriceBreakdown}>
@@ -2028,10 +2029,10 @@ function ActiveOrdersModal({ title, orders, lang, onEditOrder, onClose }) {
             <div key={order.firestoreId} style={S.activeOrderRow}>
               <button style={S.activeOrderMain} onClick={() => onEditOrder(order)}>
                 <span style={order.isToGo ? S.toGoChipSmall : order.isBar ? { ...S.toGoChipSmall, background: BAR_BG, color: BAR_COLOR } : order.isPatio ? { ...S.toGoChipSmall, background: PATIO_BG, color: PATIO_COLOR } : S.tableChipSmall}>
-                  {order.isToGo ? order.toGoName : order.isBar ? order.table : order.isPatio ? order.table : `${t.table2} ${order.table}`}
+                  {order.isToGo ? `🥡 ${order.toGoName}` : order.isBar ? `🍺 ${order.table}` : order.isPatio ? `🌿 ${order.table}` : `${t.table2} ${order.table}`}
                 </span>
-                <span style={S.activeOrderItems}>{order.items.map(i => `${i.qty}× ${i.name}`).join(", ")}</span>
-                <span style={S.activeOrderEdit}>{t.editOrder}</span>
+                <span style={S.activeOrderItems}>{order.items.map(i => `${i.emoji ? i.emoji + " " : ""}${i.qty}× ${i.name}`).join(", ")}</span>
+                <span style={S.activeOrderEdit}>✏️ {t.editOrder}</span>
               </button>
               <button
                 style={S.activeOrderComplete}
@@ -2167,7 +2168,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
       )}
       {detailBarSeat && (
         <ActiveOrdersModal
-          title={`Barra ${detailBarSeat} — ${lang === "es" ? "Órdenes de la Barra" : "Bar Orders"}`}
+          title={`🍺 Barra ${detailBarSeat} — ${lang === "es" ? "Órdenes de la Barra" : "Bar Orders"}`}
           orders={activeByBarSeat[detailBarSeat] || []}
           lang={lang}
           onEditOrder={(order) => { setDetailBarSeat(null); onEditOrder(order); }}
@@ -2176,7 +2177,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
       )}
       {detailPatio && (
         <ActiveOrdersModal
-          title={`Patio ${detailPatio} — ${lang === "es" ? "Órdenes del Patio" : "Patio Orders"}`}
+          title={`🌿 Patio ${detailPatio} — ${lang === "es" ? "Órdenes del Patio" : "Patio Orders"}`}
           orders={activeByPatio[detailPatio] || []}
           lang={lang}
           onEditOrder={(order) => { setDetailPatio(null); onEditOrder(order); }}
@@ -2185,7 +2186,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
       )}
       {detailToGo && (
         <ActiveOrdersModal
-          title={`${t.toGoLabel} ${detailToGo}`}
+          title={`🥡 ${t.toGoLabel} ${detailToGo}`}
           orders={activeByToGoSlot[detailToGo] || []}
           lang={lang}
           onEditOrder={(order) => { setDetailToGo(null); onEditOrder(order); }}
@@ -2193,37 +2194,37 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
         />
       )}
       <div style={S.tableSelectHeader}>
-        <span style={S.tableSelectTitle}>Dona Paty's</span>
+        <span style={S.tableSelectTitle}>🍽️ Dona Paty's</span>
         <span style={S.tableSelectSub}>Selecciona una mesa para ordenar</span>
       </div>
 
-      <div style={{ ...S.sectionLabel, color: BAR_COLOR }}>Barra</div>
+      <div style={{ ...S.sectionLabel, color: BAR_COLOR }}>🍺 Barra</div>
       <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
         {BAR_SEATS.map(num => renderFloorTile(num, activeByBarSeat, {
-          onSelect: onSelectBar, onDetail: setDetailBarSeat, closeLabel: "Cerrar Asiento", freeStyle: S.tableCardFreeBar,
+          onSelect: onSelectBar, onDetail: setDetailBarSeat, closeLabel: "✓ Cerrar Asiento", freeStyle: S.tableCardFreeBar,
         }))}
       </div>
 
-      <div style={S.sectionLabel}>Mesas</div>
+      <div style={S.sectionLabel}>🍽️ Mesas</div>
       <div style={S.tableGrid}>
         {TABLES.map(num => renderFloorTile(num, activeByTable, {
-          onSelect: onSelectTable, onDetail: setDetailTable, closeLabel: "Cerrar Mesa",
+          onSelect: onSelectTable, onDetail: setDetailTable, closeLabel: "✓ Cerrar Mesa",
         }))}
       </div>
 
-      <div style={{ ...S.sectionLabel, color: PATIO_COLOR }}>Patio</div>
+      <div style={{ ...S.sectionLabel, color: PATIO_COLOR }}>🌿 Patio</div>
       <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
         {PATIO_TABLES.map(num => renderFloorTile(num, activeByPatio, {
-          onSelect: onSelectPatio, onDetail: setDetailPatio, closeLabel: "Cerrar Mesa", freeStyle: S.tableCardFreePatio,
+          onSelect: onSelectPatio, onDetail: setDetailPatio, closeLabel: "✓ Cerrar Mesa", freeStyle: S.tableCardFreePatio,
         }))}
       </div>
 
       <div style={S.floorDivider} />
 
-      <div style={{ ...S.sectionLabel, color: TOGO_COLOR }}>Para Llevar</div>
+      <div style={{ ...S.sectionLabel, color: TOGO_COLOR }}>🥡 Para Llevar</div>
       <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
         {TOGO_SLOTS.map(num => renderFloorTile(num, activeByToGoSlot, {
-          onSelect: onSelectToGo, onDetail: setDetailToGo, closeLabel: "Cerrar", freeStyle: S.tableCardFreeToGo,
+          onSelect: onSelectToGo, onDetail: setDetailToGo, closeLabel: "✓ Cerrar", freeStyle: S.tableCardFreeToGo,
           getSubtitle: (order) => order.toGoName,
         }))}
       </div>
@@ -2243,6 +2244,30 @@ const DRINK_CAT_KEYWORDS = [
 function isDrinkCategory(cat) {
   const name = (cat.name.en || cat.name.es || "").toLowerCase();
   return DRINK_CAT_KEYWORDS.some(k => name.includes(k));
+}
+
+function getCategoryEmoji(cat) {
+  const name = (cat.name.en || cat.name.es || "").toLowerCase();
+  if (name.includes("cocktail") || name.includes("coctel") || name.includes("cóctel")) return "🍹";
+  if (name.includes("beer") || name.includes("cerveza")) return "🍺";
+  if (name.includes("wine") || name.includes("vino")) return "🍷";
+  if (name.includes("liquor") || name.includes("licor")) return "🥃";
+  if (name.includes("beverage") || name.includes("bebida") || name.includes("drink")) return "🥤";
+  if (name.includes("agua") || name.includes("water")) return "💧";
+  if (name.includes("juice") || name.includes("jugo")) return "🧃";
+  if (name.includes("soda")) return "🥤";
+  if (name.includes("appetizer") || name.includes("starter") || name.includes("entrada")) return "🥗";
+  if (name.includes("soup") || name.includes("sopa")) return "🍲";
+  if (name.includes("taco")) return "🌮";
+  if (name.includes("burrito")) return "🌯";
+  if (name.includes("fajita")) return "🥘";
+  if (name.includes("dessert") || name.includes("postre")) return "🍰";
+  if (name.includes("breakfast") || name.includes("desayuno")) return "🍳";
+  if (name.includes("side") || name.includes("extra")) return "🥙";
+  if (name.includes("kid")) return "👧";
+  if (name.includes("festival")) return "🎉";
+  if (name.includes("main") || name.includes("dinner") || name.includes("plato")) return "🍽️";
+  return "🍴";
 }
 
 // Distinguishes cart lines by item + seat + exact modifier set + note, so the
@@ -2503,29 +2528,29 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
             <button style={S.backBtn} onClick={onBack}>← Mesas</button>
           )}
           {initialOrderType === "bar" ? (
-            <span style={{ ...S.waiterTableBig, color: BAR_COLOR }}>Barra{initialTable ? ` ${initialTable}` : ""}</span>
+            <span style={{ ...S.waiterTableBig, color: BAR_COLOR }}>🍺 Barra{initialTable ? ` ${initialTable}` : ""}</span>
           ) : initialOrderType === "patio" ? (
-            <span style={{ ...S.waiterTableBig, color: PATIO_COLOR }}>Patio{initialTable ? ` ${initialTable}` : ""}</span>
+            <span style={{ ...S.waiterTableBig, color: PATIO_COLOR }}>🌿 Patio{initialTable ? ` ${initialTable}` : ""}</span>
           ) : initialOrderType === "togo" ? (
-            <span style={{ ...S.waiterTableBig, color: TOGO_COLOR }}>Para Llevar{initialTable ? ` ${initialTable}` : ""}</span>
+            <span style={{ ...S.waiterTableBig, color: TOGO_COLOR }}>🥡 Para Llevar{initialTable ? ` ${initialTable}` : ""}</span>
           ) : initialTable ? (
-            <span style={S.waiterTableBig}>Mesa {initialTable}</span>
+            <span style={S.waiterTableBig}>🪑 Mesa {initialTable}</span>
           ) : (
-            <span style={S.waiterLogo}>{t.orderStation}</span>
+            <span style={S.waiterLogo}>🍽️ {t.orderStation}</span>
           )}
-          {isEditing && <span style={S.editingBadge}>{t.editOrder}</span>}
+          {isEditing && <span style={S.editingBadge}>✏️ {t.editOrder}</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {!initialTable && !initialOrderType && (
             <div style={S.orderTypeToggle}>
-              <button style={{ ...S.typeBtn, ...(orderType === "table" ? S.typeBtnActive : {}) }} onClick={() => setOrderType("table")}>{t.table}</button>
-              <button style={{ ...S.typeBtn, ...(orderType === "bar" ? { background: BAR_COLOR, color: "#fff" } : {}) }} onClick={() => { setOrderType("bar"); setActiveSeat(null); }}>{t.bar}</button>
-              <button style={{ ...S.typeBtn, ...(orderType === "togo" ? S.typeBtnToGo : {}) }} onClick={() => { setOrderType("togo"); setActiveSeat(null); }}>{t.toGo}</button>
+              <button style={{ ...S.typeBtn, ...(orderType === "table" ? S.typeBtnActive : {}) }} onClick={() => setOrderType("table")}>🪑 {t.table}</button>
+              <button style={{ ...S.typeBtn, ...(orderType === "bar" ? { background: BAR_COLOR, color: "#fff" } : {}) }} onClick={() => { setOrderType("bar"); setActiveSeat(null); }}>🍺 {t.bar}</button>
+              <button style={{ ...S.typeBtn, ...(orderType === "togo" ? S.typeBtnToGo : {}) }} onClick={() => { setOrderType("togo"); setActiveSeat(null); }}>🥡 {t.toGo}</button>
             </div>
           )}
           {initialOrderType === "togo" && (
             <div style={{ ...S.tableInput, ...S.tableInputToGo }}>
-              <span style={{ ...S.tableLabel, color: "#0369A1" }}>{t.toGo}</span>
+              <span style={{ ...S.tableLabel, color: "#0369A1" }}>🥡</span>
               <input
                 style={{ ...S.tableField, width: 130 }}
                 value={toGoName}
@@ -2537,7 +2562,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           )}
           {initialOrderType === "bar" && !initialTable && (
             <div style={{ ...S.tableInput, background: BAR_BG, borderColor: "#DDD6FE" }}>
-              <span style={{ ...S.tableLabel, color: BAR_COLOR }}>{t.bar}</span>
+              <span style={{ ...S.tableLabel, color: BAR_COLOR }}>🍺</span>
               <input
                 style={{ ...S.tableField, width: 90 }}
                 value={barSeat}
@@ -2549,7 +2574,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           )}
           {!initialTable && !initialOrderType && (
             <div style={{ ...S.tableInput, ...(orderType === "togo" ? S.tableInputToGo : {}), ...(orderType === "bar" ? { background: BAR_BG, borderColor: "#DDD6FE" } : {}) }}>
-              <span style={{ ...S.tableLabel, ...(orderType === "togo" ? { color: "#0369A1" } : {}), ...(orderType === "bar" ? { color: BAR_COLOR } : {}) }}>{orderType === "togo" ? t.toGo : orderType === "bar" ? t.bar : t.table}</span>
+              <span style={{ ...S.tableLabel, ...(orderType === "togo" ? { color: "#0369A1" } : {}), ...(orderType === "bar" ? { color: BAR_COLOR } : {}) }}>{orderType === "togo" ? "🥡" : orderType === "bar" ? "🍺" : t.table}</span>
               <input
                 style={{ ...S.tableField, width: orderType === "togo" ? 130 : orderType === "bar" ? 90 : 48 }}
                 value={orderType === "togo" ? toGoName : orderType === "bar" ? barSeat : tableNum}
@@ -2575,13 +2600,13 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               style={{ ...S.tabBtn, ...(activeTab === "drinks" ? S.tabBtnActive : {}) }}
               onClick={() => { setActiveTab("drinks"); setActiveCategory(null); }}
             >
-              {t.tabDrinks}
+              🥤 {t.tabDrinks}
             </button>
             <button
               style={{ ...S.tabBtn, ...(activeTab === "food" ? S.tabBtnActive : {}) }}
               onClick={() => { setActiveTab("food"); setActiveCategory(null); }}
             >
-              {t.tabFood}
+              🍽️ {t.tabFood}
             </button>
           </div>
           <div style={S.catArea}>
@@ -2589,6 +2614,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               <div style={S.categoryGrid}>
                 {tabCategories.map(cat => (
                   <button key={cat.id} style={S.catTile} onClick={() => setActiveCategory(cat.id)}>
+                    <span style={S.catTileEmoji}>{getCategoryEmoji(cat)}</span>
                     <span style={S.catTileName}>{cat.name[lang] || cat.name.en}</span>
                   </button>
                 ))}
@@ -2609,6 +2635,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                     const displayName = getItemDisplayName(item);
                     return (
                       <button key={item.id} style={{ ...S.menuItem, ...(inCartQty > 0 ? S.menuItemActive : {}) }} onClick={() => handleItemTap(item)}>
+                        <span style={S.menuEmoji}>{item.emoji}</span>
                         <span style={S.menuName}>{displayName}</span>
                         <span style={S.menuPrice}>{fmt(item.price)}</span>
                         {inCartQty > 0 && <span style={S.menuBadge}>×{inCartQty}</span>}
@@ -2637,7 +2664,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
           )}
           <div style={{ ...S.cartScrollArea, paddingBottom: footerHeight + 14 }}>
             {cart.filter(i => i.qty > 0).length === 0 && isEditing ? (
-              <div style={S.cartCancelWarning}>All items removed — this will cancel the order</div>
+              <div style={S.cartCancelWarning}>🚫 All items removed — this will cancel the order</div>
             ) : cart.length === 0 ? (
               <div style={S.cartEmpty}>{t.tapToAdd}</div>
             ) : (
@@ -2664,7 +2691,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                           style={{ flex: 1, cursor: item.qty > 0 ? "pointer" : "default" }}
                           onClick={() => { if (item.qty > 0) setSwapTargetKey(isSwapTarget ? null : lineKey); }}
                         >
-                          <span style={S.cartName}>{item.displayName || item.name} {item.qty > 0 && <span style={S.cartSwapHint}>✎</span>}</span>
+                          <span style={S.cartName}>{item.emoji} {item.displayName || item.name} {item.qty > 0 && <span style={S.cartSwapHint}>✎</span>}</span>
                           {item.modifiers && item.modifiers.length > 0 && (
                             <div style={S.cartModifiers}>
                               {item.modifiers.map((mod, mi) => {
@@ -2707,12 +2734,12 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               <span style={S.cartTotal}>{fmt(cartTotal)}</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {isEditing && <button style={S.cancelBtn} onClick={cancelEdit}>{t.cancelEdit}</button>}
-                {isEditing && <button style={S.cancelOrderBtn} onClick={() => setCart(cart.map(i => ({ ...i, qty: 0 })))}>Cancel Order</button>}
+                {isEditing && <button style={S.cancelOrderBtn} onClick={() => setCart(cart.map(i => ({ ...i, qty: 0 })))}>🚫 Cancel Order</button>}
                 <button
                   style={{ ...S.sendBtn, ...(isCancellingOrder ? S.sendBtnCancel : isEditing ? S.sendBtnEdit : {}), ...(sent ? S.sendBtnSent : {}), ...(!canSend ? S.sendBtnDisabled : {}) }}
                   onClick={handleSend} disabled={sending || !canSend}
                 >
-                  {sent ? (isEditing ? t.updated : t.sent) : sending ? t.sending : isCancellingOrder ? "Confirm Cancel" : isEditing ? t.updateOrder : t.sendToKitchen}
+                  {sent ? (isEditing ? t.updated : t.sent) : sending ? t.sending : isCancellingOrder ? "🚫 Confirm Cancel" : isEditing ? t.updateOrder : t.sendToKitchen}
                 </button>
               </div>
             </div>
@@ -2943,14 +2970,14 @@ export default function App() {
       {pinOpen && <PinModal onSuccess={() => { setPinOpen(false); setView("history"); }} onClose={() => setPinOpen(false)} />}
       <div style={S.nav}>
         <div style={S.navLeft}>
-          <button style={{ ...S.navBtn, ...((view === "tables" || view === "waiter") ? S.navBtnActive : {}) }} onClick={() => { setOrderContext(null); setView("tables"); }}>{t.orderStation}</button>
+          <button style={{ ...S.navBtn, ...((view === "tables" || view === "waiter") ? S.navBtnActive : {}) }} onClick={() => { setOrderContext(null); setView("tables"); }}>🍽️ {t.orderStation}</button>
           <button style={{ ...S.navBtn, ...(view === "kitchen" ? S.navBtnActive : {}) }} onClick={() => setView("kitchen")}>
-            {t.kitchenDisplay}
+            👨‍🍳 {t.kitchenDisplay}
             {activeOrders > 0 && <span style={S.navBadge}>{activeOrders}</span>}
           </button>
-          <button style={{ ...S.navBtn, ...(view === "drinks" ? S.navBtnActive : {}), ...(view === "drinks" ? { color: "#7C3AED", borderBottom: "3px solid #7C3AED" } : {}) }} onClick={() => setView("drinks")}>Bebidas/Sides</button>
+          <button style={{ ...S.navBtn, ...(view === "drinks" ? S.navBtnActive : {}), ...(view === "drinks" ? { color: "#7C3AED", borderBottom: "3px solid #7C3AED" } : {}) }} onClick={() => setView("drinks")}>🥤 Bebidas/Sides</button>
           <button style={{ ...S.navBtn, ...(view === "expo" ? S.navBtnActive : {}), ...(view === "expo" ? { color: "#15803D", borderBottom: "3px solid #15803D" } : {}) }} onClick={() => setView("expo")}>
-            {t.expoDisplay}
+            🎯 {t.expoDisplay}
             {readyCount > 0 && (
               <span className="expo-badge-pulse" style={{ ...S.navBadge, background: "#15803D" }}>
                 {readyCount}
@@ -2959,15 +2986,15 @@ export default function App() {
           </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {translating && <span style={S.translatingPill}>{t.translating}</span>}
+          {translating && <span style={S.translatingPill}>🌐 {t.translating}</span>}
           <button
             style={{ ...S.langBtn, ...(view === "history" ? { background: "#BE202E", color: "#fff", border: "1px solid #BE202E" } : {}) }}
             onClick={() => view === "history" ? setView("tables") : setPinOpen(true)}
             title="Historial (restringido)"
           >
-            Historial
+            🔒
           </button>
-          <button style={S.langBtn} onClick={() => setLang(l => l === "es" ? "en" : "es")}>{lang === "es" ? "EN" : "ES"}</button>
+          <button style={S.langBtn} onClick={() => setLang(l => l === "es" ? "en" : "es")}>{lang === "es" ? "🇺🇸 EN" : "🇲🇽 ES"}</button>
         </div>
       </div>
       {view === "tables" && (
@@ -3194,10 +3221,12 @@ const S = {
   catArea: { flex: 1, overflowY: "auto", padding: "16px" },
   categoryGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
   catTile: { background: "#FFFFFF", border: "2px solid #E5E0D8", borderRadius: 16, padding: "28px 16px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, minHeight: 150, transition: "border-color 0.15s, box-shadow 0.15s" },
+  catTileEmoji: { fontSize: 44 },
   catTileName: { fontSize: 17, fontWeight: 700, textAlign: "center", color: "#1A1A1A", lineHeight: 1.3 },
   backToCats: { display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#BE202E", fontWeight: 800, fontSize: 18, cursor: "pointer", padding: "12px 0 14px 0", letterSpacing: "0.02em" },
   menuGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 },
   menuItem: { background: "#FFFFFF", border: "2px solid #E5E0D8", borderRadius: 14, padding: "18px 12px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 7, position: "relative", transition: "border-color 0.15s, box-shadow 0.15s", minHeight: 140 },
+  menuEmoji: { fontSize: 46 },
   menuItemActive: { background: "#FFF1F2", border: "2px solid #BE202E", boxShadow: "0 0 0 2px rgba(190,32,46,0.12)" },
   menuName: { fontSize: 20, fontWeight: 600, textAlign: "center", color: "#333", lineHeight: 1.3 },
   menuPrice: { fontSize: 21, color: "#BE202E", fontWeight: 700 },
