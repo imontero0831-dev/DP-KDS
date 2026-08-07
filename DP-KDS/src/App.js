@@ -404,8 +404,8 @@ const CLOVER_ORDER_TYPES = {
 
 function buildCloverOrderNote(order) {
   if (order.isToGo) return `PARA LLEVAR - ${order.toGoName}${order.note ? " | " + order.note : ""}`;
-  if (order.isBar) return `BARRA ${order.table}${order.note ? " | " + order.note : ""}`;
-  if (order.isPatio) return `PATIO ${order.table}${order.note ? " | " + order.note : ""}`;
+  if (order.isBar) return `B${order.table}${order.note ? " | " + order.note : ""}`;
+  if (order.isPatio) return `P${order.table}${order.note ? " | " + order.note : ""}`;
   return `MESA ${order.table}${order.note ? " | " + order.note : ""}`;
 }
 
@@ -464,6 +464,30 @@ async function updateOrderInClover(order) {
     console.warn("Clover order delete failed during edit sync:", err.message);
   }
   return (await sendOrderToClover(order)) || null;
+}
+
+// Confirmed against real orders in the live account: a Clover order that
+// was actually charged on the register comes back state:"locked" with a
+// payments.elements entry whose result is "SUCCESS". Orders paid in cash
+// (or rung up separately at the register, disconnected from this specific
+// Clover order) stay state:"open" with no payments at all — this check
+// correctly returns false for those, by design, not by bug. Callers must
+// NOT treat "false" as "not paid yet, keep waiting" for such orders; it
+// just means this signal doesn't apply and a human needs to close it.
+async function isOrderPaidOnClover(cloverOrderId, total) {
+  if (!cloverOrderId) return false;
+  try {
+    const data = await cloverRequest(`orders/${cloverOrderId}?expand=payments`);
+    if (data.state !== "locked") return false;
+    const payments = data.payments?.elements || [];
+    const paidAmount = payments
+      .filter(p => p.result === "SUCCESS")
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+    return paidAmount >= total;
+  } catch (err) {
+    console.warn("Clover payment check failed:", err.message);
+    return false;
+  }
 }
 
 // ============================================================
@@ -532,7 +556,7 @@ async function pushOrderToKitchen(order) {
 async function editKitchenOrder(orderId, oldItems, newItems, newNote) {
   const diff = diffItems(oldItems, newItems);
   const orderRef = doc(db, "orders", orderId);
-  await updateDoc(orderRef, {
+  const updates = {
     items: newItems,
     note: newNote,
     total: newItems.reduce((s, i) => s + i.price * i.qty, 0),
@@ -540,7 +564,16 @@ async function editKitchenOrder(orderId, oldItems, newItems, newNote) {
     lastModified: Date.now(),
     latestDiff: diff,
     editHistory: [],
-  });
+  };
+  // If items were added/increased, the kitchen/drinks station hasn't cooked
+  // them yet — reset both ready flags so the ticket reappears on the active
+  // screen instead of staying invisible if it had already been marked done
+  // (e.g. a second round sent after the first round finished cooking).
+  if (diff.some(i => i.changeType === "added" || i.changeType === "increased")) {
+    updates.kitchenReady = false;
+    updates.drinksReady = false;
+  }
+  await updateDoc(orderRef, updates);
 }
 
 async function cancelKitchenOrder(orderId) {
@@ -627,18 +660,29 @@ async function markDelivered(order) {
   await updateDoc(ref, { delivered: true, deliveredAt: Date.now(), kitchenReady: true, drinksReady: true });
 }
 
+// Guards against a burst of rapid-fire calls for the same order (numpad key
+// bounce, or a cook mashing Enter when a ticket doesn't disappear instantly)
+// racing each other: without this, multiple calls can all read the doc
+// before the first delete lands, each archiving its own duplicate copy.
+const bumpingIds = new Set();
 async function bumpOrder(order) {
-  const ref = doc(db, "orders", order.firestoreId);
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    const data = snap.data();
-    const completedAt = Date.now();
-    await addDoc(collection(db, "completedOrders"), {
-      ...data,
-      completedAt,
-      duration: completedAt - (data.startedAt || order.timestamp),
-    });
-    await deleteDoc(ref);
+  if (bumpingIds.has(order.firestoreId)) return;
+  bumpingIds.add(order.firestoreId);
+  try {
+    const ref = doc(db, "orders", order.firestoreId);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const data = snap.data();
+      const completedAt = Date.now();
+      await addDoc(collection(db, "completedOrders"), {
+        ...data,
+        completedAt,
+        duration: completedAt - (data.startedAt || order.timestamp),
+      });
+      await deleteDoc(ref);
+    }
+  } finally {
+    bumpingIds.delete(order.firestoreId);
   }
 }
 
@@ -1290,8 +1334,12 @@ function KitchenScreen({ lang, menu }) {
   const [orders, setOrders] = useState([]);
   const [focusedIndex, setFocusedIndex] = useState(0); // which ticket is keyboard-focused
   const [actionFlash, setActionFlash] = useState(null); // brief visual feedback on keypress
-  const MAX_VISIBLE = 3;
+  const MAX_VISIBLE = 4; // tuned for the 24" Dell monitor on KDS1 — raise/lower after seeing it in person
   const lastCompleted = useLastCompletedOrder();
+  // Most recent order Enter soft-completed (kitchenReady, not archived) —
+  // lets 0 undo it directly instead of falling through to lastCompleted,
+  // which won't have anything relevant since Enter no longer archives.
+  const lastMarkedReadyRef = useRef(null);
 
   const catNameById = {};
   if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name[lang] || c.name.en || ""; });
@@ -1338,15 +1386,21 @@ function KitchenScreen({ lang, menu }) {
   // identical to pressing keys on a laptop keyboard.
   //
   // NUMPAD MAPPING (what the cook presses) — deliberately just two keys:
-  //   Enter → delete the focused/active order. This calls bumpOrder, the
-  //           same full archive the waitress's "Completar" button uses, so
-  //           the order disappears everywhere (Kitchen/Drinks/Expo) in one
-  //           press, not just off the Kitchen screen.
-  //   0     → undo the last delete, and can be pressed again to keep
-  //           undoing further back. This works because `lastCompleted` is a
-  //           live query for the single most recent completedOrders doc —
-  //           undoing one moves it back into `orders`, so the query
-  //           immediately re-points at the next most recent one.
+  //   Enter → soft-complete the focused order. Calls markKitchenReady, the
+  //           same per-station handoff the touchscreen "Marcar Listo" button
+  //           uses: clears the ticket off THIS screen but leaves the order
+  //           live (still linked to its table/Clover order) for Expo/the
+  //           waitress. It does NOT archive/delete — that only happens when
+  //           the waitress closes the table (Cerrar Mesa) at checkout, or
+  //           the order is bumped from Expo. Previously this called
+  //           bumpOrder (full archive) directly, which severed the table's
+  //           active-order record — if the waitress sent another round for
+  //           the same table before the guest paid, findActiveOrderForIdentifier
+  //           found nothing to merge into and created a second, disconnected
+  //           order (and a second Clover ticket) for a table that was still open.
+  //   0     → undo the last Enter (soft-complete) if one hasn't been
+  //           superseded yet; otherwise falls back to undoing the last fully
+  //           archived order, repeatable to keep going back.
   //
   const handleKeyDown = useCallback((e) => {
     // Don't steal keys when user is typing in an input/textarea
@@ -1360,19 +1414,25 @@ function KitchenScreen({ lang, menu }) {
     if (/^Numpad[0-9]$/.test(e.code)) key = e.code.slice(6);
 
     switch (key) {
-      // ── ENTER: delete the focused order (fully archives it) ────────
+      // ── ENTER: soft-complete the focused order (cache it, don't delete) ──
       case "Enter": {
         e.preventDefault();
         if (!order || order.cancelled) return;
-        bumpOrder(order);
-        flash("Orden Eliminada", "#BE202E");
+        markKitchenReady(order);
+        lastMarkedReadyRef.current = order;
+        flash("Cocina Lista", "#15803D");
         break;
       }
 
-      // ── 0: undo the last delete (repeatable — keeps going back) ────
+      // ── 0: undo the last Enter, or the last full archive if none pending ──
       case "0": {
         e.preventDefault();
-        if (lastCompleted) {
+        if (lastMarkedReadyRef.current) {
+          const ref = doc(db, "orders", lastMarkedReadyRef.current.firestoreId);
+          updateDoc(ref, { kitchenReady: false, allReady: false, allReadyAt: null });
+          lastMarkedReadyRef.current = null;
+          flash("Orden Restaurada", "#7C3AED");
+        } else if (lastCompleted) {
           undoCompletedOrder(lastCompleted);
           flash("Orden Restaurada", "#7C3AED");
         }
@@ -1419,7 +1479,7 @@ function KitchenScreen({ lang, menu }) {
           instruction for KDS 1's two-key numpad, independent of the app-wide
           EN/ES toggle. */}
       <div style={S.shortcutBar}>
-        <span style={S.shortcutItem}><kbd style={S.kbd}>ENTER</kbd> Eliminar orden activa</span>
+        <span style={S.shortcutItem}><kbd style={S.kbd}>ENTER</kbd> Marcar lista (cocina)</span>
         <span style={S.shortcutItem}><kbd style={S.kbd}>0</kbd> Atrás (deshacer)</span>
       </div>
 
@@ -2102,6 +2162,57 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
       setOrders(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
     });
     return unsub;
+  }, []);
+
+  // ── AUTO-CLOSE ON CONFIRMED CLOVER PAYMENT ────────────────────
+  // Every 45s, checks each active table/bar-seat/patio/to-go group's
+  // Clover order for a real completed payment (isOrderPaidOnClover) and,
+  // if found, closes that group exactly like the waitress's own Cerrar
+  // Mesa tap. Deliberately does nothing for groups with no confirmed
+  // Clover payment — cash, or anything rung up separately at the
+  // register, never shows a payment on this order — those still need the
+  // manual tap, same as before this existed.
+  //
+  // Reads live orders via a ref (not the `orders` state directly) so the
+  // interval isn't torn down and rebuilt on every Firestore update, which
+  // would otherwise keep resetting the 45s timer during a busy shift.
+  const ordersRef = useRef(orders);
+  useEffect(() => { ordersRef.current = orders; }, [orders]);
+  const autoClosingKeysRef = useRef(new Set());
+  useEffect(() => {
+    async function checkPayments() {
+      const live = ordersRef.current;
+      const groups = {};
+      function addTo(gk, o) {
+        if (!groups[gk]) groups[gk] = [];
+        groups[gk].push(o);
+      }
+      live.filter(o => o.status !== "done" && !o.isToGo && !o.isBar && !o.isPatio).forEach(o => addTo(`table:${o.table}`, o));
+      live.filter(o => o.status !== "done" && o.isBar).forEach(o => addTo(`bar:${o.table}`, o));
+      live.filter(o => o.status !== "done" && o.isPatio).forEach(o => addTo(`patio:${o.table}`, o));
+      live.filter(o => o.status !== "done" && o.isToGo).forEach(o => addTo(`togo:${o.toGoSlot}`, o));
+
+      for (const [key, groupOrders] of Object.entries(groups)) {
+        if (autoClosingKeysRef.current.has(key)) continue;
+        // Don't auto-close on a pre-paid or early-closed tab while the
+        // kitchen/drinks stations still have work outstanding — allReady
+        // only flips true once both stations have confirmed done, so this
+        // guards against yanking a ticket off-screen before the food is
+        // actually made, even if the card was already charged.
+        if (!groupOrders.every(o => o.allReady)) continue;
+        let paid = false;
+        for (const o of groupOrders) {
+          if (o.cloverOrderId && await isOrderPaidOnClover(o.cloverOrderId, o.total)) { paid = true; break; }
+        }
+        if (paid) {
+          autoClosingKeysRef.current.add(key);
+          await closeTable(groupOrders);
+          autoClosingKeysRef.current.delete(key);
+        }
+      }
+    }
+    const interval = setInterval(checkPayments, 45000);
+    return () => clearInterval(interval);
   }, []);
 
   const activeByTable = {};
