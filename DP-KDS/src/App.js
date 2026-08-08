@@ -1042,6 +1042,49 @@ function buildTicketCards(items) {
   return cards;
 }
 
+// Total weighted units for a whole order (same per-item/per-seat-header
+// cost as buildTicketCards, just not chunked into cards).
+function orderUnitTotal(items) {
+  const seatsSeen = new Set();
+  let units = 0;
+  items.forEach(item => {
+    const seat = item.seat ?? null;
+    units += 1 + (item.modifiers?.length || 0) + (seatsSeen.has(seat) ? 0 : 1);
+    seatsSeen.add(seat);
+  });
+  return units;
+}
+
+// A long order used to spill onto extra "Cont." cards at full size, which
+// could eat most of the Kitchen screen's MAX_VISIBLE slots for one order
+// and crowd out everyone else's tickets. Up to UNITS_SINGLE_CARD_CEILING,
+// pack everything onto one card instead and shrink the text to fit --
+// only orders bigger than that still spill to a second card, so text never
+// shrinks past MIN_TICKET_SCALE (see the 8/8 overflow-bug history above
+// buildTicketCards for why unbounded shrinking is dangerous).
+const UNITS_SINGLE_CARD_CEILING = 10;
+const MIN_TICKET_SCALE = 0.55;
+function packOrderCards(items) {
+  const total = orderUnitTotal(items);
+  if (total <= UNITS_SINGLE_CARD_CEILING) {
+    const scale = total <= UNITS_PER_CARD ? 1 : Math.max(MIN_TICKET_SCALE, UNITS_PER_CARD / total);
+    return { cards: [items], scale };
+  }
+  return { cards: buildTicketCards(items), scale: 1 };
+}
+
+// Base font specs ({min,coeff,offset,max} in `clamp(min, coeff*cqw - offset, max)`)
+// for Kitchen ticket text, so packOrderCards' scale can shrink all of them
+// together (see clampFont below and its uses in the S stylesheet / GuestCheckTicket).
+const FONT_COL          = { min: 14.4, coeff: 8.462,  offset: 14.768, max: 36 };
+const FONT_ITEM_QTY     = { min: 24,   coeff: 21.538, offset: 49.232, max: 80 };
+const FONT_ITEM_NAME    = { min: 20,   coeff: 18.462, offset: 42.768, max: 68 };
+const FONT_PLATE_HEADER = { min: 24,   coeff: 16,     offset: 16,     max: 60 };
+const FONT_SPECIAL_NOTE = { min: 16.8, coeff: 15,     offset: 34,     max: 56 };
+function clampFont(f, scale = 1) {
+  return `clamp(${(f.min * scale).toFixed(2)}px, calc(${(f.coeff * scale).toFixed(3)}cqw - ${(f.offset * scale).toFixed(2)}px), ${(f.max * scale).toFixed(2)}px)`;
+}
+
 function getOrderAccentColor(order) {
   if (order.isToGo) return TOGO_COLOR;
   if (order.isBar) return BAR_COLOR;
@@ -1075,8 +1118,8 @@ function orderNeedsDrinksStation(order) {
   return order.items?.some(item => getDrinksRule(item.name, item.catName)) ?? false;
 }
 
-// Items the kitchen doesn't cook — greyed out on kitchen tickets.
-// Only real drinks qualify; sides/extras are food the kitchen makes, so they stay full-opacity.
+// Items the kitchen doesn't cook — left off kitchen tickets entirely.
+// Only real drinks qualify; sides/extras are food the kitchen makes, so they stay on the ticket.
 function isKitchenDimmed(itemName, catName = "") {
   const rule = getDrinksRule(itemName, catName);
   return rule?.key === "nonalcoholic";
@@ -1084,6 +1127,17 @@ function isKitchenDimmed(itemName, catName = "") {
 
 function orderHasKitchenItems(order) {
   return order.items?.some(i => !isKitchenDimmed(i.name, i.catName || "")) ?? false;
+}
+
+// Diff-or-plain item list for an order's Kitchen ticket, with bebidas/
+// alcohol already stripped out (see isKitchenDimmed) — shared by
+// KitchenScreen's card-count/MAX_VISIBLE accounting and GuestCheckTicket's
+// own render so both agree on how many cards an order actually needs.
+function getKitchenTicketItems(order, catNameById) {
+  const source = order.modified && order.latestDiff
+    ? order.latestDiff
+    : order.items.map(i => ({ ...i, changeType: "unchanged" }));
+  return source.filter(i => !isKitchenDimmed(i.name, i.catName || catNameById[i.categoryId] || ""));
 }
 
 // ============================================================
@@ -1353,16 +1407,16 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
   // cancelled off the waitress screen instead of just being left off KDS1
   // in the first place. Drinks/Sides (KDS2) still gets these via its own
   // ticket, unaffected by this filter.
-  const allItems = (order.modified && order.latestDiff
-    ? order.latestDiff
-    : order.items.map(i => ({ ...i, changeType: "unchanged" }))
-  ).filter(i => !isKitchenDimmed(i.name, i.catName || catNameById[i.categoryId] || ""));
+  const allItems = getKitchenTicketItems(order, catNameById);
 
-  // Long orders spill onto additional "Cont." cards (see KitchenScreen,
-  // which renders one <GuestCheckTicket> per card) instead of shrinking
-  // text to force everything onto one card.
+  // Orders that don't fit UNITS_PER_CARD at full size shrink onto one card
+  // (packOrderCards' `scale`) instead of spilling onto a separate "Cont."
+  // card -- one long order used to be able to eat most of KitchenScreen's
+  // MAX_VISIBLE slots by itself. Only truly huge orders still get a second
+  // card, as a floor so text never shrinks past readability.
   const isContinuation = cardIndex > 0;
-  const items = buildTicketCards(allItems)[cardIndex] || [];
+  const { cards, scale } = packOrderCards(allItems);
+  const items = cards[cardIndex] || [];
 
   // Cluster items by seat so each guest's plate reads as one obvious block
   // on the ticket instead of a tiny inline tag per item — only when the
@@ -1449,8 +1503,8 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
 
       <div style={S.ruledLine} />
       <div style={S.colHeaders}>
-        <span style={S.colQty}>{t.qty}</span>
-        <span style={S.colItem}>{t.item}</span>
+        <span style={{ ...S.colQty, fontSize: clampFont(FONT_COL, scale) }}>{t.qty}</span>
+        <span style={{ ...S.colItem, fontSize: clampFont(FONT_COL, scale) }}>{t.item}</span>
       </div>
       <div style={S.ruledLine} />
 
@@ -1460,7 +1514,7 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
             {hasSeats && gi > 0 && <div style={S.plateDivider} />}
             {hasSeats && (
               <div style={S.plateHeader}>
-                <span style={S.plateHeaderText}>
+                <span style={{ ...S.plateHeaderText, fontSize: clampFont(FONT_PLATE_HEADER, scale) }}>
                   {group.seat ? `${t.plato} ${group.seat}` : t.shared}
                 </span>
               </div>
@@ -1471,11 +1525,11 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
               const isRemoved = item.changeType === "removed" || isZeroed;
               return (
                 <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : isZeroed ? "#F3F4F6" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: isZeroed ? 0.35 : 1 }}>
-                  <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: isZeroed ? "line-through" : "none" }}>{item.qty}</span>
+                  <span style={{ ...S.itemQty, fontSize: clampFont(FONT_ITEM_QTY, scale), width: clampFont(FONT_ITEM_QTY, scale), color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: isZeroed ? "line-through" : "none" }}>{item.qty}</span>
                   <div style={{ flex: 1 }}>
-                    <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
+                    <span style={{ ...S.itemName, fontSize: clampFont(FONT_ITEM_NAME, scale), color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
                       {item.name}
-                      {cs.tagBg && !order.cancelled && !isZeroed && <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>}
+                      {cs.tagBg && !order.cancelled && !isZeroed && <span style={{ ...S.changeTag, fontSize: clampFont(FONT_COL, scale), background: cs.tagBg }}>{cs.label}</span>}
                     </span>
                     {item.modifiers && item.modifiers.length > 0 && (
                       <div style={S.ticketModifiers}>
@@ -1492,7 +1546,7 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
                     {item.specialNote && (
                       <div style={S.ticketSpecialNoteBlock}>
                         {parseSpecialNote(item.specialNote).map((seg, si) => (
-                          <div key={si} style={{ ...S.ticketSpecialNoteLine, color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
+                          <div key={si} style={{ ...S.ticketSpecialNoteLine, fontSize: clampFont(FONT_SPECIAL_NOTE, scale), color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
                             {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
                           </div>
                         ))}
@@ -1571,8 +1625,9 @@ function KitchenScreen({ lang, menu }) {
 
   const active = orders.filter(o => !o.kitchenReady && orderHasKitchenItems(o));
 
-  // Build one "card" per buildTicketCards() chunk of each order (see
-  // GuestCheckTicket), keeping each order's cards together as a unit --
+  // Build one "card" per packOrderCards() chunk of each order (see
+  // GuestCheckTicket -- same helper, so the count here always matches what
+  // actually renders), keeping each order's cards together as a unit --
   // an order either shows in full (all its cards) or goes to the queue
   // strip whole, so a continuation card can never get silently cut off
   // at the MAX_VISIBLE boundary. Memoized so it's referentially stable
@@ -1580,8 +1635,8 @@ function KitchenScreen({ lang, menu }) {
   const visible = useMemo(() => {
     const result = [];
     for (const order of active) {
-      const sourceItems = order.modified && order.latestDiff ? order.latestDiff : order.items;
-      const cardCount = buildTicketCards(sourceItems).length;
+      const sourceItems = getKitchenTicketItems(order, catNameById);
+      const cardCount = packOrderCards(sourceItems).cards.length;
       if (result.length + cardCount > MAX_VISIBLE) break;
       for (let i = 0; i < cardCount; i++) {
         result.push({ order, cardIndex: i, cardKey: `${order.firestoreId}:${i}` });
