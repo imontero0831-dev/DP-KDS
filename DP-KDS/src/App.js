@@ -1232,9 +1232,9 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
       {isFocused && !isQueue && (
         <div style={S.keyboardHintBar}>
           <span style={S.keyboardHint}><strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
-          <span style={S.keyboardHint}><strong>+</strong> = {t.shortcutNext}</span>
-          <span style={S.keyboardHint}><strong>−</strong> = {t.shortcutPrev}</span>
-          <span style={S.keyboardHint}><strong>*</strong> = {t.shortcutUndo}</span>
+          <span style={S.keyboardHint}><strong>2</strong> = {t.shortcutPrev}</span>
+          <span style={S.keyboardHint}><strong>3</strong> = {t.shortcutNext}</span>
+          <span style={S.keyboardHint}><strong>0</strong> = {t.shortcutUndo}</span>
         </div>
       )}
 
@@ -1485,6 +1485,10 @@ function KitchenScreen({ lang, menu }) {
         break;
       }
 
+      // ── 2 / 3: move focus to the previous/next visible ticket ──
+      case "2": { e.preventDefault(); setFocusedIndex(i => Math.max(i - 1, 0)); break; }
+      case "3": { e.preventDefault(); setFocusedIndex(i => Math.min(i + 1, visible.length - 1)); break; }
+
       default:
         break;
     }
@@ -1628,9 +1632,9 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
       {isFocused && (
         <div style={S.keyboardHintBar}>
           <span style={S.keyboardHint}><strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
-          <span style={S.keyboardHint}><strong>+</strong> = {t.shortcutNext}</span>
-          <span style={S.keyboardHint}><strong>−</strong> = {t.shortcutPrev}</span>
-          <span style={S.keyboardHint}><strong>*</strong> = {t.shortcutUndo}</span>
+          <span style={S.keyboardHint}><strong>2</strong> = {t.shortcutPrev}</span>
+          <span style={S.keyboardHint}><strong>3</strong> = {t.shortcutNext}</span>
+          <span style={S.keyboardHint}><strong>0</strong> = {t.shortcutUndo}</span>
         </div>
       )}
 
@@ -1810,9 +1814,11 @@ function DrinksStationScreen({ lang, menu }) {
         else if (order.status === "in_progress") { markDrinksReady(order); flash("✓ Listo!", "#15803D"); }
         break;
       }
-      case "+": { e.preventDefault(); setFocusedIndex(i => Math.min(i + 1, visible.length - 1)); break; }
-      case "-": { e.preventDefault(); setFocusedIndex(i => Math.max(i - 1, 0)); break; }
-      case "*": {
+      // "2"/"3" and "0" are the standard numpad labels (match Kitchen); "+"/"-"/"*"
+      // stay wired to the same actions too so nothing that already relied on them breaks.
+      case "+": case "3": { e.preventDefault(); setFocusedIndex(i => Math.min(i + 1, visible.length - 1)); break; }
+      case "-": case "2": { e.preventDefault(); setFocusedIndex(i => Math.max(i - 1, 0)); break; }
+      case "*": case "0": {
         e.preventDefault();
         if (order && !order.cancelled && order.status === "in_progress") {
           updateOrderStatus(order.firestoreId, "new");
