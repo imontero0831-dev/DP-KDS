@@ -1675,7 +1675,6 @@ function KitchenScreen({ lang, menu }) {
           <div style={S.queueLabel}>COLA / QUEUE</div>
           {queued.map(order => (
             <div key={order.firestoreId} style={S.queueItem}>
-              <span style={S.queueOrderId}>#{order.id}</span>
               <span style={S.queueOrderTable}>{order.isToGo ? order.toGoName : order.isBar ? order.table : order.isPatio ? order.table : `${t.table2} ${order.table}`}</span>
               <span style={S.queueOrderItems}>{order.items.map(i => `${i.qty}× ${i.name}`).join(", ")}</span>
               <span style={S.queueOrderTime}>{elapsed(order.timestamp)}</span>
@@ -1715,8 +1714,9 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
   return (
     <div style={{
       ...S.ticket,
-      background: ticketTintBg,
-      borderLeft: `10px solid ${ticketAccentColor}`,
+      background: order.drinksReady ? "#F0FDF4" : ticketTintBg,
+      borderLeft: `10px solid ${order.drinksReady ? "#15803D" : ticketAccentColor}`,
+      opacity: order.drinksReady ? 0.75 : 1,
       outline: isFocused ? "4px solid #2563EB" : "none",
       outlineOffset: isFocused ? "3px" : "0",
       boxShadow: isFocused
@@ -1829,22 +1829,30 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
 
       <div style={{ ...S.ruledLine, borderColor: "#B8A88A", borderWidth: 2 }} />
       <div style={S.ticketFooter}>
-        <div style={{ ...S.statusStamp, borderColor: STATUS_COLORS[order.status], color: STATUS_COLORS[order.status] }}>
-          {order.status === "new" ? t.new : t.inProgress}
-        </div>
-        {!order.cancelled && (
-          <div style={S.ticketBtns}>
-            {order.status === "new" && (
-              <button style={S.btnStart} onClick={() => updateOrderStatus(order.firestoreId, "in_progress")}>
-                {t.startCooking}
-              </button>
-            )}
-            {order.status === "in_progress" && (
-              <button style={S.btnDone} onClick={() => markDrinksReady(order)}>
-                ✓ {t.markDone}
-              </button>
-            )}
+        {order.drinksReady ? (
+          <div style={{ ...S.statusStamp, borderColor: "#15803D", color: "#15803D" }}>
+            ✓ LISTO — ESPERANDO PAGO
           </div>
+        ) : (
+          <>
+            <div style={{ ...S.statusStamp, borderColor: STATUS_COLORS[order.status], color: STATUS_COLORS[order.status] }}>
+              {order.status === "new" ? t.new : t.inProgress}
+            </div>
+            {!order.cancelled && (
+              <div style={S.ticketBtns}>
+                {order.status === "new" && (
+                  <button style={S.btnStart} onClick={() => updateOrderStatus(order.firestoreId, "in_progress")}>
+                    {t.startCooking}
+                  </button>
+                )}
+                {order.status === "in_progress" && (
+                  <button style={S.btnDone} onClick={() => markDrinksReady(order)}>
+                    ✓ {t.markDone}
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -1873,7 +1881,14 @@ function DrinksStationScreen({ lang, menu }) {
   const catNameById = {};
   if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name[lang] || c.name.en || ""; });
 
-  const active  = orders.filter(o => !o.drinksReady && orderHasDrinksItems(o));
+  // An order stays on this screen once drinksReady flips true instead of
+  // vanishing -- KDS1/2/3 only clear a ticket once payment closes the
+  // table (see checkPendingPayments/closeTable), not on a per-station
+  // ready flag. Pending orders are listed ahead of done ones so a bartender
+  // still working never has to hunt for it behind paid-and-waiting tickets.
+  const pending = orders.filter(o => !o.drinksReady && orderHasDrinksItems(o));
+  const done    = orders.filter(o => o.drinksReady && orderHasDrinksItems(o));
+  const active  = useMemo(() => [...pending, ...done], [pending, done]);
 
   // Same per-order card grouping as KitchenScreen -- see its comment.
   const visible = useMemo(() => {
@@ -1919,7 +1934,7 @@ function DrinksStationScreen({ lang, menu }) {
     switch (key) {
       case "Enter": {
         e.preventDefault();
-        if (!order || order.cancelled) return;
+        if (!order || order.cancelled || order.drinksReady) return;
         if (order.status === "new") { updateOrderStatus(order.firestoreId, "in_progress"); flash("Empezando...", "#D97706"); }
         else if (order.status === "in_progress") { markDrinksReady(order); flash("✓ Listo!", "#15803D"); }
         break;
@@ -1956,7 +1971,10 @@ function DrinksStationScreen({ lang, menu }) {
           {queued.length > 0 && <span style={{ ...S.queuePill, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "3px 10px" }}>+{queued.length} {t.inQueue}</span>}
         </div>
         <div style={S.kitchenStats}>
-          <span style={{ ...S.statPillRed, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{active.length} {t.active}</span>
+          <span style={{ ...S.statPillRed, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{pending.length} {t.active}</span>
+          {done.length > 0 && (
+            <span style={{ ...S.statPillGreen, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{done.length} listo{done.length !== 1 ? "s" : ""}</span>
+          )}
           {lastCompleted && (
             <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>Deshacer</button>
           )}
@@ -2001,8 +2019,10 @@ function DrinksStationScreen({ lang, menu }) {
           <div style={S.queueLabel}>COLA / QUEUE</div>
           {queued.map(order => (
             <div key={order.firestoreId} style={S.queueItem}>
-              <span style={S.queueOrderId}>#{order.id}</span>
-              <span style={S.queueOrderTable}>{order.isToGo ? order.toGoName : order.isBar ? order.table : order.isPatio ? order.table : `${t.table2} ${order.table}`}</span>
+              <span style={S.queueOrderTable}>
+                {order.drinksReady && <span style={{ color: "#15803D" }}>✓ </span>}
+                {order.isToGo ? order.toGoName : order.isBar ? order.table : order.isPatio ? order.table : `${t.table2} ${order.table}`}
+              </span>
               <span style={S.queueOrderItems}>
                 {order.items?.filter(i => getDrinksRule(i.name) || order.isToGo).map(i => `${i.qty}× ${i.name}`).join(", ")}
               </span>
@@ -2025,6 +2045,10 @@ function ExpoTicket({ order, catNameById }) {
     return () => clearInterval(timer);
   }, []);
 
+  // Order code stays out of the runner-facing UI to save space, but is
+  // still logged for debugging/traceability against Firebase.
+  useEffect(() => { console.log("[Expo ticket] order id:", order.id); }, [order.id]);
+
   const getCat = (item) => item.catName || catNameById?.[item.categoryId] || "";
   const kitchenItems = order.items?.filter(i => !isKitchenDimmed(i.name, getCat(i))) || [];
   const drinksItems  = order.items?.filter(i => getDrinksRule(i.name, getCat(i))) || [];
@@ -2044,17 +2068,18 @@ function ExpoTicket({ order, catNameById }) {
 
   return (
     <div
-      className={allDone ? "expo-ticket-ready" : ""}
+      className={allDone && !order.delivered ? "expo-ticket-ready" : ""}
       style={{
-        background: allDone ? "#FFFFFF" : ticketTintBg,
-        border: allDone ? "3px solid #15803D" : `1.5px solid ${ticketAccentColor}`,
-        borderLeft: allDone ? "3px solid #15803D" : `10px solid ${ticketAccentColor}`,
+        background: order.delivered ? "#F3F4F6" : allDone ? "#FFFFFF" : ticketTintBg,
+        border: order.delivered ? "3px solid #9CA3AF" : allDone ? "3px solid #15803D" : `1.5px solid ${ticketAccentColor}`,
+        borderLeft: order.delivered ? "3px solid #9CA3AF" : allDone ? "3px solid #15803D" : `10px solid ${ticketAccentColor}`,
         borderRadius: 12,
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
+        opacity: order.delivered ? 0.7 : 1,
         transition: "border-color 0.3s, box-shadow 0.3s",
-        boxShadow: allDone ? "0 4px 20px rgba(21,128,61,0.3)" : "0 2px 8px rgba(0,0,0,0.06)",
+        boxShadow: order.delivered ? "0 2px 8px rgba(0,0,0,0.06)" : allDone ? "0 4px 20px rgba(21,128,61,0.3)" : "0 2px 8px rgba(0,0,0,0.06)",
         containerType: "inline-size",
       }}
     >
@@ -2069,7 +2094,6 @@ function ExpoTicket({ order, catNameById }) {
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 10 }}>
-          <div style={{ fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 800, color: "#BE202E", letterSpacing: "0.05em" }}>#{order.id}</div>
           <div style={{ fontSize: "clamp(21px, calc(18.750cqw - 42.50px), 70px)", fontWeight: 900, color: timerColor, marginTop: 2, whiteSpace: "nowrap" }}>{elapsed(order.timestamp)}</div>
         </div>
       </div>
@@ -2131,8 +2155,12 @@ function ExpoTicket({ order, catNameById }) {
       )}
 
       {/* Footer: status / bump */}
-      <div style={{ padding: "10px 14px", background: allDone ? "#15803D" : "#F5F3F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, borderTop: allDone ? "none" : "1px solid #E0D8C4" }}>
-        {allDone ? (
+      <div style={{ padding: "10px 14px", background: order.delivered ? "#6B7280" : allDone ? "#15803D" : "#F5F3F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, borderTop: allDone ? "none" : "1px solid #E0D8C4" }}>
+        {order.delivered ? (
+          <div style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 900, color: "#FFFFFF", letterSpacing: "0.04em", textTransform: "uppercase", width: "100%", textAlign: "center" }}>
+            ✓ ENTREGADO — ESPERANDO PAGO
+          </div>
+        ) : allDone ? (
           <>
             <div style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 900, color: "#FFFFFF", letterSpacing: "0.04em", textTransform: "uppercase" }}>
               LISTO PARA ENTREGAR
@@ -2181,7 +2209,9 @@ function ExpoScreen({ menu }) {
   }, []);
 
   // Auto-mark stale ready orders as delivered after 90s if the runner forgot
-  // to bump — this only clears Expo's queue, it never touches the waitress side.
+  // to bump — moves it into the muted "delivered, awaiting payment" group
+  // below instead of leaving it glowing in the ready queue forever; never
+  // touches the waitress side.
   useEffect(() => {
     const stale = orders.filter(o => o.allReady && !o.delivered && o.allReadyAt && Date.now() - o.allReadyAt > 90000);
     stale.forEach(o => markDelivered(o));
@@ -2196,15 +2226,17 @@ function ExpoScreen({ menu }) {
     return (!hasK || !!o.kitchenReady) && (!hasD || !!o.drinksReady);
   };
 
-  // Once Kitchen marks its part of an order done, Expo stops tracking that
-  // order entirely — even if drinks/sides for it aren't ready yet. This is
-  // a display-only cutoff (nothing is archived), so the waitress's active
-  // table list and billing are untouched; only orders with no kitchen items
-  // (drinks/bar-only) still wait on the ready+deliver flow below.
-  const expoOrders = orders.filter(o => !(orderHasKitchenItems(o) && o.kitchenReady));
+  // Expo keeps tracking an order until it's actually archived (payment
+  // closes the table, see checkPendingPayments/closeTable) -- it no longer
+  // drops off the instant Kitchen marks its part ready. Split into three
+  // groups so a runner can still tell at a glance what needs action
+  // (readyOrders) vs. what's just sitting there waiting on the tab to close
+  // (deliveredOrders), instead of both looking identical.
+  const expoOrders = orders;
 
-  const readyOrders  = expoOrders.filter(o => isOrderReady(o) && !o.delivered);
-  const activeOrders = expoOrders.filter(o => !isOrderReady(o));
+  const readyOrders     = expoOrders.filter(o => isOrderReady(o) && !o.delivered);
+  const deliveredOrders = expoOrders.filter(o => isOrderReady(o) && o.delivered);
+  const activeOrders    = expoOrders.filter(o => !isOrderReady(o));
 
   return (
     <div style={S.kitchenRoot}>
@@ -2220,6 +2252,9 @@ function ExpoScreen({ menu }) {
         <div style={S.kitchenStats}>
           <span style={{ ...S.statPillRed, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{activeOrders.length} en proceso</span>
           <span style={{ ...S.statPillGreen, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{readyOrders.length} lista{readyOrders.length !== 1 ? "s" : ""}</span>
+          {deliveredOrders.length > 0 && (
+            <span style={{ ...S.statPillGreen, background: "#9CA3AF", fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }}>{deliveredOrders.length} entregada{deliveredOrders.length !== 1 ? "s" : ""}</span>
+          )}
           {lastCompleted && (
             <button style={{ ...S.undoBtn, fontSize: "clamp(11px, calc(0.5vw + 6px), 15px)", padding: "4px 10px" }} onClick={handleUndoLastCompleted}>Deshacer</button>
           )}
@@ -2239,11 +2274,14 @@ function ExpoScreen({ menu }) {
         </div>
       ) : (
         <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 440px))", gap: 14, padding: 16, alignItems: "start", overflowY: "auto" }}>
-          {/* Ready orders first (at top) */}
+          {/* Ready orders first (at top), then still-cooking, then delivered-but-unpaid last (least urgent) */}
           {readyOrders.map(order => (
             <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} />
           ))}
           {activeOrders.map(order => (
+            <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} />
+          ))}
+          {deliveredOrders.map(order => (
             <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} />
           ))}
         </div>
@@ -3441,7 +3479,6 @@ const S = {
   queueStrip: { background: "#FFFFFF", borderTop: "2px solid #E5E0D8", padding: "8px 16px", display: "flex", alignItems: "center", gap: 12, overflowX: "auto" },
   queueLabel: { fontSize: "clamp(20px, calc(1.948vw + 12.99px), 50px)", fontWeight: 900, color: "#D97706", letterSpacing: "0.15em", whiteSpace: "nowrap", textTransform: "uppercase" },
   queueItem: { display: "flex", alignItems: "center", gap: 8, background: "#F5F3F0", border: "1px solid #E5E0D8", borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap" },
-  queueOrderId: { fontSize: "clamp(24px, calc(2.354vw + 15.28px), 60px)", fontWeight: 900, color: "#BE202E" },
   queueOrderTable: { fontSize: "clamp(26px, calc(2.516vw + 17.19px), 65px)", fontWeight: 800, color: "#1A1A1A", textTransform: "uppercase" },
   queueOrderItems: { fontSize: "clamp(24px, calc(2.354vw + 15.28px), 60px)", color: "#888", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", textTransform: "uppercase" },
   queueOrderTime: { fontSize: "clamp(24px, calc(2.354vw + 15.28px), 60px)", fontWeight: 700, color: "#D97706" },
