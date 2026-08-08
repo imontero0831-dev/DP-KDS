@@ -3331,7 +3331,7 @@ const S = {
   emptyCheckmark: { fontSize: "clamp(96px, calc(14.529vw + 43.95px), 320px)", color: "#15803D", fontWeight: 900, lineHeight: 1 },
   emptyCheckSub: { fontSize: "clamp(36px, calc(5.439vw + 16.68px), 120px)", fontWeight: 900, color: "#1A1A1A", textTransform: "uppercase" },
   emptyCheckSubSmall: { fontSize: "clamp(28px, calc(2.760vw + 17.56px), 70px)", color: "#888", textTransform: "uppercase" },
-  ticketGrid: { flex: 1, display: "grid", gap: 16, padding: "16px", alignItems: "start" },
+  ticketGrid: { flex: 1, display: "grid", gap: 16, padding: "16px", alignItems: "start", justifyContent: "center" },
 
   // TICKET
   ticket: { background: "#FFFDF7", border: "1px solid #E0D8C4", borderRadius: 3, overflow: "hidden", transition: "all 0.3s", fontFamily: "'DM Sans', 'Segoe UI', sans-serif" },
