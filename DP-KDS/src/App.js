@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, doc, onSnapshot,
@@ -906,6 +906,13 @@ const BAR_BG       = "#F3E8FF";
 const PATIO_COLOR  = "#0D9488";
 const PATIO_BG     = "#CCFBF1";
 
+// Max items shown on one Kitchen/Drinks ticket card before the rest spills
+// onto a "Cont." card of its own -- fixed and flat on purpose (see
+// GuestCheckTicket/KitchenScreen): shrinking font to force everything onto
+// one card is what caused the 8/8 overflow bugs. One consistent, always-
+// readable size; long orders get a second card instead.
+const ITEMS_PER_CARD = 6;
+
 function getOrderAccentColor(order) {
   if (order.isToGo) return TOGO_COLOR;
   if (order.isBar) return BAR_COLOR;
@@ -1135,7 +1142,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
 // ============================================================
 // GUEST CHECK TICKET COMPONENT
 // ============================================================
-function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
+function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catNameById = {} }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick(n => n + 1), 1000);
@@ -1147,9 +1154,16 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
   const isWarning = elapsedSecs > 300;
   const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
 
-  const items = order.modified && order.latestDiff
+  const allItems = order.modified && order.latestDiff
     ? order.latestDiff
     : order.items.map(i => ({ ...i, changeType: "unchanged" }));
+
+  // Long orders spill onto additional "Cont." cards (see KitchenScreen,
+  // which renders one <GuestCheckTicket> per card) instead of shrinking
+  // text to force everything onto one card.
+  const isContinuation = cardIndex > 0;
+  const cardStart = cardIndex * ITEMS_PER_CARD;
+  const items = allItems.slice(cardStart, cardStart + ITEMS_PER_CARD);
 
   // Cluster items by seat so each guest's plate reads as one obvious block
   // on the ticket instead of a tiny inline tag per item — only when the
@@ -1216,12 +1230,12 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
           <div style={S.guestCheckTitle}>{t.guestCheck}</div>
           <div style={S.ticketMeta}>
             {order.isToGo
-              ? <span style={S.toGoNameBig}>{order.toGoName}</span>
+              ? <span style={S.toGoNameBig}>{order.toGoName}{isContinuation ? " CONT." : ""}</span>
               : order.isBar
-              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>{order.table}</span>
+              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
               : order.isPatio
-              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>{order.table}</span>
-              : <span style={S.tableNumberBig}>{t.table2} {order.table}</span>
+              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
+              : <span style={S.tableNumberBig}>{t.table2} {order.table}{isContinuation ? " CONT." : ""}</span>
             }
           </div>
         </div>
@@ -1355,8 +1369,27 @@ function KitchenScreen({ lang, menu }) {
   }, []);
 
   const active = orders.filter(o => !o.kitchenReady);
-  const visible = active.slice(0, MAX_VISIBLE);
-  const queued = active.slice(MAX_VISIBLE);
+
+  // Build one "card" per ITEMS_PER_CARD chunk of each order (see
+  // GuestCheckTicket), keeping each order's cards together as a unit --
+  // an order either shows in full (all its cards) or goes to the queue
+  // strip whole, so a continuation card can never get silently cut off
+  // at the MAX_VISIBLE boundary. Memoized so it's referentially stable
+  // across renders that don't change `active` (handleKeyDown depends on it).
+  const visible = useMemo(() => {
+    const result = [];
+    for (const order of active) {
+      const cardCount = Math.max(1, Math.ceil(order.items.length / ITEMS_PER_CARD));
+      if (result.length + cardCount > MAX_VISIBLE) break;
+      for (let i = 0; i < cardCount; i++) {
+        result.push({ order, cardIndex: i, cardKey: `${order.firestoreId}:${i}` });
+      }
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+  const visibleOrderIds = new Set(visible.map(c => c.order.firestoreId));
+  const queued = active.filter(o => !visibleOrderIds.has(o.firestoreId));
   useNewOrderChime(active.map(o => o.firestoreId));
 
   // Keep focused index in bounds when orders change
@@ -1406,7 +1439,7 @@ function KitchenScreen({ lang, menu }) {
     // Don't steal keys when user is typing in an input/textarea
     if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
 
-    const order = visible[focusedIndex];
+    const order = visible[focusedIndex]?.order;
 
     // Normalize numpad keys — e.code is the physical key, e.key varies by OS/NumLock.
     let key = e.key;
@@ -1496,10 +1529,11 @@ function KitchenScreen({ lang, menu }) {
         </div>
       ) : (
         <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
-          {visible.map((order, idx) => (
-            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
+          {visible.map((card, idx) => (
+            <div key={card.cardKey} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <GuestCheckTicket
-                order={order}
+                order={card.order}
+                cardIndex={card.cardIndex}
                 t={t}
                 isQueue={false}
                 isFocused={idx === focusedIndex}
@@ -1530,7 +1564,7 @@ function KitchenScreen({ lang, menu }) {
 // ============================================================
 // DRINKS / SIDES STATION TICKET
 // ============================================================
-function DrinksTicket({ order, t, catNameById, isFocused }) {
+function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick(n => n + 1), 1000);
@@ -1541,6 +1575,10 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
   const isUrgent  = elapsedSecs > 600;
   const isWarning = elapsedSecs > 300;
   const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
+
+  const isContinuation = cardIndex > 0;
+  const cardStart = cardIndex * ITEMS_PER_CARD;
+  const cardItems = (order.items || []).slice(cardStart, cardStart + ITEMS_PER_CARD);
 
   const ticketAccentColor = getOrderAccentColor(order);
   const ticketTintBg = getOrderAccentBg(order);
@@ -1588,12 +1626,12 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
           <div style={S.guestCheckTitle}>BEBIDAS / SIDES</div>
           <div style={S.ticketMeta}>
             {order.isToGo
-              ? <span style={{ ...S.toGoNameBig, color: TOGO_COLOR }}>{order.toGoName}</span>
+              ? <span style={{ ...S.toGoNameBig, color: TOGO_COLOR }}>{order.toGoName}{isContinuation ? " CONT." : ""}</span>
               : order.isBar
-              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>{order.table}</span>
+              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
               : order.isPatio
-              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>{order.table}</span>
-              : <span style={S.tableNumberBig}>{t.table2} {order.table}</span>}
+              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
+              : <span style={S.tableNumberBig}>{t.table2} {order.table}{isContinuation ? " CONT." : ""}</span>}
           </div>
         </div>
         <div style={S.ticketTopRight}>
@@ -1611,7 +1649,7 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
       <div style={S.ruledLine} />
 
       <div style={S.itemsList}>
-        {order.items?.map((item, idx) => {
+        {cardItems.map((item, idx) => {
           const rule = getDrinksRule(item.name, item.catName || catNameById?.[item.categoryId] || "");
           const color = rule ? rule.color : order.isToGo ? TOGO_COLOR : "#C0B8AC";
           const bg    = rule ? rule.bg    : order.isToGo ? TOGO_BG    : "transparent";
@@ -1623,7 +1661,7 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
               ...S.itemRow,
               background: bg,
               opacity: dimmed ? 0.3 : 1,
-              borderBottom: idx < order.items.length - 1 ? "1px solid #E5DFD0" : "none",
+              borderBottom: idx < cardItems.length - 1 ? "1px solid #E5DFD0" : "none",
             }}>
               <span style={{ ...S.itemQty, color }}>{item.qty}</span>
               <div style={{ flex: 1 }}>
@@ -1709,8 +1747,22 @@ function DrinksStationScreen({ lang, menu }) {
   if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name[lang] || c.name.en || ""; });
 
   const active  = orders.filter(o => !o.drinksReady && orderHasDrinksItems(o));
-  const visible = active.slice(0, MAX_VISIBLE);
-  const queued  = active.slice(MAX_VISIBLE);
+
+  // Same per-order card grouping as KitchenScreen -- see its comment.
+  const visible = useMemo(() => {
+    const result = [];
+    for (const order of active) {
+      const cardCount = Math.max(1, Math.ceil((order.items?.length || 0) / ITEMS_PER_CARD));
+      if (result.length + cardCount > MAX_VISIBLE) break;
+      for (let i = 0; i < cardCount; i++) {
+        result.push({ order, cardIndex: i, cardKey: `${order.firestoreId}:${i}` });
+      }
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+  const visibleOrderIds = new Set(visible.map(c => c.order.firestoreId));
+  const queued = active.filter(o => !visibleOrderIds.has(o.firestoreId));
 
   useEffect(() => {
     if (focusedIndex >= visible.length && visible.length > 0) setFocusedIndex(visible.length - 1);
@@ -1731,7 +1783,7 @@ function DrinksStationScreen({ lang, menu }) {
 
   const handleKeyDown = useCallback((e) => {
     if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
-    const order = visible[focusedIndex];
+    const order = visible[focusedIndex]?.order;
     let key = e.key;
     if (e.code === "NumpadEnter")    key = "Enter";
     if (e.code === "NumpadAdd")      key = "+";
@@ -1807,9 +1859,9 @@ function DrinksStationScreen({ lang, menu }) {
         </div>
       ) : (
         <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 280px))" }}>
-          {visible.map((order, idx) => (
-            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
-              <DrinksTicket order={order} t={t} catNameById={catNameById} isFocused={idx === focusedIndex} />
+          {visible.map((card, idx) => (
+            <div key={card.cardKey} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
+              <DrinksTicket order={card.order} cardIndex={card.cardIndex} t={t} catNameById={catNameById} isFocused={idx === focusedIndex} />
             </div>
           ))}
         </div>
