@@ -652,12 +652,13 @@ async function checkPendingPayments(liveOrders, autoClosingKeys) {
 
   for (const [key, groupOrders] of Object.entries(groups)) {
     if (autoClosingKeys.has(key)) continue;
-    // Don't auto-close on a pre-paid or early-closed tab while the
-    // kitchen/drinks stations still have work outstanding — allReady
-    // only flips true once both stations have confirmed done, so this
-    // guards against yanking a ticket off-screen before the food is
-    // actually made, even if the card was already charged.
-    if (!groupOrders.every(o => o.allReady)) continue;
+    // Deliberately NOT gated on allReady here. It used to be, to avoid
+    // yanking a ticket off-screen on a pre-paid tab before the food was
+    // actually made -- but in practice a station's ready flag (especially
+    // drinksReady) can just never get tapped, which silently blocked this
+    // from ever firing even on a confirmed payment. A confirmed Clover
+    // payment is the real signal a table is done; KDS1/2/3 must clear on
+    // that alone, not on top of every station remembering to tap done.
     let paid = false;
     for (const o of groupOrders) {
       if (o.cloverOrderId && await isOrderPaidOnClover(o.cloverOrderId, o.total)) { paid = true; break; }
