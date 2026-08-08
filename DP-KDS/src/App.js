@@ -1461,15 +1461,16 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
             )}
             {group.items.map((item, idx) => {
               const cs = changeStyle(item.changeType);
-              const isRemoved = item.changeType === "removed";
+              const isZeroed = item.qty === 0;
+              const isRemoved = item.changeType === "removed" || isZeroed;
               const dimmed = item.changeType === "unchanged" && isKitchenDimmed(item.name, item.catName || catNameById[item.categoryId] || "");
               return (
-                <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: dimmed ? 0.35 : 1 }}>
-                  <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color }}>{item.qty}</span>
+                <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : isZeroed ? "#F3F4F6" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: dimmed || isZeroed ? 0.35 : 1 }}>
+                  <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : dimmed ? "#9CA3AF" : cs.color, textDecoration: isZeroed ? "line-through" : "none" }}>{item.qty}</span>
                   <div style={{ flex: 1 }}>
-                    <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
+                    <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : dimmed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
                       {item.name}
-                      {cs.tagBg && !order.cancelled && <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>}
+                      {cs.tagBg && !order.cancelled && !isZeroed && <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>}
                     </span>
                     {item.modifiers && item.modifiers.length > 0 && (
                       <div style={S.ticketModifiers}>
