@@ -1524,7 +1524,7 @@ function KitchenScreen({ lang, menu }) {
       ) : (
         <div style={{ ...S.ticketGrid, gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`, gridTemplateRows: "minmax(0, 1fr)" }}>
           {visible.map((order, idx) => (
-            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "size", height: "100%" }}>
+            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <GuestCheckTicket
                 order={order}
                 t={t}
@@ -1855,7 +1855,7 @@ function DrinksStationScreen({ lang, menu }) {
       ) : (
         <div style={{ ...S.ticketGrid, gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`, gridTemplateRows: "minmax(0, 1fr)" }}>
           {visible.map((order, idx) => (
-            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "size", height: "100%" }}>
+            <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <DrinksTicket order={order} t={t} catNameById={catNameById} isFocused={idx === focusedIndex} />
             </div>
           ))}
@@ -3291,7 +3291,7 @@ const S = {
   cartSpecialNoteLine: { fontSize: 11, fontWeight: 800 },
 
   // KITCHEN
-  kitchenRoot: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "#F5F3F0", overflow: "hidden" },
+  kitchenRoot: { height: "calc(100dvh - 53px)", display: "flex", flexDirection: "column", background: "#F5F3F0", overflow: "hidden" },
   kitchenHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", background: "#FFFFFF", borderBottom: "1px solid #E5E0D8", flexWrap: "wrap", gap: 8 },
   kitchenHeaderLeft: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
   kitchenTitle: { fontSize: "clamp(28px, calc(4.059vw + 12.89px), 90px)", fontWeight: 900, letterSpacing: "-0.02em", color: "#1A1A1A", textTransform: "uppercase" },
