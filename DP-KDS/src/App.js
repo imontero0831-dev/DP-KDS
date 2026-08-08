@@ -98,6 +98,9 @@ const T = {
     shortcutJump: "Saltar a orden",
     shortcutReset: "Primero",
     customizeItem: "Personalizar",
+    specialSubtitle: "Artículo personalizado",
+    specialDescription: "Descripción",
+    specialAmount: "Monto a cobrar",
     addToOrder: "Agregar a Orden",
     replaceInOrder: "Reemplazar",
     required: "Requerido",
@@ -194,6 +197,9 @@ const T = {
     shortcutJump: "Jump to order",
     shortcutReset: "First",
     customizeItem: "Customize",
+    specialSubtitle: "Custom item",
+    specialDescription: "Description",
+    specialAmount: "Amount to charge",
     addToOrder: "Add to Order",
     replaceInOrder: "Replace",
     required: "Required",
@@ -1255,6 +1261,71 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SpecialModal({ lang, onConfirm, onClose }) {
+  const t = T[lang];
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const amountCents = Math.round(parseFloat(amount || "0") * 100);
+  const canConfirm = amount.trim() !== "" && !isNaN(amountCents) && amountCents > 0;
+  const fieldStyle = { width: "100%", background: "#F5F3F0", border: "2px solid #E5E0D8", borderRadius: 10, color: "#333", fontSize: 14, padding: "10px 12px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+
+  function handleConfirm() {
+    if (!canConfirm) return;
+    onConfirm(description, amountCents);
+  }
+
+  return (
+    <div style={S.modalOverlay} onClick={onClose}>
+      <div style={S.modalBox} onClick={e => e.stopPropagation()}>
+        <div style={S.modalHeader}>
+          <div>
+            <div style={S.modalTitle}>⭐ Special</div>
+            <div style={S.modalSubtitle}>{t.specialSubtitle}</div>
+          </div>
+          <button style={S.modalCloseBtn} onClick={onClose}>✕</button>
+        </div>
+        <div style={S.modalBody}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#1A1A1A", marginBottom: 6 }}>{t.specialDescription}</div>
+            <input
+              style={fieldStyle}
+              placeholder="Special"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              maxLength={60}
+              autoFocus
+            />
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#1A1A1A", marginBottom: 6 }}>{t.specialAmount}</div>
+            <div style={{ ...fieldStyle, display: "flex", alignItems: "center" }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: "#BE202E", marginRight: 4 }}>$</span>
+              <input
+                style={{ flex: 1, background: "none", border: "none", color: "#333", fontSize: 16, fontWeight: 700, outline: "none", fontFamily: "inherit" }}
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+        <div style={S.modalFooter}>
+          <div style={S.modalFooterRow}>
+            <div />
+            <button style={{ ...S.modalConfirmBtn, ...(!canConfirm ? S.modalConfirmBtnDisabled : {}) }} onClick={handleConfirm} disabled={!canConfirm}>
+              {t.addToOrder}{canConfirm ? ` — ${fmt(amountCents)}` : ""}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2575,6 +2646,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [note, setNote] = useState("");
   const [editingOrder, setEditingOrder] = useState(null);
   const [modModalItem, setModModalItem] = useState(null);
+  const [specialModalCat, setSpecialModalCat] = useState(null);
   const [swapTargetKey, setSwapTargetKey] = useState(null);
   const rootRef = useRef(null);
   const [rootHeight, setRootHeight] = useState(null);
@@ -2694,6 +2766,22 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     });
   }
 
+  function handleSpecialTap(categoryId) { setSpecialModalCat(categoryId); }
+
+  function handleSpecialConfirm(description, amountCents) {
+    const categoryId = specialModalCat;
+    setSpecialModalCat(null);
+    const cat = menu.categories.find(c => c.id === categoryId);
+    const catName = cat ? (cat.name.en || cat.name.es || "") : "";
+    const name = description.trim() || "Special";
+    const seat = (orderType === "table" || orderType === "patio") ? activeSeat : null;
+    // Every Special gets a fresh id -- unlike real menu items, two Specials
+    // with different descriptions/amounts must never collapse into one cart
+    // line via cartLineKey matching on id.
+    const id = `special-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setCart(prev => [...prev, { id, categoryId, name, nameEs: name, price: amountCents, emoji: "⭐", catName, displayName: name, qty: 1, modifiers: [], specialNote: null, seat }]);
+  }
+
   function removeFromCart(target) {
     const key = cartLineKey(target.id, target.seat, target.modifiers, target.specialNote);
     setCart(prev => {
@@ -2801,6 +2889,9 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     <div ref={rootRef} style={{ ...S.waiterRoot, ...(rootHeight ? { height: rootHeight } : {}) }}>
       {modModalItem && (
         <ModifierModal item={modModalItem} displayName={getItemDisplayName(modModalItem)} lang={lang} onConfirm={handleModifierConfirm} onClose={() => setModModalItem(null)} swapMode={!!swapTargetKey} />
+      )}
+      {specialModalCat && (
+        <SpecialModal lang={lang} onConfirm={handleSpecialConfirm} onClose={() => setSpecialModalCat(null)} />
       )}
       <div ref={headerRef} style={S.waiterHeader}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -2922,6 +3013,10 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                       </button>
                     );
                   })}
+                  <button key="special-card" style={S.menuItem} onClick={() => handleSpecialTap(activeCategory)}>
+                    <span style={S.menuEmoji}>⭐</span>
+                    <span style={S.menuName}>Special</span>
+                  </button>
                 </div>
               </>
             )}
