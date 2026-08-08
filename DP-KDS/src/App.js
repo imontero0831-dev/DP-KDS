@@ -1081,8 +1081,16 @@ const FONT_ITEM_QTY     = { min: 24,   coeff: 21.538, offset: 49.232, max: 80 };
 const FONT_ITEM_NAME    = { min: 20,   coeff: 18.462, offset: 42.768, max: 68 };
 const FONT_PLATE_HEADER = { min: 24,   coeff: 16,     offset: 16,     max: 60 };
 const FONT_SPECIAL_NOTE = { min: 16.8, coeff: 15,     offset: 34,     max: 56 };
+const FONT_MODIFIER     = { min: 21,   coeff: 18.75,  offset: 42.5,   max: 70 };
 function clampFont(f, scale = 1) {
   return `clamp(${(f.min * scale).toFixed(2)}px, calc(${(f.coeff * scale).toFixed(3)}cqw - ${(f.offset * scale).toFixed(2)}px), ${(f.max * scale).toFixed(2)}px)`;
+}
+// Scales a raw px spacing value (row padding, plate-header padding, divider
+// margins) by the same factor as the fonts, so a packed card actually
+// reclaims vertical space instead of just shrinking glyphs inside
+// full-size rows -- see packOrderCards.
+function scalePx(px, scale = 1) {
+  return Math.round(px * scale);
 }
 
 function getOrderAccentColor(order) {
@@ -1470,6 +1478,7 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
       {order.isToGo && <div style={S.toGoBanner}>{t.toGoLabel} — {order.toGoName}</div>}
       {order.isBar && <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>{t.barLabel} — {order.table}</div>}
       {order.isPatio && <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>{t.patioLabel} — {order.table}</div>}
+      {!order.isToGo && !order.isBar && !order.isPatio && <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>{t.table2} — {order.table}</div>}
       {order.modified && !order.cancelled && <div style={S.modifiedBanner}>{t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket */}
@@ -1492,7 +1501,7 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
               ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
               : order.isPatio
               ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
-              : <span style={S.tableNumberBig}>{t.table2} {order.table}{isContinuation ? " CONT." : ""}</span>
+              : <span style={{ ...S.toGoNameBig, color: DINEIN_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
             }
           </div>
         </div>
@@ -1511,9 +1520,9 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
       <div style={S.itemsList}>
         {seatGroups.map((group, gi) => (
           <div key={group.seat ?? "shared"}>
-            {hasSeats && gi > 0 && <div style={S.plateDivider} />}
+            {hasSeats && gi > 0 && <div style={{ ...S.plateDivider, margin: `${scalePx(6, scale)}px 14px 0` }} />}
             {hasSeats && (
-              <div style={S.plateHeader}>
+              <div style={{ ...S.plateHeader, padding: `${scalePx(10, scale)}px 14px ${scalePx(5, scale)}px` }}>
                 <span style={{ ...S.plateHeaderText, fontSize: clampFont(FONT_PLATE_HEADER, scale) }}>
                   {group.seat ? `${t.plato} ${group.seat}` : t.shared}
                 </span>
@@ -1524,7 +1533,7 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
               const isZeroed = item.qty === 0;
               const isRemoved = item.changeType === "removed" || isZeroed;
               return (
-                <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : isZeroed ? "#F3F4F6" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: isZeroed ? 0.35 : 1 }}>
+                <div key={idx} style={{ ...S.itemRow, padding: `${scalePx(6, scale)}px 14px`, minHeight: scalePx(36, scale), background: order.cancelled ? "#FFF1F2" : isZeroed ? "#F3F4F6" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: isZeroed ? 0.35 : 1 }}>
                   <span style={{ ...S.itemQty, fontSize: clampFont(FONT_ITEM_QTY, scale), width: clampFont(FONT_ITEM_QTY, scale), color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: isZeroed ? "line-through" : "none" }}>{item.qty}</span>
                   <div style={{ flex: 1 }}>
                     <span style={{ ...S.itemName, fontSize: clampFont(FONT_ITEM_NAME, scale), color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
@@ -1532,11 +1541,11 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
                       {cs.tagBg && !order.cancelled && !isZeroed && <span style={{ ...S.changeTag, fontSize: clampFont(FONT_COL, scale), background: cs.tagBg }}>{cs.label}</span>}
                     </span>
                     {item.modifiers && item.modifiers.length > 0 && (
-                      <div style={S.ticketModifiers}>
+                      <div style={{ ...S.ticketModifiers, marginTop: scalePx(4, scale) }}>
                         {item.modifiers.map((mod, mi) => {
                           const isRemoval = REMOVE_TRIGGERS.some(w => mod.name.toLowerCase().includes(w));
                           return (
-                            <span key={mi} style={{ ...S.ticketModifierChip, color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800, textTransform: "uppercase" }}>
+                            <span key={mi} style={{ ...S.ticketModifierChip, fontSize: clampFont(FONT_MODIFIER, scale), color: isRemoval ? "#BE202E" : "#15803D", fontWeight: 800, textTransform: "uppercase" }}>
                               {isRemoval ? "− " : "+ "}{mod.name.toUpperCase()}
                             </span>
                           );
@@ -1544,7 +1553,7 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
                       </div>
                     )}
                     {item.specialNote && (
-                      <div style={S.ticketSpecialNoteBlock}>
+                      <div style={{ ...S.ticketSpecialNoteBlock, marginTop: scalePx(4, scale) }}>
                         {parseSpecialNote(item.specialNote).map((seg, si) => (
                           <div key={si} style={{ ...S.ticketSpecialNoteLine, fontSize: clampFont(FONT_SPECIAL_NOTE, scale), color: seg.type === "add" ? "#15803D" : seg.type === "remove" ? "#BE202E" : "#1A1A1A" }}>
                             {seg.type === "add" ? "+ " : seg.type === "remove" ? "− " : ""}{seg.text}
