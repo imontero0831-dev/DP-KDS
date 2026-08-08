@@ -688,13 +688,15 @@ async function _completeOrder(orderId) {
   await updateDoc(ref, { allReady: true, allReadyAt: Date.now() });
 }
 
+// Kitchen is almost always the last station to finish in practice (Drinks/
+// Sides prep is quick by comparison), so a kitchen bump now also closes out
+// the Drinks/Sides side of the ticket instead of waiting on a separate tap
+// there. KDS2 still shows the order live the whole time Kitchen is cooking
+// it -- this only skips the extra confirmation once Kitchen says done.
 async function markKitchenReady(order) {
   const ref = doc(db, "orders", order.firestoreId);
-  await updateDoc(ref, { kitchenReady: true });
-  const hasDrinks = orderNeedsDrinksStation(order);
-  if (!hasDrinks || order.drinksReady) {
-    await _completeOrder(order.firestoreId);
-  }
+  await updateDoc(ref, { kitchenReady: true, drinksReady: true });
+  await _completeOrder(order.firestoreId);
 }
 
 async function markDrinksReady(order) {
