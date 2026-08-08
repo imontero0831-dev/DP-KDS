@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, doc, onSnapshot,
@@ -1166,33 +1166,6 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
     seatGroups[seatIndex.get(key)].items.push(item);
   });
 
-  // Every visible ticket is stretched to the same fixed row height (see
-  // ticketGrid/S.ticket), so a long order can't grow the row anymore --
-  // instead item text is sized to the ticket's ACTUAL measured pixel
-  // height (ResizeObserver on itemsList), divided by real row count.
-  // This is a live DOM measurement, not a tuned constant: it recomputes
-  // whenever the row's real height, the item count, or the item text
-  // itself (which can rewrap) changes. itemsList still scrolls internally
-  // as a last-resort safety net if a measurement ever comes up short.
-  const rowCount = items.length + (hasSeats ? seatGroups.length : 0);
-  const itemsListRef = useRef(null);
-  const [itemFontPx, setItemFontPx] = useState(32);
-  useLayoutEffect(() => {
-    const el = itemsListRef.current;
-    if (!el) return;
-    const measure = () => {
-      const rows = Math.max(rowCount, 1);
-      const perRowPx = el.clientHeight / rows;
-      // itemRow has 6px top+bottom padding (12px total) and 1.2 line-height
-      const next = Math.round((perRowPx - 12) / 1.2);
-      setItemFontPx(Math.max(16, Math.min(85, next)));
-    };
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    measure();
-    return () => ro.disconnect();
-  }, [rowCount]);
-
   const changeStyle = (changeType) => {
     switch (changeType) {
       case "added":     return { color: "#15803D", bg: "#F0FDF4" };
@@ -1266,7 +1239,7 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
       </div>
       <div style={S.ruledLine} />
 
-      <div style={S.itemsList} ref={itemsListRef}>
+      <div style={S.itemsList}>
         {seatGroups.map((group, gi) => (
           <div key={group.seat ?? "shared"}>
             {hasSeats && gi > 0 && <div style={S.plateDivider} />}
@@ -1282,10 +1255,10 @@ function GuestCheckTicket({ order, t, isQueue, isFocused, catNameById = {} }) {
               const isRemoved = item.changeType === "removed";
               const dimmed = item.changeType === "unchanged" && isKitchenDimmed(item.name, item.catName || catNameById[item.categoryId] || "");
               return (
-                <div key={idx} style={{ ...S.itemRow, minHeight: 0, background: order.cancelled ? "#FFF1F2" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: dimmed ? 0.35 : 1 }}>
-                  <span style={{ ...S.itemQty, width: itemFontPx, fontSize: itemFontPx, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color }}>{item.qty}</span>
+                <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: dimmed ? 0.35 : 1 }}>
+                  <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color }}>{item.qty}</span>
                   <div style={{ flex: 1 }}>
-                    <span style={{ ...S.itemName, fontSize: itemFontPx, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
+                    <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : dimmed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
                       {item.name}
                       {cs.tagBg && !order.cancelled && <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>}
                     </span>
@@ -1522,7 +1495,7 @@ function KitchenScreen({ lang, menu }) {
           </div>
         </div>
       ) : (
-        <div style={{ ...S.ticketGrid, gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`, gridTemplateRows: "minmax(0, 1fr)" }}>
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
           {visible.map((order, idx) => (
             <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <GuestCheckTicket
@@ -1571,25 +1544,6 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
 
   const ticketAccentColor = getOrderAccentColor(order);
   const ticketTintBg = getOrderAccentBg(order);
-
-  // Same measured (not guessed) fit as GuestCheckTicket -- see its comment.
-  const rowCount = order.items?.length || 0;
-  const itemsListRef = useRef(null);
-  const [itemFontPx, setItemFontPx] = useState(32);
-  useLayoutEffect(() => {
-    const el = itemsListRef.current;
-    if (!el) return;
-    const measure = () => {
-      const rows = Math.max(rowCount, 1);
-      const perRowPx = el.clientHeight / rows;
-      const next = Math.round((perRowPx - 12) / 1.2);
-      setItemFontPx(Math.max(16, Math.min(85, next)));
-    };
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    measure();
-    return () => ro.disconnect();
-  }, [rowCount]);
 
   return (
     <div style={{
@@ -1656,7 +1610,7 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
       </div>
       <div style={S.ruledLine} />
 
-      <div style={S.itemsList} ref={itemsListRef}>
+      <div style={S.itemsList}>
         {order.items?.map((item, idx) => {
           const rule = getDrinksRule(item.name, item.catName || catNameById?.[item.categoryId] || "");
           const color = rule ? rule.color : order.isToGo ? TOGO_COLOR : "#C0B8AC";
@@ -1667,14 +1621,13 @@ function DrinksTicket({ order, t, catNameById, isFocused }) {
           return (
             <div key={idx} style={{
               ...S.itemRow,
-              minHeight: 0,
               background: bg,
               opacity: dimmed ? 0.3 : 1,
               borderBottom: idx < order.items.length - 1 ? "1px solid #E5DFD0" : "none",
             }}>
-              <span style={{ ...S.itemQty, width: itemFontPx, fontSize: itemFontPx, color }}>{item.qty}</span>
+              <span style={{ ...S.itemQty, color }}>{item.qty}</span>
               <div style={{ flex: 1 }}>
-                <span style={{ ...S.itemName, fontSize: itemFontPx, color, fontWeight: rule || order.isToGo ? 900 : 700 }}>
+                <span style={{ ...S.itemName, color, fontWeight: rule || order.isToGo ? 900 : 700 }}>
                   {item.name}
                   {label && (
                     <span style={{ ...S.changeTag, background: color, color: "#fff", marginLeft: 6 }}>
@@ -1853,7 +1806,7 @@ function DrinksStationScreen({ lang, menu }) {
           </div>
         </div>
       ) : (
-        <div style={{ ...S.ticketGrid, gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`, gridTemplateRows: "minmax(0, 1fr)" }}>
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 280px))" }}>
           {visible.map((order, idx) => (
             <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <DrinksTicket order={order} t={t} catNameById={catNameById} isFocused={idx === focusedIndex} />
@@ -3291,7 +3244,7 @@ const S = {
   cartSpecialNoteLine: { fontSize: 11, fontWeight: 800 },
 
   // KITCHEN
-  kitchenRoot: { height: "calc(100dvh - 53px)", display: "flex", flexDirection: "column", background: "#F5F3F0", overflow: "hidden" },
+  kitchenRoot: { flex: 1, display: "flex", flexDirection: "column", background: "#F5F3F0", minHeight: "calc(100vh - 53px)" },
   kitchenHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", background: "#FFFFFF", borderBottom: "1px solid #E5E0D8", flexWrap: "wrap", gap: 8 },
   kitchenHeaderLeft: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
   kitchenTitle: { fontSize: "clamp(28px, calc(4.059vw + 12.89px), 90px)", fontWeight: 900, letterSpacing: "-0.02em", color: "#1A1A1A", textTransform: "uppercase" },
@@ -3307,10 +3260,10 @@ const S = {
   emptyCheckmark: { fontSize: "clamp(96px, calc(14.529vw + 43.95px), 320px)", color: "#15803D", fontWeight: 900, lineHeight: 1 },
   emptyCheckSub: { fontSize: "clamp(36px, calc(5.439vw + 16.68px), 120px)", fontWeight: 900, color: "#1A1A1A", textTransform: "uppercase" },
   emptyCheckSubSmall: { fontSize: "clamp(28px, calc(2.760vw + 17.56px), 70px)", color: "#888", textTransform: "uppercase" },
-  ticketGrid: { flex: 1, minHeight: 0, display: "grid", gap: 16, padding: "16px", alignItems: "stretch" },
+  ticketGrid: { flex: 1, display: "grid", gap: 16, padding: "16px", alignItems: "start" },
 
   // TICKET
-  ticket: { background: "#FFFDF7", border: "1px solid #E0D8C4", borderRadius: 3, overflow: "hidden", transition: "all 0.3s", fontFamily: "'DM Sans', 'Segoe UI', sans-serif", height: "100%", display: "flex", flexDirection: "column" },
+  ticket: { background: "#FFFDF7", border: "1px solid #E0D8C4", borderRadius: 3, overflow: "hidden", transition: "all 0.3s", fontFamily: "'DM Sans', 'Segoe UI', sans-serif" },
   cancelledBanner: { background: "#BE202E", color: "#fff", fontWeight: 900, fontSize: "clamp(24px, calc(21.635cqw - 49.81px), 80px)", padding: "8px 14px", textAlign: "center", letterSpacing: "0.08em", textTransform: "uppercase" },
   toGoBanner: { background: "#0369A1", color: "#fff", fontWeight: 900, fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", padding: "6px 14px", textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" },
   modifiedBanner: { background: "#7C3AED", color: "#fff", fontWeight: 900, fontSize: "clamp(24px, calc(13.942cqw - 23.65px), 60px)", padding: "5px 14px", textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" },
@@ -3328,7 +3281,7 @@ const S = {
   colHeaders: { display: "flex", padding: "4px 14px", background: "#F5EFE0" },
   colQty: { flexShrink: 0, whiteSpace: "nowrap", marginRight: 10, fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
   colItem: { flex: 1, fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
-  itemsList: { padding: "2px 0", flex: 1, minHeight: 0, overflowY: "auto" },
+  itemsList: { padding: "2px 0" },
   itemRow: { display: "flex", alignItems: "flex-start", padding: "6px 14px", minHeight: 36 },
   itemQty: { width: "clamp(30px, calc(26.922cqw - 61.54px), 100px)", fontSize: "clamp(30px, calc(26.922cqw - 61.54px), 100px)", fontWeight: 900, letterSpacing: "-0.02em" },
   itemName: { fontSize: "clamp(25px, calc(23.078cqw - 53.46px), 85px)", lineHeight: 1.2, textTransform: "uppercase" },
