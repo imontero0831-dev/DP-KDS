@@ -1348,9 +1348,15 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
   const isWarning = elapsedSecs > 300;
   const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
 
-  const allItems = order.modified && order.latestDiff
+  // Bebidas/alcohol never belong on the cook's ticket -- cooks don't make
+  // drinks and seeing one on their card was leading them to get it
+  // cancelled off the waitress screen instead of just being left off KDS1
+  // in the first place. Drinks/Sides (KDS2) still gets these via its own
+  // ticket, unaffected by this filter.
+  const allItems = (order.modified && order.latestDiff
     ? order.latestDiff
-    : order.items.map(i => ({ ...i, changeType: "unchanged" }));
+    : order.items.map(i => ({ ...i, changeType: "unchanged" }))
+  ).filter(i => !isKitchenDimmed(i.name, i.catName || catNameById[i.categoryId] || ""));
 
   // Long orders spill onto additional "Cont." cards (see KitchenScreen,
   // which renders one <GuestCheckTicket> per card) instead of shrinking
@@ -1463,12 +1469,11 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
               const cs = changeStyle(item.changeType);
               const isZeroed = item.qty === 0;
               const isRemoved = item.changeType === "removed" || isZeroed;
-              const dimmed = item.changeType === "unchanged" && isKitchenDimmed(item.name, item.catName || catNameById[item.categoryId] || "");
               return (
-                <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : isZeroed ? "#F3F4F6" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: dimmed || isZeroed ? 0.35 : 1 }}>
-                  <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : dimmed ? "#9CA3AF" : cs.color, textDecoration: isZeroed ? "line-through" : "none" }}>{item.qty}</span>
+                <div key={idx} style={{ ...S.itemRow, background: order.cancelled ? "#FFF1F2" : isZeroed ? "#F3F4F6" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: isZeroed ? 0.35 : 1 }}>
+                  <span style={{ ...S.itemQty, color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: isZeroed ? "line-through" : "none" }}>{item.qty}</span>
                   <div style={{ flex: 1 }}>
-                    <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : dimmed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
+                    <span style={{ ...S.itemName, color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
                       {item.name}
                       {cs.tagBg && !order.cancelled && !isZeroed && <span style={{ ...S.changeTag, background: cs.tagBg }}>{cs.label}</span>}
                     </span>
@@ -1564,7 +1569,7 @@ function KitchenScreen({ lang, menu }) {
     return unsub;
   }, []);
 
-  const active = orders.filter(o => !o.kitchenReady);
+  const active = orders.filter(o => !o.kitchenReady && orderHasKitchenItems(o));
 
   // Build one "card" per buildTicketCards() chunk of each order (see
   // GuestCheckTicket), keeping each order's cards together as a unit --
@@ -3520,7 +3525,7 @@ const S = {
   ticketModifiers: { display: "flex", flexDirection: "column", gap: 1, marginTop: 4 },
   ticketModifierChip: { fontSize: "clamp(21px, calc(18.750cqw - 42.50px), 70px)", fontStyle: "normal", display: "block", textTransform: "uppercase" },
   ticketSpecialNoteBlock: { display: "flex", flexDirection: "column", gap: 2, marginTop: 4 },
-  ticketSpecialNoteLine: { fontSize: "clamp(21px, calc(18.750cqw - 42.50px), 70px)", fontWeight: 800, letterSpacing: "0.02em", textTransform: "uppercase" },
+  ticketSpecialNoteLine: { fontSize: "clamp(16.8px, calc(15cqw - 34px), 56px)", fontWeight: 800, letterSpacing: "0.02em", textTransform: "uppercase" },
   cartModifiers: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 },
   cartModChip: { fontSize: 11, background: "#F0EDE8", borderRadius: 4, padding: "1px 6px" },
   cartSpecialNoteBlock: { display: "flex", flexDirection: "column", gap: 2, marginTop: 4 },
@@ -3560,13 +3565,13 @@ const S = {
   timerBig: { fontSize: "clamp(22px, calc(20.192cqw - 46.15px), 75px)", fontWeight: 900, marginTop: 3, letterSpacing: "-0.01em" },
   ruledLine: { borderBottom: "1px solid #E0D8C4", margin: "0 14px" },
   colHeaders: { display: "flex", padding: "4px 14px", background: "#F5EFE0" },
-  colQty: { flexShrink: 0, whiteSpace: "nowrap", marginRight: 10, fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
-  colItem: { flex: 1, fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
+  colQty: { flexShrink: 0, whiteSpace: "nowrap", marginRight: 10, fontSize: "clamp(14.4px, calc(8.462cqw - 14.768px), 36px)", fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
+  colItem: { flex: 1, fontSize: "clamp(14.4px, calc(8.462cqw - 14.768px), 36px)", fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", textTransform: "uppercase" },
   itemsList: { padding: "2px 0" },
   itemRow: { display: "flex", alignItems: "flex-start", padding: "6px 14px", minHeight: 36 },
-  itemQty: { width: "clamp(30px, calc(26.922cqw - 61.54px), 100px)", fontSize: "clamp(30px, calc(26.922cqw - 61.54px), 100px)", fontWeight: 900, letterSpacing: "-0.02em" },
-  itemName: { fontSize: "clamp(25px, calc(23.078cqw - 53.46px), 85px)", lineHeight: 1.2, textTransform: "uppercase" },
-  changeTag: { display: "inline-block", color: "#fff", fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 900, padding: "2px 5px", borderRadius: 4, marginLeft: 7, letterSpacing: "0.06em", textTransform: "uppercase" },
+  itemQty: { width: "clamp(24px, calc(21.538cqw - 49.232px), 80px)", fontSize: "clamp(24px, calc(21.538cqw - 49.232px), 80px)", fontWeight: 900, letterSpacing: "-0.02em" },
+  itemName: { fontSize: "clamp(20px, calc(18.462cqw - 42.768px), 68px)", lineHeight: 1.2, textTransform: "uppercase" },
+  changeTag: { display: "inline-block", color: "#fff", fontSize: "clamp(14.4px, calc(8.462cqw - 14.768px), 36px)", fontWeight: 900, padding: "2px 5px", borderRadius: 4, marginLeft: 7, letterSpacing: "0.06em", textTransform: "uppercase" },
   noteRow: { display: "flex", gap: 7, padding: "6px 14px", alignItems: "flex-start" },
   noteLabel: { fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 900, color: "#9B8B72", letterSpacing: "0.12em", minWidth: 40, paddingTop: 2, textTransform: "uppercase" },
   noteText: { fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 600, color: "#444", fontStyle: "italic", flex: 1, textTransform: "uppercase" },
@@ -3641,7 +3646,7 @@ const S = {
   seatChipAdd: { background: "#F5F3F0", border: "1px dashed #AAA", borderRadius: 8, padding: "4px 11px", fontSize: 13, fontWeight: 900, color: "#555", cursor: "pointer", whiteSpace: "nowrap" },
   cartGroupHeader: { fontSize: 10, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.1em", textTransform: "uppercase", padding: "10px 0 2px", display: "flex", justifyContent: "space-between" },
   plateHeader: { padding: "10px 14px 5px", background: "#F5EFE0" },
-  plateHeaderText: { fontSize: "clamp(30px, calc(20cqw - 20px), 75px)", fontWeight: 900, letterSpacing: "0.07em", color: "#1A1A1A", textTransform: "uppercase" },
+  plateHeaderText: { fontSize: "clamp(24px, calc(16cqw - 16px), 60px)", fontWeight: 900, letterSpacing: "0.07em", color: "#1A1A1A", textTransform: "uppercase" },
   plateDivider: { borderBottom: "5px solid #1A1A1A", margin: "6px 14px 0" },
   cartQtyRow: { display: "flex", alignItems: "center", gap: 6 },
   qtyBtn: { background: "#F5F3F0", border: "1px solid #DDD", color: "#444", width: 28, height: 28, borderRadius: 7, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" },
