@@ -1495,7 +1495,7 @@ function KitchenScreen({ lang, menu }) {
           </div>
         </div>
       ) : (
-        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: `repeat(${visible.length}, 1fr)` }}>
           {visible.map((order, idx) => (
             <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <GuestCheckTicket
@@ -1806,7 +1806,7 @@ function DrinksStationScreen({ lang, menu }) {
           </div>
         </div>
       ) : (
-        <div style={{ ...S.ticketGrid, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 280px))" }}>
+        <div style={{ ...S.ticketGrid, gridTemplateColumns: `repeat(${visible.length}, 1fr)` }}>
           {visible.map((order, idx) => (
             <div key={order.firestoreId} onClick={() => setFocusedIndex(idx)} style={{ cursor: "pointer", containerType: "inline-size" }}>
               <DrinksTicket order={order} t={t} catNameById={catNameById} isFocused={idx === focusedIndex} />
