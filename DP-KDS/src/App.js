@@ -407,7 +407,7 @@ const CLOVER_ORDER_TYPES = {
 };
 
 function buildCloverOrderNote(order) {
-  if (order.isToGo) return `PARA LLEVAR - ${order.toGoName}${order.note ? " | " + order.note : ""}`;
+  if (order.isToGo) return `${order.toGoName}${order.note ? " | " + order.note : ""}`;
   if (order.isBar) return `B${order.table}${order.note ? " | " + order.note : ""}`;
   if (order.isPatio) return `P${order.table}${order.note ? " | " + order.note : ""}`;
   return `MESA ${order.table}${order.note ? " | " + order.note : ""}`;
@@ -1955,14 +1955,14 @@ function DrinksStationScreen({ lang, menu }) {
   const catNameById = {};
   if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name[lang] || c.name.en || ""; });
 
-  // An order stays on this screen once drinksReady flips true instead of
-  // vanishing -- KDS1/2/3 only clear a ticket once payment closes the
-  // table (see checkPendingPayments/closeTable), not on a per-station
-  // ready flag. Pending orders are listed ahead of done ones so a bartender
-  // still working never has to hunt for it behind paid-and-waiting tickets.
+  // A ticket drops off this screen the instant it's marked ready here --
+  // same as KitchenScreen's own `active` filter below. Kitchen bumps now
+  // also flip drinksReady (see markKitchenReady), so in practice a ticket
+  // clears KDS1 and KDS2 together instead of lingering checked-off on KDS2
+  // until the table's payment closes it.
   const pending = orders.filter(o => !o.drinksReady && orderHasDrinksItems(o));
   const done    = orders.filter(o => o.drinksReady && orderHasDrinksItems(o));
-  const active  = useMemo(() => [...pending, ...done], [pending, done]);
+  const active  = pending;
 
   // Same per-order card grouping as KitchenScreen -- see its comment.
   const visible = useMemo(() => {
