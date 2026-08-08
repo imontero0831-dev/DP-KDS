@@ -83,7 +83,6 @@ const T = {
     edit: "Edición",
     cancelEdit: "Cancelar",
     toGoLabel: "PARA LLEVAR",
-    checkNo: "ORDEN #",
     guestCheck: "ORDEN DE COCINA",
     inQueue: "en cola",
     note: "NOTA",
@@ -180,7 +179,6 @@ const T = {
     edit: "Edit",
     cancelEdit: "Cancel",
     toGoLabel: "TO GO",
-    checkNo: "ORDER #",
     guestCheck: "KITCHEN ORDER",
     inQueue: "in queue",
     note: "NOTE",
@@ -1314,6 +1312,10 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
   const ticketAccentColor = getOrderAccentColor(order);
   const ticketTintBg = getOrderAccentBg(order);
 
+  // Order code stays out of the cook-facing UI to save space, but is
+  // still logged for debugging/traceability against Firebase.
+  useEffect(() => { console.log("[Kitchen ticket] order id:", order.id); }, [order.id]);
+
   return (
     <div style={{
       ...S.ticket,
@@ -1361,8 +1363,6 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
           </div>
         </div>
         <div style={S.ticketTopRight}>
-          <div style={S.checkNoLabel}>{t.checkNo}</div>
-          <div style={S.checkNoValue}>{order.id}</div>
           <div style={{ ...S.timerBig, color: timerColor }}>{elapsed(order.timestamp)}</div>
         </div>
       </div>
@@ -1708,6 +1708,10 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
   const ticketAccentColor = getOrderAccentColor(order);
   const ticketTintBg = getOrderAccentBg(order);
 
+  // Order code stays out of the cook-facing UI to save space, but is
+  // still logged for debugging/traceability against Firebase.
+  useEffect(() => { console.log("[Drinks ticket] order id:", order.id); }, [order.id]);
+
   return (
     <div style={{
       ...S.ticket,
@@ -1760,8 +1764,6 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
           </div>
         </div>
         <div style={S.ticketTopRight}>
-          <div style={S.checkNoLabel}>{t.checkNo}</div>
-          <div style={S.checkNoValue}>{order.id}</div>
           <div style={{ ...S.timerBig, color: timerColor }}>{elapsed(order.timestamp)}</div>
         </div>
       </div>
@@ -3404,7 +3406,7 @@ const S = {
   emptyCheckmark: { fontSize: "clamp(96px, calc(14.529vw + 43.95px), 320px)", color: "#15803D", fontWeight: 900, lineHeight: 1 },
   emptyCheckSub: { fontSize: "clamp(36px, calc(5.439vw + 16.68px), 120px)", fontWeight: 900, color: "#1A1A1A", textTransform: "uppercase" },
   emptyCheckSubSmall: { fontSize: "clamp(28px, calc(2.760vw + 17.56px), 70px)", color: "#888", textTransform: "uppercase" },
-  ticketGrid: { flex: 1, display: "grid", gap: 16, padding: "16px", alignItems: "start", justifyContent: "center" },
+  ticketGrid: { flex: 1, display: "grid", gap: 16, padding: "16px", alignItems: "start", justifyContent: "start" },
 
   // TICKET
   ticket: { background: "#FFFDF7", border: "1px solid #E0D8C4", borderRadius: 3, overflow: "hidden", transition: "all 0.3s", fontFamily: "'DM Sans', 'Segoe UI', sans-serif" },
@@ -3418,8 +3420,6 @@ const S = {
   tableNumberBig: { fontSize: "clamp(42px, calc(37.500cqw - 85.00px), 140px)", fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em", lineHeight: 1, overflowWrap: "break-word" },
   toGoNameBig: { fontSize: "clamp(31px, calc(28.365cqw - 65.19px), 105px)", fontWeight: 900, color: "#0369A1", letterSpacing: "-0.01em", lineHeight: 1.1, textTransform: "uppercase", overflowWrap: "break-word" },
   ticketMeta: { marginTop: 3 },
-  checkNoLabel: { fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 800, color: "#9B8B72", letterSpacing: "0.15em", textTransform: "uppercase" },
-  checkNoValue: { fontSize: "clamp(29px, calc(25.481cqw - 57.89px), 95px)", fontWeight: 900, color: "#BE202E", letterSpacing: "0.05em" },
   timerBig: { fontSize: "clamp(22px, calc(20.192cqw - 46.15px), 75px)", fontWeight: 900, marginTop: 3, letterSpacing: "-0.01em" },
   ruledLine: { borderBottom: "1px solid #E0D8C4", margin: "0 14px" },
   colHeaders: { display: "flex", padding: "4px 14px", background: "#F5EFE0" },
