@@ -603,13 +603,71 @@ async function updateOrderStatus(orderId, status) {
   await updateDoc(orderRef, updates);
 }
 
+// Guards against the same order being archived twice when multiple devices
+// race to close it -- same failure shape as bumpingIds/undoingIds above.
+// This got a lot more likely once the auto-close-on-payment check (below in
+// App) started running on every open device instead of just whichever
+// tablet happened to be sitting on the table-select screen.
+const closingIds = new Set();
 async function closeTable(tableOrders) {
   for (const order of tableOrders) {
-    const orderRef = doc(db, "orders", order.firestoreId);
-    const snap = await getDoc(orderRef);
-    if (snap.exists()) {
-      await addDoc(collection(db, "completedOrders"), { ...snap.data(), completedAt: Date.now() });
-      await deleteDoc(orderRef);
+    if (closingIds.has(order.firestoreId)) continue;
+    closingIds.add(order.firestoreId);
+    try {
+      const orderRef = doc(db, "orders", order.firestoreId);
+      const snap = await getDoc(orderRef);
+      if (snap.exists()) {
+        await addDoc(collection(db, "completedOrders"), { ...snap.data(), completedAt: Date.now() });
+        await deleteDoc(orderRef);
+      }
+    } finally {
+      closingIds.delete(order.firestoreId);
+    }
+  }
+}
+
+// ── AUTO-CLOSE ON CONFIRMED CLOVER PAYMENT ────────────────────
+// Checks each active table/bar-seat/patio/to-go group's Clover order for a
+// real completed payment (isOrderPaidOnClover) and, if found, closes that
+// group exactly like the waitress's own Cerrar Mesa tap. Deliberately does
+// nothing for groups with no confirmed Clover payment — cash, or anything
+// rung up separately at the register, never shows a payment on this order —
+// those still need the manual tap, same as before this existed.
+//
+// Called on a 45s interval from App (see below) so it runs on every open
+// device -- Kitchen/Drinks/Expo Pis included -- not just whichever tablet
+// happens to be sitting on the table-select screen. `autoClosingKeys` is a
+// Set ref local to whichever component's interval is calling this, just
+// to dedupe within that one device's own repeated 45s ticks; closeTable's
+// own closingIds guard (above) is what actually protects against two
+// different devices racing to close the same table.
+async function checkPendingPayments(liveOrders, autoClosingKeys) {
+  const groups = {};
+  function addTo(gk, o) {
+    if (!groups[gk]) groups[gk] = [];
+    groups[gk].push(o);
+  }
+  liveOrders.filter(o => o.status !== "done" && !o.isToGo && !o.isBar && !o.isPatio).forEach(o => addTo(`table:${o.table}`, o));
+  liveOrders.filter(o => o.status !== "done" && o.isBar).forEach(o => addTo(`bar:${o.table}`, o));
+  liveOrders.filter(o => o.status !== "done" && o.isPatio).forEach(o => addTo(`patio:${o.table}`, o));
+  liveOrders.filter(o => o.status !== "done" && o.isToGo).forEach(o => addTo(`togo:${o.toGoSlot}`, o));
+
+  for (const [key, groupOrders] of Object.entries(groups)) {
+    if (autoClosingKeys.has(key)) continue;
+    // Don't auto-close on a pre-paid or early-closed tab while the
+    // kitchen/drinks stations still have work outstanding — allReady
+    // only flips true once both stations have confirmed done, so this
+    // guards against yanking a ticket off-screen before the food is
+    // actually made, even if the card was already charged.
+    if (!groupOrders.every(o => o.allReady)) continue;
+    let paid = false;
+    for (const o of groupOrders) {
+      if (o.cloverOrderId && await isOrderPaidOnClover(o.cloverOrderId, o.total)) { paid = true; break; }
+    }
+    if (paid) {
+      autoClosingKeys.add(key);
+      await closeTable(groupOrders);
+      autoClosingKeys.delete(key);
     }
   }
 }
@@ -2285,57 +2343,6 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
     return unsub;
   }, []);
 
-  // ── AUTO-CLOSE ON CONFIRMED CLOVER PAYMENT ────────────────────
-  // Every 45s, checks each active table/bar-seat/patio/to-go group's
-  // Clover order for a real completed payment (isOrderPaidOnClover) and,
-  // if found, closes that group exactly like the waitress's own Cerrar
-  // Mesa tap. Deliberately does nothing for groups with no confirmed
-  // Clover payment — cash, or anything rung up separately at the
-  // register, never shows a payment on this order — those still need the
-  // manual tap, same as before this existed.
-  //
-  // Reads live orders via a ref (not the `orders` state directly) so the
-  // interval isn't torn down and rebuilt on every Firestore update, which
-  // would otherwise keep resetting the 45s timer during a busy shift.
-  const ordersRef = useRef(orders);
-  useEffect(() => { ordersRef.current = orders; }, [orders]);
-  const autoClosingKeysRef = useRef(new Set());
-  useEffect(() => {
-    async function checkPayments() {
-      const live = ordersRef.current;
-      const groups = {};
-      function addTo(gk, o) {
-        if (!groups[gk]) groups[gk] = [];
-        groups[gk].push(o);
-      }
-      live.filter(o => o.status !== "done" && !o.isToGo && !o.isBar && !o.isPatio).forEach(o => addTo(`table:${o.table}`, o));
-      live.filter(o => o.status !== "done" && o.isBar).forEach(o => addTo(`bar:${o.table}`, o));
-      live.filter(o => o.status !== "done" && o.isPatio).forEach(o => addTo(`patio:${o.table}`, o));
-      live.filter(o => o.status !== "done" && o.isToGo).forEach(o => addTo(`togo:${o.toGoSlot}`, o));
-
-      for (const [key, groupOrders] of Object.entries(groups)) {
-        if (autoClosingKeysRef.current.has(key)) continue;
-        // Don't auto-close on a pre-paid or early-closed tab while the
-        // kitchen/drinks stations still have work outstanding — allReady
-        // only flips true once both stations have confirmed done, so this
-        // guards against yanking a ticket off-screen before the food is
-        // actually made, even if the card was already charged.
-        if (!groupOrders.every(o => o.allReady)) continue;
-        let paid = false;
-        for (const o of groupOrders) {
-          if (o.cloverOrderId && await isOrderPaidOnClover(o.cloverOrderId, o.total)) { paid = true; break; }
-        }
-        if (paid) {
-          autoClosingKeysRef.current.add(key);
-          await closeTable(groupOrders);
-          autoClosingKeysRef.current.delete(key);
-        }
-      }
-    }
-    const interval = setInterval(checkPayments, 45000);
-    return () => clearInterval(interval);
-  }, []);
-
   const activeByTable = {};
   orders.filter(o => o.status !== "done" && !o.isToGo && !o.isBar && !o.isPatio).forEach(o => {
     if (!activeByTable[o.table]) activeByTable[o.table] = [];
@@ -3176,6 +3183,10 @@ export default function App() {
     setMenu(prev => ({ ...prev, items: prev.items.map(item => ({ ...item, nameEs: translationCache.current[item.id] || item.nameEs || item.name })) }));
   }
 
+  // Live orders, kept in a ref (not state) purely for the payment-check
+  // interval below -- avoids re-triggering that effect on every snapshot.
+  const ordersRef = useRef([]);
+  const autoClosingKeysRef = useRef(new Set());
   useEffect(() => {
     const q = query(collection(db, "orders"));
     const unsub = onSnapshot(q, (snapshot) => {
@@ -3186,8 +3197,20 @@ export default function App() {
         const hasD = orderNeedsDrinksStation(o);
         return (!hasK || !!o.kitchenReady) && (!hasD || !!o.drinksReady);
       }).length);
+      ordersRef.current = snapshot.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
     });
     return unsub;
+  }, []);
+
+  // Runs the Clover-payment auto-close check (see checkPendingPayments)
+  // on every device this app is open on -- Kitchen/Drinks/Expo Pis
+  // included -- instead of only whichever tablet happens to be showing
+  // the table-select screen, which is where this used to live exclusively.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      checkPendingPayments(ordersRef.current, autoClosingKeysRef.current);
+    }, 45000);
+    return () => clearInterval(interval);
   }, []);
 
   if (!menu) return (
