@@ -808,17 +808,30 @@ function useAutoUpdate(viewRef) {
   }, [viewRef]);
 }
 
+// Guards against the same stale `lastCompleted` snapshot being undone twice
+// before Firestore's onSnapshot round-trip swaps in the next one. The "0" key
+// is deliberately repeatable to walk back through history, but mashing it (or
+// numpad key-repeat on hold) faster than that round-trip replays the same
+// order and recreates it a second time as a duplicate live ticket. Same fix
+// as bumpingIds above, same failure shape.
+const undoingIds = new Set();
 async function undoCompletedOrder(order) {
   if (!order) return;
-  const { firestoreId, completedAt, duration, allReadyAt, ...rest } = order;
-  await addDoc(collection(db, "orders"), {
-    ...rest,
-    status: "in_progress",
-    kitchenReady: false,
-    drinksReady: false,
-    allReady: false,
-  });
-  await deleteDoc(doc(db, "completedOrders", firestoreId));
+  if (undoingIds.has(order.firestoreId)) return;
+  undoingIds.add(order.firestoreId);
+  try {
+    const { firestoreId, completedAt, duration, allReadyAt, ...rest } = order;
+    await addDoc(collection(db, "orders"), {
+      ...rest,
+      status: "in_progress",
+      kitchenReady: false,
+      drinksReady: false,
+      allReady: false,
+    });
+    await deleteDoc(doc(db, "completedOrders", firestoreId));
+  } finally {
+    undoingIds.delete(order.firestoreId);
+  }
 }
 
 // ============================================================
