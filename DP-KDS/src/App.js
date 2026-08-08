@@ -1062,8 +1062,8 @@ function orderUnitTotal(items) {
 // only orders bigger than that still spill to a second card, so text never
 // shrinks past MIN_TICKET_SCALE (see the 8/8 overflow-bug history above
 // buildTicketCards for why unbounded shrinking is dangerous).
-const UNITS_SINGLE_CARD_CEILING = 10;
-const MIN_TICKET_SCALE = 0.55;
+const UNITS_SINGLE_CARD_CEILING = 20;
+const MIN_TICKET_SCALE = 0.45;
 function packOrderCards(items) {
   const total = orderUnitTotal(items);
   if (total <= UNITS_SINGLE_CARD_CEILING) {
