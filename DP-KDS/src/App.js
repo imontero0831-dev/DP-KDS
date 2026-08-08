@@ -2516,7 +2516,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       return;
     }
 
-    const seat = orderType === "table" ? activeSeat : null;
+    const seat = (orderType === "table" || orderType === "patio") ? activeSeat : null;
     const newKey = cartLineKey(item.id, seat, selectedMods, specialNote || null);
     setCart(prev => {
       const existing = prev.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === newKey);
@@ -2762,7 +2762,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         {/* RIGHT: cart */}
         <div style={{ ...S.cartPanel, ...(mainHeight ? { height: mainHeight, maxHeight: mainHeight } : {}) }}>
           <div style={S.cartTitle}>{t.orderSummary}</div>
-          {orderType === "table" && (
+          {(orderType === "table" || orderType === "patio") && (
             <div style={S.seatChipRow}>
               <button style={{ ...S.seatChip, ...(activeSeat === null ? S.seatChipActive : {}) }} onClick={() => setActiveSeat(null)}>{t.shared}</button>
               {Array.from({ length: seatCount }, (_, i) => i + 1).map(n => (
@@ -2780,14 +2780,14 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
               <div style={S.cartEmpty}>{t.tapToAdd}</div>
             ) : (
               <div style={S.cartItems}>
-                {(orderType === "table"
+                {((orderType === "table" || orderType === "patio")
                   ? [null, ...Array.from({ length: MAX_SEATS }, (_, i) => i + 1)]
                       .map(seat => ({ seat, items: cart.filter(i => (i.seat ?? null) === seat) }))
                       .filter(g => g.items.length > 0)
                   : [{ seat: null, items: cart }]
                 ).map(group => (
                   <div key={group.seat ?? "shared"}>
-                    {orderType === "table" && cart.some(i => i.seat) && (
+                    {(orderType === "table" || orderType === "patio") && cart.some(i => i.seat) && (
                       <div style={S.cartGroupHeader}>
                         <span>{group.seat ? `${t.guest} ${group.seat}` : t.shared}</span>
                         <span>{fmt(group.items.reduce((s, i) => s + (i.price + (i.modifiers?.reduce((ms, m) => ms + m.price, 0) ?? 0)) * i.qty, 0))}</span>
