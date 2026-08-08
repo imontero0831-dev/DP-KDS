@@ -919,12 +919,63 @@ const BAR_BG       = "#F3E8FF";
 const PATIO_COLOR  = "#0D9488";
 const PATIO_BG     = "#CCFBF1";
 
-// Max items shown on one Kitchen/Drinks ticket card before the rest spills
-// onto a "Cont." card of its own -- fixed and flat on purpose (see
-// GuestCheckTicket/KitchenScreen): shrinking font to force everything onto
-// one card is what caused the 8/8 overflow bugs. One consistent, always-
-// readable size; long orders get a second card instead.
-const ITEMS_PER_CARD = 6;
+// Kitchen/Drinks tickets show a fixed "budget" of weighted units per card
+// before the rest spills onto a "Cont." card -- fixed and flat on purpose
+// (see GuestCheckTicket/KitchenScreen): shrinking font to force everything
+// onto one card is what caused the 8/8 overflow bugs. One consistent,
+// always-readable size; long orders get a second card instead.
+//
+// A flat item count isn't enough of a budget on its own: a bare "1 Coca
+// Cola" row costs far less screen height than an item with modifiers under
+// a fresh per-seat "PLATO N" header, and a card that's too tall for the
+// screen has no scrollbar a numpad can reach -- the extra content is just
+// gone (found 2026-08-08: a 2-seat order with only ~4 items total still
+// overflowed because both seats' headers plus a couple of modifiers pushed
+// it past the fold). Each item costs 1 unit, +1 per modifier, +1 the first
+// time a seat appears on a given card (its "PLATO N" header). Deliberately
+// conservative -- err toward more, shorter cards over risking another cutoff.
+const UNITS_PER_CARD = 5;
+
+// Splits an order's items into per-card chunks. Groups by seat first
+// (preserving first-appearance order) so one seat's items always stay
+// contiguous even if they weren't already adjacent, then packs seats'
+// items in order, breaking to a new card whenever the running weighted
+// total would exceed UNITS_PER_CARD. A seat that reappears on a
+// continuation card pays its header cost again there, since it renders
+// there again too (see GuestCheckTicket/DrinksTicket's seatGroups).
+function buildTicketCards(items) {
+  const groups = [];
+  const seatIndex = new Map();
+  items.forEach(item => {
+    const key = item.seat ?? null;
+    if (!seatIndex.has(key)) { seatIndex.set(key, groups.length); groups.push({ seat: key, items: [] }); }
+    groups[seatIndex.get(key)].items.push(item);
+  });
+
+  const cards = [];
+  let current = [];
+  let units = 0;
+  let openSeats = new Set();
+  const cost = (item, seat) => 1 + (item.modifiers?.length || 0) + (openSeats.has(seat) ? 0 : 1);
+
+  groups.forEach(group => {
+    group.items.forEach(item => {
+      let itemUnits = cost(item, group.seat);
+      if (current.length > 0 && units + itemUnits > UNITS_PER_CARD) {
+        cards.push(current);
+        current = [];
+        units = 0;
+        openSeats = new Set();
+        itemUnits = cost(item, group.seat);
+      }
+      current.push(item);
+      units += itemUnits;
+      openSeats.add(group.seat);
+    });
+  });
+  if (current.length > 0 || cards.length === 0) cards.push(current);
+  return cards;
+}
 
 function getOrderAccentColor(order) {
   if (order.isToGo) return TOGO_COLOR;
@@ -1175,8 +1226,7 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
   // which renders one <GuestCheckTicket> per card) instead of shrinking
   // text to force everything onto one card.
   const isContinuation = cardIndex > 0;
-  const cardStart = cardIndex * ITEMS_PER_CARD;
-  const items = allItems.slice(cardStart, cardStart + ITEMS_PER_CARD);
+  const items = buildTicketCards(allItems)[cardIndex] || [];
 
   // Cluster items by seat so each guest's plate reads as one obvious block
   // on the ticket instead of a tiny inline tag per item — only when the
@@ -1383,7 +1433,7 @@ function KitchenScreen({ lang, menu }) {
 
   const active = orders.filter(o => !o.kitchenReady);
 
-  // Build one "card" per ITEMS_PER_CARD chunk of each order (see
+  // Build one "card" per buildTicketCards() chunk of each order (see
   // GuestCheckTicket), keeping each order's cards together as a unit --
   // an order either shows in full (all its cards) or goes to the queue
   // strip whole, so a continuation card can never get silently cut off
@@ -1392,7 +1442,8 @@ function KitchenScreen({ lang, menu }) {
   const visible = useMemo(() => {
     const result = [];
     for (const order of active) {
-      const cardCount = Math.max(1, Math.ceil(order.items.length / ITEMS_PER_CARD));
+      const sourceItems = order.modified && order.latestDiff ? order.latestDiff : order.items;
+      const cardCount = buildTicketCards(sourceItems).length;
       if (result.length + cardCount > MAX_VISIBLE) break;
       for (let i = 0; i < cardCount; i++) {
         result.push({ order, cardIndex: i, cardKey: `${order.firestoreId}:${i}` });
@@ -1594,8 +1645,7 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
   const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
 
   const isContinuation = cardIndex > 0;
-  const cardStart = cardIndex * ITEMS_PER_CARD;
-  const cardItems = (order.items || []).slice(cardStart, cardStart + ITEMS_PER_CARD);
+  const cardItems = buildTicketCards(order.items || [])[cardIndex] || [];
 
   const ticketAccentColor = getOrderAccentColor(order);
   const ticketTintBg = getOrderAccentBg(order);
@@ -1769,7 +1819,7 @@ function DrinksStationScreen({ lang, menu }) {
   const visible = useMemo(() => {
     const result = [];
     for (const order of active) {
-      const cardCount = Math.max(1, Math.ceil((order.items?.length || 0) / ITEMS_PER_CARD));
+      const cardCount = buildTicketCards(order.items || []).length;
       if (result.length + cardCount > MAX_VISIBLE) break;
       for (let i = 0; i < cardCount; i++) {
         result.push({ order, cardIndex: i, cardKey: `${order.firestoreId}:${i}` });
