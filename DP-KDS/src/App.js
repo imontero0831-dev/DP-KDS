@@ -1495,7 +1495,7 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
       {/* Keyboard shortcut hint — only shown on focused ticket */}
       {isFocused && !isQueue && (
         <div style={S.keyboardHintBar}>
-          <span style={S.keyboardHint}><strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
+          <span style={S.keyboardHint}><strong>ENTER</strong> = {t.markDone}</span>
           <span style={S.keyboardHint}><strong>2</strong> = {t.shortcutPrev}</span>
           <span style={S.keyboardHint}><strong>3</strong> = {t.shortcutNext}</span>
           <span style={S.keyboardHint}><strong>0</strong> = {t.shortcutUndo}</span>
@@ -1900,7 +1900,7 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
       {/* Keyboard shortcut hint — only shown on focused ticket, matches Kitchen's hint bar */}
       {isFocused && (
         <div style={S.keyboardHintBar}>
-          <span style={S.keyboardHint}><strong>ENTER</strong> = {order.status === "new" ? t.startCooking : t.markDone}</span>
+          <span style={S.keyboardHint}><strong>ENTER</strong> = {t.markDone}</span>
           <span style={S.keyboardHint}><strong>2</strong> = {t.shortcutPrev}</span>
           <span style={S.keyboardHint}><strong>3</strong> = {t.shortcutNext}</span>
           <span style={S.keyboardHint}><strong>0</strong> = {t.shortcutUndo}</span>
@@ -2022,6 +2022,11 @@ function DrinksStationScreen({ lang, menu }) {
   const [actionFlash, setActionFlash]   = useState(null);
   const MAX_VISIBLE = 3;
   const lastCompleted = useLastCompletedOrder();
+  // Orders this Drinks screen itself just soft-completed via numpad Enter
+  // (drinksReady, not archived) — 0 pops the most recent one off to undo
+  // it, repeatable up to 3 deep. Same pattern as Kitchen's own stack.
+  const UNDO_STACK_LIMIT = 3;
+  const lastMarkedReadyStackRef = useRef([]);
 
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
@@ -2088,25 +2093,32 @@ function DrinksStationScreen({ lang, menu }) {
       case "Enter": {
         e.preventDefault();
         if (!order || order.cancelled || order.drinksReady) return;
-        if (order.status === "new") { updateOrderStatus(order.firestoreId, "in_progress"); flash("Empezando...", "#D97706"); }
-        else if (order.status === "in_progress") { markDrinksReady(order); flash("✓ Listo!", "#15803D"); }
+        markDrinksReady(order);
+        lastMarkedReadyStackRef.current = [...lastMarkedReadyStackRef.current, order].slice(-UNDO_STACK_LIMIT);
+        flash("✓ Listo!", "#15803D");
         break;
       }
       // "2"/"3" and "0" are the standard numpad labels (match Kitchen); "+"/"-"/"*"
       // stay wired to the same actions too so nothing that already relied on them breaks.
       case "+": case "3": { e.preventDefault(); setFocusedIndex(i => Math.min(i + 1, visible.length - 1)); break; }
       case "-": case "2": { e.preventDefault(); setFocusedIndex(i => Math.max(i - 1, 0)); break; }
-      // Used to also fall back to resurrecting lastCompleted (the single
-      // most recently archived order restaurant-wide, any table/station)
-      // with no confirmation when the focused ticket wasn't revertible --
-      // that dumped random already-closed/paid tables back onto the
-      // waitress's live view. Restoring an archived order now only happens
-      // via the on-screen "Deshacer" button (confirms first, names the order).
+      // Undoes this screen's own last Enter (soft-complete), repeatable up
+      // to UNDO_STACK_LIMIT deep -- same pattern as Kitchen's "0". Used to
+      // also fall back to resurrecting lastCompleted (the single most
+      // recently archived order restaurant-wide, any table/station) with no
+      // confirmation -- that dumped random already-closed/paid tables back
+      // onto the waitress's live view. Restoring an archived order now only
+      // happens via the on-screen "Deshacer" button (confirms first, names
+      // the order).
       case "*": case "0": {
         e.preventDefault();
-        if (order && !order.cancelled && order.status === "in_progress") {
-          updateOrderStatus(order.firestoreId, "new");
-          flash("Deshecho", "#D97706");
+        const stack = lastMarkedReadyStackRef.current;
+        const last = stack[stack.length - 1];
+        if (last) {
+          const ref = doc(db, "orders", last.firestoreId);
+          updateDoc(ref, { drinksReady: false, allReady: false, allReadyAt: null });
+          lastMarkedReadyStackRef.current = stack.slice(0, -1);
+          flash("Orden Restaurada", "#7C3AED");
         }
         break;
       }
