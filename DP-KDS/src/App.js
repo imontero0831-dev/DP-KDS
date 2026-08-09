@@ -1674,7 +1674,12 @@ function KitchenScreen({ lang, menu }) {
   }, [active]);
   const visibleOrderIds = new Set(visible.map(c => c.order.firestoreId));
   const queued = active.filter(o => !visibleOrderIds.has(o.firestoreId));
-  useOrderChimes(active);
+  // KDS1 is the only station with a speaker right now, so it needs to
+  // chime for every live order restaurant-wide -- not just the ones with
+  // kitchen items (`active`) -- otherwise a drinks-only order (e.g. an
+  // agua fresca with nothing for the kitchen to cook) never makes a
+  // sound anywhere. Revisit once KDS2/Drinks gets its own speaker.
+  useOrderChimes(orders);
 
   // Keep focused index in bounds when orders change
   useEffect(() => {
