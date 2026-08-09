@@ -999,7 +999,13 @@ const PATIO_BG     = "#CCFBF1";
 // it past the fold). Each item costs 1 unit, +1 per modifier, +1 the first
 // time a seat appears on a given card (its "PLATO N" header). Deliberately
 // conservative -- err toward more, shorter cards over risking another cutoff.
-const UNITS_PER_CARD = 5;
+//
+// Raised 5 -> 7 on 2026-08-08 after dropping the redundant giant ticket-top
+// name/table (freed real vertical room) and shrinking the "PLATO N" header
+// font to a fraction of the item text (each header now costs less height
+// too) -- both of the things that made 5 the safe ceiling before. Still a
+// deliberately modest bump, not a jump to whatever the math might allow.
+const UNITS_PER_CARD = 7;
 
 // Splits an order's items into per-card chunks. Groups by seat first
 // (preserving first-appearance order) so one seat's items always stay
@@ -1079,7 +1085,12 @@ function packOrderCards(items) {
 const FONT_COL          = { min: 14.4, coeff: 8.462,  offset: 14.768, max: 36 };
 const FONT_ITEM_QTY     = { min: 24,   coeff: 21.538, offset: 49.232, max: 80 };
 const FONT_ITEM_NAME    = { min: 20,   coeff: 18.462, offset: 42.768, max: 68 };
-const FONT_PLATE_HEADER = { min: 24,   coeff: 16,     offset: 16,     max: 60 };
+// Deliberately a flat 0.7x of FONT_ITEM_NAME's own min/coeff/offset/max --
+// clamp() is scalar-homogeneous, so multiplying every term by the same
+// factor guarantees this renders smaller than the item name at every
+// container width, not just at the sizes we happened to eyeball (a plate
+// header competing with the food text for attention was the original bug).
+const FONT_PLATE_HEADER = { min: 14,   coeff: 12.92,  offset: 29.94,  max: 48 };
 const FONT_SPECIAL_NOTE = { min: 16.8, coeff: 15,     offset: 34,     max: 56 };
 const FONT_MODIFIER     = { min: 21,   coeff: 18.75,  offset: 42.5,   max: 70 };
 function clampFont(f, scale = 1) {
@@ -3710,7 +3721,7 @@ const S = {
   seatChipAdd: { background: "#F5F3F0", border: "1px dashed #AAA", borderRadius: 8, padding: "4px 11px", fontSize: 13, fontWeight: 900, color: "#555", cursor: "pointer", whiteSpace: "nowrap" },
   cartGroupHeader: { fontSize: 10, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.1em", textTransform: "uppercase", padding: "10px 0 2px", display: "flex", justifyContent: "space-between" },
   plateHeader: { padding: "10px 14px 5px", background: "#F5EFE0" },
-  plateHeaderText: { fontSize: "clamp(24px, calc(16cqw - 16px), 60px)", fontWeight: 900, letterSpacing: "0.07em", color: "#1A1A1A", textTransform: "uppercase" },
+  plateHeaderText: { fontWeight: 900, letterSpacing: "0.07em", color: "#1A1A1A", textTransform: "uppercase" },
   plateDivider: { borderBottom: "5px solid #1A1A1A", margin: "6px 14px 0" },
   cartQtyRow: { display: "flex", alignItems: "center", gap: 6 },
   qtyBtn: { background: "#F5F3F0", border: "1px solid #DDD", color: "#444", width: 28, height: 28, borderRadius: 7, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" },
