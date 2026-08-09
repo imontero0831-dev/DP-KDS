@@ -1475,10 +1475,10 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
         : "0 2px 10px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
     }}>
       {order.cancelled && <div style={S.cancelledBanner}>{t.cancelled}</div>}
-      {order.isToGo && <div style={S.toGoBanner}>{t.toGoLabel} — {order.toGoName}</div>}
-      {order.isBar && <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>{t.barLabel} — {order.table}</div>}
-      {order.isPatio && <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>{t.patioLabel} — {order.table}</div>}
-      {!order.isToGo && !order.isBar && !order.isPatio && <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>{t.table2} — {order.table}</div>}
+      {order.isToGo && <div style={S.toGoBanner}>{t.toGoLabel} — {order.toGoName}{isContinuation ? " CONT." : ""}</div>}
+      {order.isBar && <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>{t.barLabel} — {order.table}{isContinuation ? " CONT." : ""}</div>}
+      {order.isPatio && <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>{t.patioLabel} — {order.table}{isContinuation ? " CONT." : ""}</div>}
+      {!order.isToGo && !order.isBar && !order.isPatio && <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>{t.table2} — {order.table}{isContinuation ? " CONT." : ""}</div>}
       {order.modified && !order.cancelled && <div style={S.modifiedBanner}>{t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket */}
@@ -1494,16 +1494,6 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
       <div style={S.ticketTop}>
         <div style={S.ticketTopLeft}>
           <div style={S.guestCheckTitle}>{t.guestCheck}</div>
-          <div style={S.ticketMeta}>
-            {order.isToGo
-              ? <span style={S.toGoNameBig}>{order.toGoName}{isContinuation ? " CONT." : ""}</span>
-              : order.isBar
-              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
-              : order.isPatio
-              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
-              : <span style={{ ...S.toGoNameBig, color: DINEIN_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
-            }
-          </div>
         </div>
         <div style={S.ticketTopRight}>
           <div style={{ ...S.timerBig, color: timerColor }}>{elapsed(order.timestamp)}</div>
@@ -1881,17 +1871,17 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
     }}>
       {order.isToGo && (
         <div style={{ ...S.toGoBanner, background: TOGO_COLOR }}>
-          PARA LLEVAR — {order.toGoName}
+          PARA LLEVAR — {order.toGoName}{isContinuation ? " CONT." : ""}
         </div>
       )}
       {order.isBar && (
         <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>
-          BARRA — {order.table}
+          BARRA — {order.table}{isContinuation ? " CONT." : ""}
         </div>
       )}
       {order.isPatio && (
         <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>
-          PATIO — {order.table}
+          PATIO — {order.table}{isContinuation ? " CONT." : ""}
         </div>
       )}
       {order.modified && !order.cancelled && <div style={S.modifiedBanner}>{t.modified}</div>}
@@ -1909,15 +1899,11 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
       <div style={S.ticketTop}>
         <div style={S.ticketTopLeft}>
           <div style={S.guestCheckTitle}>BEBIDAS / SIDES</div>
-          <div style={S.ticketMeta}>
-            {order.isToGo
-              ? <span style={{ ...S.toGoNameBig, color: TOGO_COLOR }}>{order.toGoName}{isContinuation ? " CONT." : ""}</span>
-              : order.isBar
-              ? <span style={{ ...S.toGoNameBig, color: BAR_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
-              : order.isPatio
-              ? <span style={{ ...S.toGoNameBig, color: PATIO_COLOR }}>{order.table}{isContinuation ? " CONT." : ""}</span>
-              : <span style={S.tableNumberBig}>{t.table2} {order.table}{isContinuation ? " CONT." : ""}</span>}
-          </div>
+          {!order.isToGo && !order.isBar && !order.isPatio && (
+            <div style={S.ticketMeta}>
+              <span style={S.tableNumberBig}>{t.table2} {order.table}{isContinuation ? " CONT." : ""}</span>
+            </div>
+          )}
         </div>
         <div style={S.ticketTopRight}>
           <div style={{ ...S.timerBig, color: timerColor }}>{elapsed(order.timestamp)}</div>
@@ -3639,7 +3625,6 @@ const S = {
   ticketTopRight: { textAlign: "right", flexShrink: 0 },
   guestCheckTitle: { fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 800, color: "#9B8B72", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 3 },
   tableNumberBig: { fontSize: "clamp(42px, calc(37.500cqw - 85.00px), 140px)", fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em", lineHeight: 1, overflowWrap: "break-word" },
-  toGoNameBig: { fontSize: "clamp(31px, calc(28.365cqw - 65.19px), 105px)", fontWeight: 900, color: "#0369A1", letterSpacing: "-0.01em", lineHeight: 1.1, textTransform: "uppercase", overflowWrap: "break-word" },
   ticketMeta: { marginTop: 3 },
   timerBig: { fontSize: "clamp(22px, calc(20.192cqw - 46.15px), 75px)", fontWeight: 900, marginTop: 3, letterSpacing: "-0.01em" },
   ruledLine: { borderBottom: "1px solid #E0D8C4", margin: "0 14px" },
