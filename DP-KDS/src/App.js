@@ -766,68 +766,63 @@ function useLastCompletedOrder() {
   return lastCompleted;
 }
 
-// ── NEW-ORDER CHIME (Kitchen / Drinks / Expo screens) ───────────
-// Web Audio API tone — no audio asset needed. Kiosk browsers (Chromium on
-// the Raspberry Pis) block autoplay until the page has seen one user
-// gesture; since these screens are driven by a numpad dongle / touch bumps,
-// that gesture normally lands within moments of boot, but the very first
-// chime right after a Pi reboot can be silently swallowed by that policy.
-function playOrderChime() {
+// ── ORDER CHIMES (Kitchen / Drinks / Expo screens) ───────────────
+// Two distinct recorded sounds (public/sounds/*.mp3) so staff can tell
+// "a new order landed" apart from "an order already on the board just
+// changed" by ear, without having to look up — a sharp counter-bell ding
+// for new, a softer double-tone microwave-bell for a modification. Each
+// call makes its own Audio() instance rather than reusing one shared
+// element, so two chimes firing close together (see useOrderChimes below)
+// play out independently instead of the second cutting off the first's
+// tail. Kiosk browsers (Chromium on the Raspberry Pis) block autoplay
+// until the page has seen one user gesture; since these screens are
+// driven by a numpad dongle / touch bumps, that gesture normally lands
+// within moments of boot, but the very first chime right after a Pi
+// reboot can be silently swallowed by that policy.
+function playChimeFile(url) {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const now = ctx.currentTime;
-    [660, 880].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      const start = now + i * 0.15;
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.4, start + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.3);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(start);
-      osc.stop(start + 0.32);
-    });
+    const audio = new Audio(url);
+    audio.play().catch(err => console.warn("chime playback blocked:", err.message));
   } catch (err) {
     console.warn("chime playback failed:", err.message);
   }
 }
+function playNewOrderChime() { playChimeFile("/sounds/new-order.mp3"); }
+function playOrderModifiedChime() { playChimeFile("/sounds/order-modified.mp3"); }
 
-// Plays the chime when an id shows up in `ids` that wasn't there on the
-// previous render — used to alert staff when a fresh order lands on their
-// screen's queue. Skips the first population so opening/reloading a screen
-// doesn't chime once per order already sitting in the queue.
-function useNewOrderChime(ids) {
-  const prevIds = useRef(null);
-  const key = ids.join(",");
+// Plays the right chime per order: a brand-new firestoreId gets the
+// new-order sound, an edit to an id already seen before (its
+// lastModified/timestamp signature changed) gets the distinct modified
+// sound instead -- never both for the same event. Skips the first
+// population so opening/reloading a screen doesn't chime once per order
+// already sitting on the board.
+//
+// If more than one order changes in the very same snapshot -- genuinely
+// possible, e.g. two tickets fired within the same network round trip --
+// each one still gets its own chime instead of collapsing to a single
+// ding (the old version only checked "did anything change" as a
+// boolean, so a simultaneous second order was silently dropped). They're
+// staggered a beat apart so they're audible as separate events rather
+// than overlapping into a blur.
+function useOrderChimes(orders) {
+  const prevMapRef = useRef(null);
+  const key = orders.map(o => `${o.firestoreId}:${o.lastModified || o.timestamp}`).join(",");
   useEffect(() => {
-    const current = new Set(ids);
-    if (prevIds.current !== null) {
-      const hasNew = ids.some(id => !prevIds.current.has(id));
-      if (hasNew) playOrderChime();
+    const prevMap = prevMapRef.current;
+    const currentMap = new Map(orders.map(o => [o.firestoreId, o.lastModified || o.timestamp]));
+    if (prevMap !== null) {
+      let delay = 0;
+      currentMap.forEach((sig, id) => {
+        if (!prevMap.has(id)) {
+          setTimeout(playNewOrderChime, delay);
+          delay += 400;
+        } else if (prevMap.get(id) !== sig) {
+          setTimeout(playOrderModifiedChime, delay);
+          delay += 400;
+        }
+      });
     }
-    prevIds.current = current;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-}
-
-// Same idea as useNewOrderChime, but also alerts on an EDIT to an order
-// already in the queue (e.g. the waitress adds items to a table that
-// already sent drinks), not just a brand-new order arriving. Keyed on
-// id+lastModified so an edit (which bumps lastModified) reads as a new
-// signature even though the doc id is unchanged.
-function useOrderAlertChime(orders) {
-  const prevSigs = useRef(null);
-  const sigs = orders.map(o => `${o.firestoreId}:${o.lastModified || o.timestamp}`);
-  const key = sigs.join(",");
-  useEffect(() => {
-    const current = new Set(sigs);
-    if (prevSigs.current !== null) {
-      const hasNew = sigs.some(s => !prevSigs.current.has(s));
-      if (hasNew) playOrderChime();
-    }
-    prevSigs.current = current;
+    prevMapRef.current = currentMap;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 }
@@ -1679,7 +1674,7 @@ function KitchenScreen({ lang, menu }) {
   }, [active]);
   const visibleOrderIds = new Set(visible.map(c => c.order.firestoreId));
   const queued = active.filter(o => !visibleOrderIds.has(o.firestoreId));
-  useNewOrderChime(active.map(o => o.firestoreId));
+  useOrderChimes(active);
 
   // Keep focused index in bounds when orders change
   useEffect(() => {
@@ -2378,7 +2373,7 @@ function ExpoTicket({ order, catNameById }) {
 function ExpoScreen({ menu }) {
   const [orders, setOrders] = useState([]);
   const lastCompleted = useLastCompletedOrder();
-  useOrderAlertChime(orders);
+  useOrderChimes(orders);
 
   function handleUndoLastCompleted() {
     if (!lastCompleted) return;
