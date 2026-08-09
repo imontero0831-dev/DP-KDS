@@ -920,27 +920,37 @@ const STATUS_COLORS = { new: "#BE202E", in_progress: "#D97706", done: "#15803D" 
 // ============================================================
 // DRINKS / SIDES STATION — matching rules
 // ============================================================
-// Category keywords for real beverages (Bebidas). Deliberately excludes
-// "happy hour" and "bar" — Clover has some food items (nachos, pico de
-// gallo, guacamole) miscategorized under Happy Hour, and "bar" would
-// false-positive on "barbacoa"; either would wrongly hide food from the
-// kitchen ticket.
+// Category keywords for ANY real beverage (Bebidas) — used only to keep
+// the kitchen ticket free of drinks it doesn't prepare (see
+// isKitchenDimmed). Deliberately excludes "happy hour" and "bar" — Clover
+// has some food items (nachos, pico de gallo, guacamole) miscategorized
+// under Happy Hour, and "bar" would false-positive on "barbacoa"; either
+// would wrongly hide food from the kitchen ticket.
 const DRINK_ITEM_CATEGORY_KEYWORDS = [
   "beverage", "bebida", "drink", "agua", "soda", "jugo", "juice", "refresco",
   "beer", "cerveza", "wine", "vino", "liquor", "licor", "cocktail", "coctel", "cóctel",
 ];
 
+// True for any beverage at all (soda, beer, wine, cocktail, agua fresca,
+// ...) — broader than DRINKS_RULES' "agua_fresca" rule on purpose, since
+// the kitchen shouldn't show ANY drink regardless of whether it's the one
+// KDS2 actually prepares a ticket for.
+function isBeverageItem(itemName, catName = "") {
+  if (itemName.toLowerCase().includes("agua fresca")) return true;
+  const c = (catName || "").toLowerCase();
+  return DRINK_ITEM_CATEGORY_KEYWORDS.some(k => c.includes(k));
+}
+
 const DRINKS_RULES = [
   {
-    key: "nonalcoholic",
+    key: "agua_fresca",
     color: "#7C3AED",
     bg: "#F5F3FF",
-    label: "BEBIDA",
-    match: (name, catName = "") => {
-      if (name.toLowerCase().includes("agua fresca")) return true;
-      const c = catName.toLowerCase();
-      return DRINK_ITEM_CATEGORY_KEYWORDS.some(k => c.includes(k));
-    },
+    label: "AGUA FRESCA",
+    // Only agua fresca gets a KDS2 ticket — other beverages (soda, beer,
+    // wine, cocktails) don't need prep/tracking here, just isKitchenDimmed
+    // below (via isBeverageItem) to stay off the kitchen ticket too.
+    match: (name) => name.toLowerCase().includes("agua fresca"),
   },
   {
     key: "caldo",
@@ -972,6 +982,13 @@ const DRINKS_RULES = [
     bg: "#FFFBEB",
     label: "SIDE DE SALSA",
     match: (name) => name.toLowerCase().includes("side de salsa"),
+  },
+  {
+    key: "side_chips",
+    color: "#D97706",
+    bg: "#FFFBEB",
+    label: "SIDE DE CHIPS",
+    match: (name) => name.toLowerCase().includes("side de chips"),
   },
 ];
 
@@ -1138,10 +1155,11 @@ function orderNeedsDrinksStation(order) {
 }
 
 // Items the kitchen doesn't cook — left off kitchen tickets entirely.
-// Only real drinks qualify; sides/extras are food the kitchen makes, so they stay on the ticket.
+// Any beverage qualifies (not just agua fresca, the only one KDS2 gets a
+// ticket for) — sides/extras are food the kitchen makes, so they stay on
+// the ticket.
 function isKitchenDimmed(itemName, catName = "") {
-  const rule = getDrinksRule(itemName, catName);
-  return rule?.key === "nonalcoholic";
+  return isBeverageItem(itemName, catName);
 }
 
 function orderHasKitchenItems(order) {
@@ -2151,7 +2169,7 @@ function DrinksStationScreen({ lang, menu }) {
 
       {/* Color legend */}
       <div style={{ display: "flex", gap: 16, padding: "6px 16px", background: "#1E293B", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#C4B5FD", fontWeight: 800 }}>BEBIDA NO ALC.</span>
+        <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#C4B5FD", fontWeight: 800 }}>AGUA FRESCA</span>
         <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#FCA5A5", fontWeight: 800 }}>CALDO</span>
         <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#FCD34D", fontWeight: 800 }}>PARA LLEVAR</span>
         <span style={{ fontSize: "clamp(22px, calc(2.110vw + 14.90px), 55px)", color: "#86EFAC", fontWeight: 800 }}>GUACAMOLE</span>
