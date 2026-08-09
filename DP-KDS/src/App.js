@@ -1614,10 +1614,14 @@ function KitchenScreen({ lang, menu }) {
   const [actionFlash, setActionFlash] = useState(null); // brief visual feedback on keypress
   const MAX_VISIBLE = 4; // tuned for the 24" Dell monitor on KDS1 — raise/lower after seeing it in person
   const lastCompleted = useLastCompletedOrder();
-  // Most recent order Enter soft-completed (kitchenReady, not archived) —
-  // lets 0 undo it directly instead of falling through to lastCompleted,
-  // which won't have anything relevant since Enter no longer archives.
-  const lastMarkedReadyRef = useRef(null);
+  // Orders this Kitchen screen itself just soft-completed (kitchenReady,
+  // not archived) — 0 pops the most recent one off to undo it, repeatable
+  // up to 3 deep. Deliberately local/live-only: it only flips flags back on
+  // orders already sitting in `orders`, never touches `completedOrders` or
+  // recreates anything, so it can never flood the waitress screen or Clover
+  // with resurrected old data (see the "0" handler below).
+  const UNDO_STACK_LIMIT = 3;
+  const lastMarkedReadyStackRef = useRef([]);
 
   const catNameById = {};
   if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name[lang] || c.name.en || ""; });
@@ -1718,21 +1722,29 @@ function KitchenScreen({ lang, menu }) {
         e.preventDefault();
         if (!order || order.cancelled) return;
         markKitchenReady(order);
-        lastMarkedReadyRef.current = order;
+        lastMarkedReadyStackRef.current = [...lastMarkedReadyStackRef.current, order].slice(-UNDO_STACK_LIMIT);
         flash("Cocina Lista", "#15803D");
         break;
       }
 
-      // ── 0: undo the last Enter, or the last full archive if none pending ──
+      // ── 0: undo this screen's own last Enter, repeatable up to
+      // UNDO_STACK_LIMIT deep. Used to also fall back to resurrecting
+      // lastCompleted (the single most recently archived order
+      // restaurant-wide, any table/station) with no confirmation -- since
+      // that ref reset on every page reload (auto-update reloads every
+      // ~2min), that fallback fired far more than intended and dumped
+      // random already-closed/paid tables back onto the waitress's live
+      // view and Clover. Restoring an archived order now only happens via
+      // the on-screen "Deshacer" button, which confirms first and shows
+      // exactly which order it's about to bring back.
       case "0": {
         e.preventDefault();
-        if (lastMarkedReadyRef.current) {
-          const ref = doc(db, "orders", lastMarkedReadyRef.current.firestoreId);
+        const stack = lastMarkedReadyStackRef.current;
+        const last = stack[stack.length - 1];
+        if (last) {
+          const ref = doc(db, "orders", last.firestoreId);
           updateDoc(ref, { kitchenReady: false, allReady: false, allReadyAt: null });
-          lastMarkedReadyRef.current = null;
-          flash("Orden Restaurada", "#7C3AED");
-        } else if (lastCompleted) {
-          undoCompletedOrder(lastCompleted);
+          lastMarkedReadyStackRef.current = stack.slice(0, -1);
           flash("Orden Restaurada", "#7C3AED");
         }
         break;
@@ -1745,7 +1757,7 @@ function KitchenScreen({ lang, menu }) {
       default:
         break;
     }
-  }, [focusedIndex, visible, lastCompleted]);
+  }, [focusedIndex, visible]);
 
   // Attach and clean up the global keydown listener
   useEffect(() => {
@@ -2087,20 +2099,23 @@ function DrinksStationScreen({ lang, menu }) {
       // stay wired to the same actions too so nothing that already relied on them breaks.
       case "+": case "3": { e.preventDefault(); setFocusedIndex(i => Math.min(i + 1, visible.length - 1)); break; }
       case "-": case "2": { e.preventDefault(); setFocusedIndex(i => Math.max(i - 1, 0)); break; }
+      // Used to also fall back to resurrecting lastCompleted (the single
+      // most recently archived order restaurant-wide, any table/station)
+      // with no confirmation when the focused ticket wasn't revertible --
+      // that dumped random already-closed/paid tables back onto the
+      // waitress's live view. Restoring an archived order now only happens
+      // via the on-screen "Deshacer" button (confirms first, names the order).
       case "*": case "0": {
         e.preventDefault();
         if (order && !order.cancelled && order.status === "in_progress") {
           updateOrderStatus(order.firestoreId, "new");
           flash("Deshecho", "#D97706");
-        } else if (lastCompleted) {
-          undoCompletedOrder(lastCompleted);
-          flash("Orden restaurada", "#7C3AED");
         }
         break;
       }
       default: break;
     }
-  }, [focusedIndex, visible, lastCompleted]);
+  }, [focusedIndex, visible]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
