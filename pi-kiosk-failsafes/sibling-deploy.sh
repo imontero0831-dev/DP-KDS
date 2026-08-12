@@ -38,7 +38,7 @@ try_deploy() {
   if ! $SSH "pi@$host" "mkdir -p $STAGING_REMOTE"; then
     log "$name: mkdir failed"; return 1
   fi
-  if ! $SCP "$STAGING_LOCAL/tailscale-watchdog.sh" "$STAGING_LOCAL/hdmi-watchdog.sh" "$STAGING_LOCAL/install-failsafes.sh" "pi@$host:$STAGING_REMOTE/"; then
+  if ! $SCP "$STAGING_LOCAL/tailscale-watchdog.sh" "$STAGING_LOCAL/hdmi-watchdog.sh" "$STAGING_LOCAL/power-watchdog.sh" "$STAGING_LOCAL/install-failsafes.sh" "pi@$host:$STAGING_REMOTE/"; then
     log "$name: scp failed"; return 1
   fi
   if $SSH "pi@$host" "bash $STAGING_REMOTE/install-failsafes.sh"; then

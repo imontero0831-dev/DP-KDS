@@ -25,14 +25,24 @@ if [ -f /home/pi/.failsafe-staging/hdmi-watchdog.sh ]; then
   chmod +x /home/pi/hdmi-watchdog.sh
 fi
 
+# 3b. Power quality trend logger (silent unless throttled/undervoltage
+#     flags actually go non-zero).
+if [ -f /home/pi/.failsafe-staging/power-watchdog.sh ]; then
+  cp /home/pi/.failsafe-staging/power-watchdog.sh /home/pi/power-watchdog.sh
+  chmod +x /home/pi/power-watchdog.sh
+fi
+
 # 4. Cron: pi user's own crontab (matches how the original watchdog was
 #    installed) -- not root's, so no sudo here. Replaces any older lines
 #    for the same scripts so re-running this installer doesn't duplicate.
 (
-  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh' || true
+  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh' || true
   echo "*/3 * * * * /home/pi/tailscale-watchdog.sh"
   if [ -f /home/pi/hdmi-watchdog.sh ]; then
     echo "*/2 * * * * /home/pi/hdmi-watchdog.sh"
+  fi
+  if [ -f /home/pi/power-watchdog.sh ]; then
+    echo "*/5 * * * * /home/pi/power-watchdog.sh"
   fi
 ) | crontab -
 
