@@ -32,17 +32,29 @@ if [ -f /home/pi/.failsafe-staging/power-watchdog.sh ]; then
   chmod +x /home/pi/power-watchdog.sh
 fi
 
+# 3c. Chromium liveness watchdog (catches a hung-but-not-crashed kiosk via
+#     the --remote-debugging-port=9222 flag on fix-chromium.sh -- that flag
+#     is applied separately per-Pi since fix-chromium.sh's URL differs per
+#     screen, not managed by this installer).
+if [ -f /home/pi/.failsafe-staging/chromium-watchdog.sh ]; then
+  cp /home/pi/.failsafe-staging/chromium-watchdog.sh /home/pi/chromium-watchdog.sh
+  chmod +x /home/pi/chromium-watchdog.sh
+fi
+
 # 4. Cron: pi user's own crontab (matches how the original watchdog was
 #    installed) -- not root's, so no sudo here. Replaces any older lines
 #    for the same scripts so re-running this installer doesn't duplicate.
 (
-  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh' || true
+  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh|chromium-watchdog\.sh' || true
   echo "*/3 * * * * /home/pi/tailscale-watchdog.sh"
   if [ -f /home/pi/hdmi-watchdog.sh ]; then
     echo "*/2 * * * * /home/pi/hdmi-watchdog.sh"
   fi
   if [ -f /home/pi/power-watchdog.sh ]; then
     echo "*/5 * * * * /home/pi/power-watchdog.sh"
+  fi
+  if [ -f /home/pi/chromium-watchdog.sh ]; then
+    echo "* * * * * /home/pi/chromium-watchdog.sh"
   fi
 ) | crontab -
 
