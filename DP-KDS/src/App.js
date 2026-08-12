@@ -790,6 +790,40 @@ function playChimeFile(url) {
 function playNewOrderChime() { playChimeFile("/sounds/new-order.mp3"); }
 function playOrderModifiedChime() { playChimeFile("/sounds/order-modified.mp3"); }
 
+// ── DRINKS-STATION ALERT (KDS2, played through KDS1's speaker) ───
+// KDS2/Drinks has no speaker of its own yet, so when an order that needs
+// Ausencia's attention comes in, this plays through KDS1's speaker as a
+// third, distinct cue layered after the normal new/modified chime -- so
+// Chuy knows to flag her. Synthesized via Web Audio API instead of a
+// recorded file (a placeholder until a real recording replaces it) --
+// a quick two-note rising blip that doesn't resemble either recorded
+// chime, so it can't be mistaken for a kitchen-only event.
+let sharedAudioCtx = null;
+function playDrinksAlertTone() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!sharedAudioCtx) sharedAudioCtx = new Ctx();
+    const ctx = sharedAudioCtx;
+    const now = ctx.currentTime;
+    [880, 1175].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const start = now + i * 0.13;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.35, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.12);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.13);
+    });
+  } catch (err) {
+    console.warn("drinks alert tone failed:", err.message);
+  }
+}
+
 // Plays the right chime per order: a brand-new firestoreId gets the
 // new-order sound, an edit to an id already seen before (its
 // lastModified/timestamp signature changed) gets the distinct modified
@@ -804,20 +838,31 @@ function playOrderModifiedChime() { playChimeFile("/sounds/order-modified.mp3");
 // boolean, so a simultaneous second order was silently dropped). They're
 // staggered a beat apart so they're audible as separate events rather
 // than overlapping into a blur.
-function useOrderChimes(orders) {
+// `needsDrinksAlert(order)` is optional -- when given, any new/modified
+// order it flags true for also gets playDrinksAlertTone layered on after
+// the normal chime (see playDrinksAlertTone above for why that lives here
+// instead of on KDS2 itself).
+function useOrderChimes(orders, needsDrinksAlert) {
   const prevMapRef = useRef(null);
   const key = orders.map(o => `${o.firestoreId}:${o.lastModified || o.timestamp}`).join(",");
   useEffect(() => {
     const prevMap = prevMapRef.current;
+    const orderById = new Map(orders.map(o => [o.firestoreId, o]));
     const currentMap = new Map(orders.map(o => [o.firestoreId, o.lastModified || o.timestamp]));
     if (prevMap !== null) {
       let delay = 0;
       currentMap.forEach((sig, id) => {
-        if (!prevMap.has(id)) {
+        const isNew = !prevMap.has(id);
+        const isModified = !isNew && prevMap.get(id) !== sig;
+        if (isNew) {
           setTimeout(playNewOrderChime, delay);
           delay += 400;
-        } else if (prevMap.get(id) !== sig) {
+        } else if (isModified) {
           setTimeout(playOrderModifiedChime, delay);
+          delay += 400;
+        }
+        if ((isNew || isModified) && needsDrinksAlert?.(orderById.get(id))) {
+          setTimeout(playDrinksAlertTone, delay);
           delay += 400;
         }
       });
@@ -1678,8 +1723,10 @@ function KitchenScreen({ lang, menu }) {
   // chime for every live order restaurant-wide -- not just the ones with
   // kitchen items (`active`) -- otherwise a drinks-only order (e.g. an
   // agua fresca with nothing for the kitchen to cook) never makes a
-  // sound anywhere. Revisit once KDS2/Drinks gets its own speaker.
-  useOrderChimes(orders);
+  // sound anywhere. Revisit once KDS2/Drinks gets its own speaker. Orders
+  // that also need Drinks/Sides get playDrinksAlertTone layered on top so
+  // Chuy knows to flag Ausencia.
+  useOrderChimes(orders, orderHasDrinksItems);
 
   // Keep focused index in bounds when orders change
   useEffect(() => {
