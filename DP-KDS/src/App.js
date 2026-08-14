@@ -125,6 +125,9 @@ const T = {
     tableOrders: "Órdenes de la Mesa",
     noActiveOrders: "Sin órdenes activas",
     newBarOrder: "+ Nueva Orden de Barra",
+    chooseSize: "Elige el tamaño",
+    sizeGrande: "Grande",
+    sizeRegular: "Regular",
   },
   en: {
     orderStation: "Order Station",
@@ -226,6 +229,9 @@ const T = {
     tableOrders: "Table Orders",
     noActiveOrders: "No active orders",
     newBarOrder: "+ New Bar Order",
+    chooseSize: "Choose a size",
+    sizeGrande: "Grande",
+    sizeRegular: "Regular",
   },
 };
 
@@ -1398,6 +1404,41 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Lightweight picker shown in front of the normal ModifierModal flow for
+// items grouped by SIZE_VARIANT_GROUPS (e.g. Agua Fresca flavors, which are
+// separate Clover items at different prices, not one item with a size
+// modifier). Picking a size just resolves the matching real menu item and
+// hands off to the caller's normal add-to-cart path -- no separate cart
+// logic lives here.
+function SizePickerModal({ group, resolveItem, lang, onPick, onClose }) {
+  const t = T[lang];
+  const options = group.variants
+    .map(v => ({ ...v, item: resolveItem(v.itemName) }))
+    .filter(v => v.item);
+
+  return (
+    <div style={S.modalOverlay} onClick={onClose}>
+      <div style={{ ...S.modalBox, maxWidth: 360 }} onClick={e => e.stopPropagation()}>
+        <div style={S.modalHeader}>
+          <div>
+            <div style={S.modalTitle}>{group.label}</div>
+            <div style={S.modalSubtitle}>{t.chooseSize}</div>
+          </div>
+          <button style={S.modalCloseBtn} onClick={onClose}>✕</button>
+        </div>
+        <div style={{ ...S.modalBody, display: "flex", flexDirection: "column", gap: 10 }}>
+          {options.map(opt => (
+            <button key={opt.size} style={S.sizePickerOption} onClick={() => onPick(opt.item)}>
+              <span style={S.sizePickerLabel}>{opt.size === "grande" ? t.sizeGrande : t.sizeRegular}</span>
+              <span style={S.sizePickerPrice}>{fmt(opt.item.price)}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -2800,6 +2841,53 @@ function cartLineKey(id, seat, modifiers, specialNote) {
   return `${id}|${seat ?? ""}|${modKey}|${specialNote || ""}`;
 }
 
+// Shortens the ordering-screen label for items whose full Clover name repeats
+// words already implied by the category the server is already looking at
+// (e.g. "Taco Al Pastor" inside the Tacos tab). Keyed by the exact Clover
+// item name -- only affects what's rendered here, never item.name itself,
+// so Clover charging and kitchen/drinks/expo tickets are untouched.
+const ITEM_DISPLAY_OVERRIDES = {
+  // Tacos
+  "Taco Al Pastor": "Al Pastor", "Taco Arabe": "Arabe", "Taco Asada": "Asada",
+  "Taco Cabeza": "Cabeza", "Taco Campechano": "Campechano", "Taco Carne Molida": "Carne Molida",
+  "Taco Cecina": "Cecina", "Taco Chicharron": "Chicharron", "Taco Chorizo": "Chorizo", "Taco Tinga": "Tinga",
+  // Burritos
+  "Burrito Al Pastor": "Al Pastor", "Burrito Arabe": "Arabe", "Burrito Asada": "Asada",
+  "Burrito Campechano": "Campechano", "Burrito Carne Molida": "Carne Molida",
+  "Burrito Chorizo": "Chorizo", "Burrito Tinga": "Tinga", "Burrito Vegetariano": "Vegetariano",
+  // Huaraches
+  "Huarache Asada": "Asada", "Huarache Carne Molida": "Carne Molida", "Huarache Chorizo": "Chorizo",
+  // Cemitas
+  "Cemitas Milanesa Pollo": "Milanesa Pollo", "Cemitas Milanesa Res": "Milanesa Res",
+  "Cemitas Pierna Enchilada": "Pierna Enchilada",
+  // Quesadillas
+  "Quesadilla Asada": "Asada", "Quesadilla Hongos": "Hongos",
+  "Quesadilla Pollo": "Pollo", "Quesadilla Queso": "Queso",
+  // Fajitas
+  "Fajitas Mixtas": "Mixtas", "Fajitas Pollo": "Pollo", "Fajitas Res": "Res",
+  // Beverages
+  "Can Coke": "Coke", "Can Diet Coke": "Diet Coke", "Can Fanta": "Fanta", "Can Sprite": "Sprite",
+  "Mexican Coca Cola": "Mexican Coke",
+  // Agua Fresca L/R variants -- collapsed into one grid tile by
+  // SIZE_VARIANT_GROUPS below, but still need a clean label here so the
+  // modifier modal / cart line (which read the resolved item's own name,
+  // not the group's) don't fall back to the raw Clover name.
+  "Agua Fresca Horchata (L)": "Horchata (Grande)", "Agua Fresca Horchata (R)": "Horchata (Regular)",
+  "Agua Fresca Jamaica (L)": "Jamaica (Grande)", "Agua Fresca Jamaica (R)": "Jamaica (Regular)",
+  "Agua Fresca Pepino (L)": "Pepino (Grande)", "Agua Fresca Pepino (R)": "Pepino (Regular)",
+};
+
+// Agua Fresca flavors exist as two separate Clover items at different prices
+// (Large/Regular), not as one item with a size modifier. Grouping them into
+// one grid tile with a size picker keeps the underlying Clover items exactly
+// as-is -- the picker just resolves to the right one before handing off to
+// the normal add-to-cart flow.
+const SIZE_VARIANT_GROUPS = [
+  { label: "Horchata", variants: [{ size: "grande", itemName: "Agua Fresca Horchata (L)" }, { size: "regular", itemName: "Agua Fresca Horchata (R)" }] },
+  { label: "Jamaica", variants: [{ size: "grande", itemName: "Agua Fresca Jamaica (L)" }, { size: "regular", itemName: "Agua Fresca Jamaica (R)" }] },
+  { label: "Pepino", variants: [{ size: "grande", itemName: "Agua Fresca Pepino (L)" }, { size: "regular", itemName: "Agua Fresca Pepino (R)" }] },
+];
+
 function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType, initialEditOrder, onBack }) {
   const t = T[lang];
   const [activeTab, setActiveTab] = useState("drinks");
@@ -2820,6 +2908,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [modModalItem, setModModalItem] = useState(null);
   const [specialModalCat, setSpecialModalCat] = useState(null);
   const [swapTargetKey, setSwapTargetKey] = useState(null);
+  const [sizePickerGroup, setSizePickerGroup] = useState(null);
   const rootRef = useRef(null);
   const [rootHeight, setRootHeight] = useState(null);
   const headerRef = useRef(null);
@@ -2900,6 +2989,14 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const foodCategories = menu.categories.filter(c => !isDrinkCategory(c));
   const tabCategories = activeTab === "drinks" ? drinkCategories : foodCategories;
   const filteredItems = activeCategory ? menu.items.filter(i => i.categoryId === activeCategory) : [];
+  // Size-variant groups (e.g. Agua Fresca L/R) collapse into one grid tile
+  // when both underlying Clover items are present in the active category;
+  // otherwise their items just render normally like anything else.
+  const sizeGroupTiles = SIZE_VARIANT_GROUPS
+    .map(group => ({ group, variantItems: group.variants.map(v => filteredItems.find(i => i.name === v.itemName)) }))
+    .filter(g => g.variantItems.every(Boolean));
+  const groupedItemIds = new Set(sizeGroupTiles.flatMap(g => g.variantItems.map(i => i.id)));
+  const plainItems = filteredItems.filter(i => !groupedItemIds.has(i.id));
   const cartTotal = cart.reduce((sum, i) => sum + (i.price + (i.modifiers?.reduce((ms, m) => ms + m.price, 0) ?? 0)) * i.qty, 0);
   const isEditing = !!editingOrder;
   const identifier = orderType === "togo" ? toGoName : orderType === "bar" ? barSeat : tableNum;
@@ -2908,6 +3005,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const swapTargetItem = swapTargetKey ? cart.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === swapTargetKey) : null;
 
   function getItemDisplayName(item) {
+    if (ITEM_DISPLAY_OVERRIDES[item.name]) return ITEM_DISPLAY_OVERRIDES[item.name];
     if (lang === "es" && item.nameEs) return item.nameEs;
     return item.name;
   }
@@ -3071,6 +3169,15 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       {specialModalCat && (
         <SpecialModal lang={lang} onConfirm={handleSpecialConfirm} onClose={() => setSpecialModalCat(null)} />
       )}
+      {sizePickerGroup && (
+        <SizePickerModal
+          group={sizePickerGroup}
+          resolveItem={name => menu.items.find(i => i.name === name)}
+          lang={lang}
+          onPick={resolvedItem => { setSizePickerGroup(null); handleItemTap(resolvedItem); }}
+          onClose={() => setSizePickerGroup(null)}
+        />
+      )}
       <div ref={headerRef} style={S.waiterHeader}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           {onBack && (
@@ -3179,7 +3286,19 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                   {t.backToCategories}
                 </button>
                 <div style={S.menuGrid}>
-                  {filteredItems.map(item => {
+                  {sizeGroupTiles.map(({ group, variantItems }) => {
+                    const groupItemIds = variantItems.map(i => i.id);
+                    const inCartQty = cart.filter(c => groupItemIds.includes(c.id)).reduce((s, c) => s + c.qty, 0);
+                    return (
+                      <button key={group.label} style={{ ...S.menuItem, ...(inCartQty > 0 ? S.menuItemActive : {}) }} onClick={() => setSizePickerGroup(group)}>
+                        <span style={S.menuEmoji}>{variantItems[0].emoji}</span>
+                        <span style={S.menuName}>{group.label}</span>
+                        <span style={S.menuPrice}>{fmt(Math.min(...variantItems.map(i => i.price)))}+</span>
+                        {inCartQty > 0 && <span style={S.menuBadge}>×{inCartQty}</span>}
+                      </button>
+                    );
+                  })}
+                  {plainItems.map(item => {
                     const inCartQty = cart.filter(c => c.id === item.id).reduce((s, c) => s + c.qty, 0);
                     const displayName = getItemDisplayName(item);
                     return (
@@ -3671,6 +3790,9 @@ const S = {
   modalBody: { flex: 1, overflowY: "auto", padding: "12px 20px" },
   modalLoading: { display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "32px 0" },
   modalEmpty: { color: "#BBB", textAlign: "center", padding: "32px 0", fontSize: 14 },
+  sizePickerOption: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 18px", background: "#F5F3F0", border: "2px solid transparent", borderRadius: 12, cursor: "pointer", width: "100%", transition: "all 0.1s" },
+  sizePickerLabel: { fontSize: 17, fontWeight: 800, color: "#1A1A1A" },
+  sizePickerPrice: { fontSize: 16, fontWeight: 700, color: "#BE202E" },
   modGroup: { marginBottom: 18 },
   modGroupHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 6 },
   modGroupName: { fontSize: 14, fontWeight: 800, color: "#1A1A1A", letterSpacing: "-0.01em" },
