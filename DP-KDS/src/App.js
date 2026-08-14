@@ -2041,10 +2041,10 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
       <div style={S.itemsList}>
         {cardItems.map((item, idx) => {
           const rule = getDrinksRule(item.name, item.catName || catNameById?.[item.categoryId] || "");
-          const color = rule ? rule.color : order.isToGo ? TOGO_COLOR : "#C0B8AC";
-          const bg    = rule ? rule.bg    : order.isToGo ? TOGO_BG    : "transparent";
+          const color = rule ? rule.color : "#C0B8AC";
+          const bg    = rule ? rule.bg    : "transparent";
           const label = rule ? rule.label : null;
-          const dimmed = !rule && !order.isToGo;
+          const dimmed = !rule;
           const showDetails = item.modifiers && item.modifiers.length > 0;
           return (
             <div key={idx} style={{
@@ -2055,7 +2055,7 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
             }}>
               <span style={{ ...S.itemQty, color }}>{item.qty}</span>
               <div style={{ flex: 1 }}>
-                <span style={{ ...S.itemName, color, fontWeight: rule || order.isToGo ? 900 : 700 }}>
+                <span style={{ ...S.itemName, color, fontWeight: rule ? 900 : 700 }}>
                   {item.name}
                   {label && (
                     <span style={{ ...S.changeTag, background: color, color: "#fff", marginLeft: 6 }}>
@@ -2302,7 +2302,7 @@ function DrinksStationScreen({ lang, menu }) {
                 {order.isToGo ? order.toGoName : order.isBar ? order.table : order.isPatio ? order.table : `${t.table2} ${order.table}`}
               </span>
               <span style={S.queueOrderItems}>
-                {order.items?.filter(i => getDrinksRule(i.name) || order.isToGo).map(i => `${i.qty}× ${i.name}`).join(", ")}
+                {order.items?.filter(i => getDrinksRule(i.name)).map(i => `${i.qty}× ${i.name}`).join(", ")}
               </span>
               <span style={S.queueOrderTime}>{elapsed(order.timestamp)}</span>
             </div>
