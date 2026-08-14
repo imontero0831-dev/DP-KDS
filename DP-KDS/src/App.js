@@ -2865,6 +2865,14 @@ const ITEM_DISPLAY_OVERRIDES = {
   "Quesadilla Pollo": "Pollo", "Quesadilla Queso": "Queso",
   // Fajitas
   "Fajitas Mixtas": "Mixtas", "Fajitas Pollo": "Pollo", "Fajitas Res": "Res",
+  // Tostadas
+  "Tostada Al Pastor": "Al Pastor", "Tostada Asada": "Asada", "Tostada Carne Molida": "Carne Molida",
+  "Tostada Chicharron": "Chicharron", "Tostada Chorizo": "Chorizo", "Tostada Tinga": "Tinga",
+  // Tortas
+  "Torta Al Pastor": "Al Pastor", "Torta Arabe": "Arabe", "Torta Asada": "Asada",
+  "Torta Carne Molida": "Carne Molida", "Torta Cecina": "Cecina", "Torta Chorizo": "Chorizo",
+  "Torta Milanesa": "Milanesa", "Torta Pierna Enchilada": "Pierna Enchilada", "Torta Tinga": "Tinga",
+  "Milanesa-Chk Torta": "Milanesa Pollo", "Milanesa-Stk Torta": "Milanesa Res",
   // Beverages
   "Can Coke": "Coke", "Can Diet Coke": "Diet Coke", "Can Fanta": "Fanta", "Can Sprite": "Sprite",
   "Mexican Coca Cola": "Mexican Coke",
