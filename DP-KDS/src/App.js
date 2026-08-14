@@ -78,6 +78,8 @@ const T = {
     editOrder: "Editar Orden",
     completeOrder: "Completar",
     confirmComplete: "¿Marcar esta orden como entregada y completada? Esto la quitará de órdenes activas.",
+    cloverSyncFailedAlert: "No se pudo actualizar Clover con este cambio (posiblemente porque la orden original ya fue cobrada). Cobra los artículos nuevos por separado y cierra esta mesa manualmente — no se cerrará sola.",
+    cloverSyncFailedBadge: "⚠ REVISAR PAGO",
     editHistory: "Historial de Cambios",
     original: "Original",
     edit: "Edición",
@@ -177,6 +179,8 @@ const T = {
     editOrder: "Edit Order",
     completeOrder: "Complete",
     confirmComplete: "Mark this order as delivered and complete? This will remove it from active orders.",
+    cloverSyncFailedAlert: "Clover couldn't be updated with this change (likely because the original order was already charged). Ring up the new items separately and close this table manually — it won't auto-close.",
+    cloverSyncFailedBadge: "⚠ CHECK PAYMENT",
     editHistory: "Edit History",
     original: "Original",
     edit: "Edit",
@@ -2571,7 +2575,7 @@ const TOGO_SLOTS = [1, 2, 3, 4];
 // Shared tile for a single table/seat, reused by the Mesas, Patio, and
 // Barra sections — they all follow the same open/occupied/close pattern,
 // just against a different orders-by-key map and free-state accent color.
-function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onClose, closeLabel, freeStyle, subtitle }) {
+function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onClose, closeLabel, freeStyle, subtitle, syncWarning }) {
   return (
     <div
       style={{ ...S.tableCard, ...(occupied ? S.tableCardOccupied : (freeStyle || S.tableCardFree)) }}
@@ -2581,6 +2585,11 @@ function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onCl
       <div style={{ ...S.tableCardLabel, color: occupied ? "#92400E" : "#15803D" }}>
         {occupied ? "OCUPADA" : "LIBRE"}
       </div>
+      {occupied && syncWarning && (
+        <div style={{ marginTop: 4, background: "#FEE2E2", color: "#BE202E", borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 800, textAlign: "center" }}>
+          {syncWarning}
+        </div>
+      )}
       {occupied && (
         <>
           {subtitle && <div style={S.tableCardSubtitle}>{subtitle}</div>}
@@ -2650,6 +2659,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
     const occupied = tileOrders.length > 0;
     const itemCount = tileOrders.reduce((s, o) => s + (o.items?.length || 0), 0);
     const earliest = occupied ? Math.min(...tileOrders.map(o => o.timestamp)) : null;
+    const syncWarning = tileOrders.some(o => o.cloverSyncFailed) ? t.cloverSyncFailedBadge : null;
     return (
       <FloorTile
         key={num}
@@ -2663,6 +2673,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
         closeLabel={closeLabel}
         freeStyle={freeStyle}
         subtitle={occupied && getSubtitle ? getSubtitle(tileOrders[0]) : null}
+        syncWarning={syncWarning}
       />
     );
   }
@@ -2987,7 +2998,10 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         await editKitchenOrder(editingOrder.firestoreId, editingOrder.items, cart, note);
         const newCloverOrderId = await updateOrderInClover({ ...editingOrder, items: cart, note });
         if (newCloverOrderId) {
-          await updateDoc(doc(db, "orders", editingOrder.firestoreId), { cloverOrderId: newCloverOrderId });
+          await updateDoc(doc(db, "orders", editingOrder.firestoreId), { cloverOrderId: newCloverOrderId, cloverSyncFailed: false });
+        } else {
+          await updateDoc(doc(db, "orders", editingOrder.firestoreId), { cloverSyncFailed: true });
+          alert(t.cloverSyncFailedAlert);
         }
       }
       setSending(false); setSent(true);
@@ -3005,7 +3019,10 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         await editKitchenOrder(existing.firestoreId, existing.items, mergedItems, mergedNote);
         const newCloverOrderId = await updateOrderInClover({ ...existing, items: mergedItems, note: mergedNote });
         if (newCloverOrderId) {
-          await updateDoc(doc(db, "orders", existing.firestoreId), { cloverOrderId: newCloverOrderId });
+          await updateDoc(doc(db, "orders", existing.firestoreId), { cloverOrderId: newCloverOrderId, cloverSyncFailed: false });
+        } else {
+          await updateDoc(doc(db, "orders", existing.firestoreId), { cloverSyncFailed: true });
+          alert(t.cloverSyncFailedAlert);
         }
         setSending(false); setSent(true);
         onOrderSent?.({ ...existing, items: mergedItems });
