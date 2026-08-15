@@ -3371,7 +3371,11 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                           style={{ flex: 1, cursor: item.qty > 0 ? "pointer" : "default" }}
                           onClick={() => { if (item.qty > 0) setSwapTargetKey(isSwapTarget ? null : lineKey); }}
                         >
-                          <span style={S.cartName}>{item.emoji} {item.displayName || item.name} {item.qty > 0 && <span style={S.cartSwapHint}>✎</span>}</span>
+                          <span style={S.cartName}>
+                            {item.emoji} {item.displayName || item.name}
+                            {ITEM_DISPLAY_OVERRIDES[item.name] && item.catName && <span style={S.cartCatTag}>{item.catName}</span>}
+                            {item.qty > 0 && <span style={S.cartSwapHint}>✎</span>}
+                          </span>
                           {item.modifiers && item.modifiers.length > 0 && (
                             <div style={S.cartModifiers}>
                               {item.modifiers.map((mod, mi) => {
@@ -3938,6 +3942,7 @@ const S = {
   cartRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #F0EDE8", flexWrap: "wrap", gap: 4 },
   cartRowSwapping: { background: "#EDE9FE", borderRadius: 8, boxShadow: "0 0 0 2px #7C3AED" },
   cartName: { fontSize: 13, color: "#333" },
+  cartCatTag: { fontSize: 10, fontWeight: 700, color: "#999", textTransform: "uppercase", letterSpacing: "0.02em", marginLeft: 5 },
   cartSwapHint: { fontSize: 11, color: "#AAA" },
   seatChipRow: { display: "flex", gap: 4, flexWrap: "wrap", padding: "0 14px 10px", flexShrink: 0 },
   seatChip: { background: "#F5F3F0", border: "1px solid #DDD", borderRadius: 8, padding: "4px 9px", fontSize: 11, fontWeight: 700, color: "#888", cursor: "pointer", whiteSpace: "nowrap" },
