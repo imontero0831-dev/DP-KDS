@@ -105,6 +105,8 @@ const T = {
     specialAmount: "Monto a cobrar",
     addToOrder: "Agregar a Orden",
     replaceInOrder: "Reemplazar",
+    editingItem: "Editando este platillo",
+    saveChanges: "Guardar Cambios",
     required: "Requerido",
     optional: "Opcional",
     chooseOne: "Elige 1",
@@ -209,6 +211,8 @@ const T = {
     specialAmount: "Amount to charge",
     addToOrder: "Add to Order",
     replaceInOrder: "Replace",
+    editingItem: "Editing This Item",
+    saveChanges: "Save Changes",
     required: "Required",
     optional: "Optional",
     chooseOne: "Choose 1",
@@ -1271,21 +1275,29 @@ function parseSpecialNote(note) {
 // ============================================================
 // MODIFIER MODAL
 // ============================================================
-function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }) {
+function ModifierModal({ item, displayName, lang, onConfirm, onClose, mode = "add", initialModifiers, initialNote }) {
   const t = T[lang];
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selections, setSelections] = useState({});
   const [specialNote, setSpecialNote] = useState("");
 
+  // When opened by tapping a line already in the cart (mode "edit"/"swap"),
+  // start from what's already selected on it instead of a blank slate --
+  // the whole point is to let the waitress see and adjust what's there, not
+  // re-pick every modifier from scratch.
   useEffect(() => {
     const groups = getModifierGroupsForItem(item);
     setGroups(groups);
     const init = {};
-    groups.forEach(g => { init[g.id] = new Set(); });
+    groups.forEach(g => {
+      const preselected = (initialModifiers || []).filter(m => g.modifiers.some(gm => gm.id === m.id)).map(m => m.id);
+      init[g.id] = new Set(preselected);
+    });
     setSelections(init);
+    setSpecialNote(initialNote || "");
     setLoading(false);
-  }, [item]);
+  }, [item, initialModifiers, initialNote]);
 
   function toggle(group, modId) {
     setSelections(prev => {
@@ -1330,7 +1342,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
         <div style={S.modalHeader}>
           <div>
             <div style={S.modalTitle}>{item.emoji} {displayName}</div>
-            <div style={S.modalSubtitle}>{swapMode ? t.replaceInOrder : t.customizeItem}</div>
+            <div style={S.modalSubtitle}>{mode === "edit" ? t.editingItem : mode === "swap" ? t.replaceInOrder : t.customizeItem}</div>
           </div>
           <button style={S.modalCloseBtn} onClick={onClose}>✕</button>
         </div>
@@ -1399,7 +1411,7 @@ function ModifierModal({ item, displayName, lang, onConfirm, onClose, swapMode }
                 {modTotal > 0 && <span style={S.modalModPrice}> + {fmt(modTotal)}</span>}
               </div>
               <button style={{ ...S.modalConfirmBtn, ...(!canConfirm ? S.modalConfirmBtnDisabled : {}) }} onClick={handleConfirm} disabled={!canConfirm}>
-                {swapMode ? t.replaceInOrder : t.addToOrder} — {fmt(item.price + modTotal)}
+                {mode === "edit" ? t.saveChanges : mode === "swap" ? t.replaceInOrder : t.addToOrder} — {fmt(item.price + modTotal)}
               </button>
             </div>
           </div>
@@ -3172,7 +3184,16 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   return (
     <div ref={rootRef} style={{ ...S.waiterRoot, ...(rootHeight ? { height: rootHeight } : {}) }}>
       {modModalItem && (
-        <ModifierModal item={modModalItem} displayName={getItemDisplayName(modModalItem)} lang={lang} onConfirm={handleModifierConfirm} onClose={() => setModModalItem(null)} swapMode={!!swapTargetKey} />
+        <ModifierModal
+          item={modModalItem}
+          displayName={getItemDisplayName(modModalItem)}
+          lang={lang}
+          onConfirm={handleModifierConfirm}
+          onClose={() => setModModalItem(null)}
+          mode={!swapTargetKey ? "add" : (swapTargetItem && modModalItem.id === swapTargetItem.id ? "edit" : "swap")}
+          initialModifiers={modModalItem.modifiers}
+          initialNote={modModalItem.specialNote}
+        />
       )}
       {specialModalCat && (
         <SpecialModal lang={lang} onConfirm={handleSpecialConfirm} onClose={() => setSpecialModalCat(null)} />
@@ -3369,7 +3390,15 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                       <div key={lineKey} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none", ...(isSwapTarget ? S.cartRowSwapping : {}) }}>
                         <div
                           style={{ flex: 1, cursor: item.qty > 0 ? "pointer" : "default" }}
-                          onClick={() => { if (item.qty > 0) setSwapTargetKey(isSwapTarget ? null : lineKey); }}
+                          onClick={() => {
+                            if (item.qty === 0) return;
+                            if (isSwapTarget) {
+                              setSwapTargetKey(null);
+                            } else {
+                              setSwapTargetKey(lineKey);
+                              setModModalItem(item);
+                            }
+                          }}
                         >
                           <span style={S.cartName}>
                             {item.emoji} {item.displayName || item.name}
