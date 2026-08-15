@@ -11,6 +11,8 @@
 #   kds-display-3  → ssh pi@kds-display-3.local   → ?screen=TBD
 #   App URL: https://dp-kds.vercel.app
 #   Screen values: kitchen, drinks, expo, (none = waiter/tables)
+#   All 3 Pis auto-reboot daily at 9:30am (see Step 9) so none
+#   of them ever stays up long enough to develop issues.
 # ============================================================
 
 
@@ -129,6 +131,66 @@ sudo reboot
 # Test by pressing keys — they should control the KDS.
 
 
+# ── STEP 9: Daily auto-reboot at 9:30am ───────────────────────
+# All 3 KDS Pis stay powered on all day, every day. A clean
+# reboot each morning before open clears any memory/process
+# buildup so nobody ever has to unplug a frozen display mid-shift.
+# fix-chromium.sh already handles the post-reboot WiFi wait and
+# crash-state cleanup, so it comes back into the kiosk cleanly
+# on its own — no action needed after this runs.
+#
+# Paste this into Terminal on EVERY KDS Pi (kitchen, drinks, expo):
+(sudo crontab -l 2>/dev/null | grep -v '# KDS daily reset'; echo "30 9 * * * /sbin/reboot # KDS daily reset") | sudo crontab -
+#
+# Verify it's in there:
+sudo crontab -l
+# Should show: 30 9 * * * /sbin/reboot # KDS daily reset
+#
+# To remove it later:
+#   sudo crontab -l | grep -v '# KDS daily reset' | sudo crontab -
+#
+# NOTE: cron times below are all in the Pi's own system timezone.
+# Make sure that's actually set to Central before relying on the
+# "9:30am" / "9pm" times being correct:
+sudo raspi-config nonint do_change_timezone America/Chicago
+# Verify:
+timedatectl | grep "Time zone"
+# Should show: Time zone: America/Chicago (CST, -0600) or (CDT, -0500)
+
+
+# ── STEP 10: Blank the screen overnight (9pm–9:30am) ──────────
+# The Pi and Chromium keep running all night — this just cuts the
+# HDMI signal, which makes any connected TV/monitor drop into its
+# own standby (works the same regardless of which screen is
+# plugged in — TV or PC monitor — since it's standard display
+# behavior, not something we're configuring per-monitor).
+# This is about protecting the SCREEN from being lit with a mostly
+# static UI 24/7 (burn-in / backlight wear) — the Pi board itself
+# is fine running continuously and isn't affected by this either way.
+#
+# Uses vcgencmd instead of `xset dpms` because fix-chromium.sh
+# already disables X11's DPMS extension (xset -dpms) to stop the
+# screen auto-sleeping from inactivity during service — vcgencmd
+# toggles the display at the firmware level instead, so it isn't
+# affected by that setting.
+#
+# Paste this into Terminal on EVERY KDS Pi (kitchen, drinks, expo):
+(sudo crontab -l 2>/dev/null | grep -v '# KDS screen'; echo "0 21 * * * vcgencmd display_power 0 # KDS screen off"; echo "30 9 * * * vcgencmd display_power 1 # KDS screen on") | sudo crontab -
+#
+# Verify both are in there:
+sudo crontab -l
+# Should show, alongside the reboot line from Step 9:
+#   0 21 * * * vcgencmd display_power 0 # KDS screen off
+#   30 9 * * * vcgencmd display_power 1 # KDS screen on
+#
+# Note: the TV/monitor may take a minute or two to actually drop
+# into standby after losing signal — that delay is the display's
+# own firmware behavior, not something the Pi controls.
+#
+# To remove it later:
+#   sudo crontab -l | grep -v '# KDS screen' | sudo crontab -
+
+
 # ============================================================
 # NUMPAD KEY REFERENCE CARD
 # Print this and tape it near the monitor for staff
@@ -186,6 +248,23 @@ sudo reboot
 # → Unplug and replug the USB dongle
 # → Make sure you're on the Kitchen screen (not Waiter/History)
 # → Numpad only works in Kitchen screen by design
+
+# Pi didn't come back after the 9:30am reboot?
+# → Give it ~60-90s — fix-chromium.sh waits for WiFi before
+#   launching, same as any cold boot.
+# → Still blank? SSH in and check the same things as a normal
+#   white-screen issue (see above): pgrep -af chromium, ping,
+#   cat /home/pi/fix-chromium.sh
+# → Confirm the cron job is actually there: sudo crontab -l
+
+# Screen stayed dark after 9:30am (or never turned off at 9pm)?
+# → SSH in and run: vcgencmd display_power 1   (forces it on now)
+# → Check the cron jobs are present and the time is right:
+#     sudo crontab -l
+#     timedatectl | grep "Time zone"   (should be America/Chicago)
+# → If the TV itself won't wake from standby even with signal
+#   restored, that's the TV's own power-saving behavior, not the
+#   Pi — try its remote/power button once to confirm it responds.
 
 # Need to access desktop again for maintenance?
 # → Plug in a keyboard, press Alt+F4 to close Chrome
