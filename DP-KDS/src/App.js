@@ -995,6 +995,16 @@ function isBeverageItem(itemName, catName = "") {
   return DRINK_ITEM_CATEGORY_KEYWORDS.some(k => c.includes(k));
 }
 
+// Bottled/canned drinks (Topo Chico, soda, beer, wine, ...) need no prep and
+// nothing to track -- unlike agua fresca they don't belong on KDS2's ticket
+// at all, not even dimmed. Food items (caldo, guacamole, sides, and anything
+// else riding along on a to-go order) still show, dimmed if unmatched, since
+// those still need bagging attention; this only strips the non-agua-fresca
+// beverages out of that list.
+function isDrinksTicketNoise(itemName, catName = "") {
+  return isBeverageItem(itemName, catName) && !itemName.toLowerCase().includes("agua fresca");
+}
+
 const DRINKS_RULES = [
   {
     key: "agua_fresca",
@@ -1981,7 +1991,10 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
   const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
 
   const isContinuation = cardIndex > 0;
-  const cardItems = buildTicketCards(order.items || [])[cardIndex] || [];
+  const drinksTicketItems = (order.items || []).filter(
+    i => !isDrinksTicketNoise(i.name, i.catName || catNameById?.[i.categoryId] || "")
+  );
+  const cardItems = buildTicketCards(drinksTicketItems)[cardIndex] || [];
 
   const ticketAccentColor = getOrderAccentColor(order);
   const ticketTintBg = getOrderAccentBg(order);
@@ -2174,7 +2187,10 @@ function DrinksStationScreen({ lang, menu }) {
   const visible = useMemo(() => {
     const result = [];
     for (const order of active) {
-      const cardCount = buildTicketCards(order.items || []).length;
+      const drinksTicketItems = (order.items || []).filter(
+        i => !isDrinksTicketNoise(i.name, i.catName || catNameById[i.categoryId] || "")
+      );
+      const cardCount = buildTicketCards(drinksTicketItems).length;
       if (result.length + cardCount > MAX_VISIBLE) break;
       for (let i = 0; i < cardCount; i++) {
         result.push({ order, cardIndex: i, cardKey: `${order.firestoreId}:${i}` });
