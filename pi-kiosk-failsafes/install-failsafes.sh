@@ -4,7 +4,7 @@
 # any KDS kiosk Pi. Safe to re-run.
 set -e
 
-MARKER=/home/pi/.failsafe-v3-installed
+MARKER=/home/pi/.failsafe-v4-installed
 
 # 1. Disable WiFi power-save (survives reboots; takes effect on next
 #    connection activation, so it won't disrupt an already-active session).
@@ -41,11 +41,18 @@ if [ -f /home/pi/.failsafe-staging/chromium-watchdog.sh ]; then
   chmod +x /home/pi/chromium-watchdog.sh
 fi
 
+# 3d. WiFi signal-strength trend logger (continuous, not just on failure --
+#     lets us see whether flapping correlates with weak/marginal signal).
+if [ -f /home/pi/.failsafe-staging/wifi-signal-log.sh ]; then
+  cp /home/pi/.failsafe-staging/wifi-signal-log.sh /home/pi/wifi-signal-log.sh
+  chmod +x /home/pi/wifi-signal-log.sh
+fi
+
 # 4. Cron: pi user's own crontab (matches how the original watchdog was
 #    installed) -- not root's, so no sudo here. Replaces any older lines
 #    for the same scripts so re-running this installer doesn't duplicate.
 (
-  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh|chromium-watchdog\.sh' || true
+  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh|chromium-watchdog\.sh|wifi-signal-log\.sh' || true
   echo "*/3 * * * * /home/pi/tailscale-watchdog.sh"
   if [ -f /home/pi/hdmi-watchdog.sh ]; then
     echo "*/2 * * * * /home/pi/hdmi-watchdog.sh"
@@ -55,6 +62,9 @@ fi
   fi
   if [ -f /home/pi/chromium-watchdog.sh ]; then
     echo "* * * * * /home/pi/chromium-watchdog.sh"
+  fi
+  if [ -f /home/pi/wifi-signal-log.sh ]; then
+    echo "* * * * * /home/pi/wifi-signal-log.sh"
   fi
 ) | crontab -
 
