@@ -4,7 +4,7 @@
 # any KDS kiosk Pi. Safe to re-run.
 set -e
 
-MARKER=/home/pi/.failsafe-v4-installed
+MARKER=/home/pi/.failsafe-v5-installed
 
 # 1. Disable WiFi power-save (survives reboots; takes effect on next
 #    connection activation, so it won't disrupt an already-active session).
@@ -12,6 +12,23 @@ sudo mkdir -p /etc/NetworkManager/conf.d
 sudo tee /etc/NetworkManager/conf.d/wifi-powersave-off.conf > /dev/null << 'EOF'
 [connection]
 wifi.powersave = 2
+EOF
+
+# 1b. Force the 2.4GHz band. The router band-steers the same SSID onto both
+#     2.4 and 5GHz; wifi-signal-log.sh showed these kiosks parked on 5GHz at
+#     notably weaker signal (-46 to -49dBm, 60+ retries) than the 2.4GHz AP
+#     with the same SSID was offering at the same moment. Same global-default
+#     conf.d mechanism as wifi-powersave-off.conf above -- survives reboots
+#     on both native NetworkManager (KDS1) and netplan-managed (KDS2/3)
+#     connections, unlike a direct `nmcli connection modify`, which netplan
+#     would silently wipe by regenerating the profile from /etc/netplan at
+#     the next boot. Takes effect on next connection activation, same as
+#     the power-save setting above -- not forced here so this installer
+#     never has to bounce the very SSH session it's running over.
+sudo tee /etc/NetworkManager/conf.d/wifi-band-24ghz.conf > /dev/null << 'EOF'
+[connection-wifi-band-24ghz]
+match-device=type:wifi
+wifi.band=bg
 EOF
 
 # 2. Hardened watchdog script.

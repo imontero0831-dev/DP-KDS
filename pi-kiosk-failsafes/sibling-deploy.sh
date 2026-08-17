@@ -30,7 +30,7 @@ try_deploy() {
     return 0   # not reachable yet, quietly wait for the next run
   fi
 
-  if $SSH "pi@$host" "test -f /home/pi/.failsafe-v4-installed" >/dev/null 2>&1; then
+  if $SSH "pi@$host" "test -f /home/pi/.failsafe-v5-installed" >/dev/null 2>&1; then
     return 0   # already installed
   fi
 
