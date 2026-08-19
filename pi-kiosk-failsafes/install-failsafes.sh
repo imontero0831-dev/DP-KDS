@@ -4,7 +4,7 @@
 # any KDS kiosk Pi. Safe to re-run.
 set -e
 
-MARKER=/home/pi/.failsafe-v5-installed
+MARKER=/home/pi/.failsafe-v6-installed
 
 # 1. Disable WiFi power-save (survives reboots; takes effect on next
 #    connection activation, so it won't disrupt an already-active session).
@@ -28,8 +28,33 @@ EOF
 sudo tee /etc/NetworkManager/conf.d/wifi-band-24ghz.conf > /dev/null << 'EOF'
 [connection-wifi-band-24ghz]
 match-device=type:wifi
-wifi.band=bg
+802-11-wireless.band=bg
 EOF
+
+# 1c. Force the stored WiFi secret to live directly in the connection file
+#     (psk-flags=0) instead of being agent-owned. Root cause seen on KDS1
+#     2026-08-18: a connection created via the desktop GUI can leave the
+#     PSK agent-owned, needing nm-applet/a keyring to supply it on
+#     reconnect -- when that agent isn't there, NetworkManager pops a
+#     blocking interactive auth dialog instead of retrying silently, and a
+#     kiosk with no keyboard/mouse has no way to dismiss it. Applies to
+#     every wifi connection profile present, active or not; harmless no-op
+#     if already 0 (e.g. KDS2/3's netplan-managed connections).
+for c in $(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | cut -d: -f1); do
+  sudo nmcli connection modify "$c" wifi-sec.psk-flags 0 2>/dev/null || true
+done
+
+# 1d. Force LightDM autologin. Root cause seen on KDS1 2026-08-18/19:
+#     autologin-session was set but autologin-user was left blank, so the
+#     custom pi-greeter sat forever on a PAM password prompt nobody could
+#     answer instead of ever starting the kiosk session -- the Pi looked
+#     fully offline from the outside (no chromium, nothing on screen) even
+#     though SSH/Tailscale/networking were completely fine. No-op on
+#     KDS2/3, which don't run lightdm.
+if [ -f /etc/lightdm/lightdm.conf ]; then
+  sudo cp /etc/lightdm/lightdm.conf "/etc/lightdm/lightdm.conf.bak-$(date +%Y%m%d%H%M%S)"
+  sudo sed -i 's/^#\?autologin-user=.*/autologin-user=pi/' /etc/lightdm/lightdm.conf
+fi
 
 # 2. Hardened watchdog script.
 cp /home/pi/.failsafe-staging/tailscale-watchdog.sh /home/pi/tailscale-watchdog.sh
@@ -65,11 +90,27 @@ if [ -f /home/pi/.failsafe-staging/wifi-signal-log.sh ]; then
   chmod +x /home/pi/wifi-signal-log.sh
 fi
 
+# 3e. WiFi auth-dialog watchdog (defense in depth alongside 1c above --
+#     covers the profile ever getting recreated agent-owned again, e.g. by
+#     an OS update or someone reconfiguring WiFi via the desktop GUI).
+if [ -f /home/pi/.failsafe-staging/wifi-auth-watchdog.sh ]; then
+  cp /home/pi/.failsafe-staging/wifi-auth-watchdog.sh /home/pi/wifi-auth-watchdog.sh
+  chmod +x /home/pi/wifi-auth-watchdog.sh
+fi
+
+# 3f. Stuck-greeter/no-session watchdog (defense in depth alongside 1d
+#     above -- covers autologin ever getting silently reset, e.g. by an
+#     lightdm package update restoring its default config).
+if [ -f /home/pi/.failsafe-staging/session-watchdog.sh ]; then
+  cp /home/pi/.failsafe-staging/session-watchdog.sh /home/pi/session-watchdog.sh
+  chmod +x /home/pi/session-watchdog.sh
+fi
+
 # 4. Cron: pi user's own crontab (matches how the original watchdog was
 #    installed) -- not root's, so no sudo here. Replaces any older lines
 #    for the same scripts so re-running this installer doesn't duplicate.
 (
-  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh|chromium-watchdog\.sh|wifi-signal-log\.sh' || true
+  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh|chromium-watchdog\.sh|wifi-signal-log\.sh|wifi-auth-watchdog\.sh|session-watchdog\.sh' || true
   echo "*/3 * * * * /home/pi/tailscale-watchdog.sh"
   if [ -f /home/pi/hdmi-watchdog.sh ]; then
     echo "*/2 * * * * /home/pi/hdmi-watchdog.sh"
@@ -82,6 +123,12 @@ fi
   fi
   if [ -f /home/pi/wifi-signal-log.sh ]; then
     echo "* * * * * /home/pi/wifi-signal-log.sh"
+  fi
+  if [ -f /home/pi/wifi-auth-watchdog.sh ]; then
+    echo "*/2 * * * * /home/pi/wifi-auth-watchdog.sh"
+  fi
+  if [ -f /home/pi/session-watchdog.sh ]; then
+    echo "*/2 * * * * /home/pi/session-watchdog.sh"
   fi
 ) | crontab -
 
