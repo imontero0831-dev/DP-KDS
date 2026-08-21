@@ -804,6 +804,48 @@ function playChimeFile(url) {
 function playNewOrderChime() { playChimeFile("/sounds/new-order.mp3"); }
 function playOrderModifiedChime() { playChimeFile("/sounds/order-modified.mp3"); }
 
+// A cancelled order is a modification (order.cancelled flips true via
+// cancelKitchenOrder) but needs its own unmistakable cue instead of the
+// generic modified chime -- synthesized "blowing raspberry" (buzzy sawtooth
+// with a fast wobble, descending pitch) as a placeholder until a real
+// recording replaces it, same as playDrinksAlertTone below.
+function playCancelledTone() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!sharedAudioCtx) sharedAudioCtx = new Ctx();
+    const ctx = sharedAudioCtx;
+    const now = ctx.currentTime;
+    const duration = 0.5;
+
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(180, now);
+    osc.frequency.linearRampToValueAtTime(90, now + duration);
+
+    const lfo = ctx.createOscillator();
+    lfo.type = "sine";
+    lfo.frequency.value = 28;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 40;
+    lfo.connect(lfoGain).connect(osc.frequency);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.4, now + 0.03);
+    gain.gain.setValueAtTime(0.4, now + duration - 0.08);
+    gain.gain.linearRampToValueAtTime(0, now + duration);
+
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    lfo.start(now);
+    osc.stop(now + duration);
+    lfo.stop(now + duration);
+  } catch (err) {
+    console.warn("cancelled tone failed:", err.message);
+  }
+}
+
 // ── DRINKS-STATION ALERT (KDS2, played through KDS1's speaker) ───
 // KDS2/Drinks has no speaker of its own yet, so when an order that needs
 // Ausencia's attention comes in, this plays through KDS1's speaker as a
@@ -868,14 +910,18 @@ function useOrderChimes(orders, needsDrinksAlert) {
       currentMap.forEach((sig, id) => {
         const isNew = !prevMap.has(id);
         const isModified = !isNew && prevMap.get(id) !== sig;
+        const isCancelled = isModified && !!orderById.get(id)?.cancelled;
         if (isNew) {
           setTimeout(playNewOrderChime, delay);
+          delay += 400;
+        } else if (isCancelled) {
+          setTimeout(playCancelledTone, delay);
           delay += 400;
         } else if (isModified) {
           setTimeout(playOrderModifiedChime, delay);
           delay += 400;
         }
-        if ((isNew || isModified) && needsDrinksAlert?.(orderById.get(id))) {
+        if ((isNew || isModified) && !isCancelled && needsDrinksAlert?.(orderById.get(id))) {
           setTimeout(playDrinksAlertTone, delay);
           delay += 400;
         }
