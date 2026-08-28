@@ -80,6 +80,7 @@ const T = {
     confirmComplete: "¿Marcar esta orden como entregada y completada? Esto la quitará de órdenes activas.",
     cloverSyncFailedAlert: "No se pudo actualizar Clover con este cambio (posiblemente porque la orden original ya fue cobrada). Cobra los artículos nuevos por separado y cierra esta mesa manualmente — no se cerrará sola.",
     cloverSyncFailedBadge: "⚠ REVISAR PAGO",
+    cloverCancelFailedAlert: "No se pudo cancelar esta orden en Clover (posiblemente porque ya fue cobrada). Anúlala manualmente en Clover si es necesario.",
     editHistory: "Historial de Cambios",
     original: "Original",
     edit: "Edición",
@@ -186,6 +187,7 @@ const T = {
     confirmComplete: "Mark this order as delivered and complete? This will remove it from active orders.",
     cloverSyncFailedAlert: "Clover couldn't be updated with this change (likely because the original order was already charged). Ring up the new items separately and close this table manually — it won't auto-close.",
     cloverSyncFailedBadge: "⚠ CHECK PAYMENT",
+    cloverCancelFailedAlert: "This order couldn't be cancelled on Clover (likely because it was already charged). Void it manually in Clover if needed.",
     editHistory: "Edit History",
     original: "Original",
     edit: "Edit",
@@ -594,12 +596,28 @@ async function editKitchenOrder(orderId, oldItems, newItems, newNote) {
   await updateDoc(orderRef, updates);
 }
 
-async function cancelKitchenOrder(orderId) {
-  const orderRef = doc(db, "orders", orderId);
+// Cancelling on the KDS used to only flag/delete the Firestore doc, leaving
+// any already-pushed Clover order dangling in state:"open" forever -- it
+// never showed as cancelled on the POS. Mirrors updateOrderInClover's
+// delete step; if that fails (e.g. the order was already charged/locked
+// and Clover won't let it be deleted), the caller must alert staff to void
+// it manually since deleting the Firestore doc doesn't get a second try.
+async function cancelKitchenOrder(order) {
+  const orderRef = doc(db, "orders", order.firestoreId);
+  let cloverCancelFailed = false;
+  if (order.cloverOrderId) {
+    try {
+      await cloverRequest(`orders/${order.cloverOrderId}`, "DELETE");
+    } catch (err) {
+      console.warn("Clover order cancel failed:", err.message);
+      cloverCancelFailed = true;
+    }
+  }
   await updateDoc(orderRef, { cancelled: true, modified: false });
   setTimeout(async () => {
     await deleteDoc(orderRef);
   }, 4000);
+  return cloverCancelFailed;
 }
 
 async function updateOrderStatus(orderId, status) {
@@ -3173,7 +3191,8 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     if (isEditing) {
       const isCancelled = cart.every(i => i.qty === 0);
       if (isCancelled) {
-        await cancelKitchenOrder(editingOrder.firestoreId);
+        const cloverCancelFailed = await cancelKitchenOrder(editingOrder);
+        if (cloverCancelFailed) alert(t.cloverCancelFailedAlert);
       } else {
         await editKitchenOrder(editingOrder.firestoreId, editingOrder.items, cart, note);
         const newCloverOrderId = await updateOrderInClover({ ...editingOrder, items: cart, note });
