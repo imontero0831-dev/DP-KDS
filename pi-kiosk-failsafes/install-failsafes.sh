@@ -4,7 +4,7 @@
 # any KDS kiosk Pi. Safe to re-run.
 set -e
 
-MARKER=/home/pi/.failsafe-v6-installed
+MARKER=/home/pi/.failsafe-v7-installed
 
 # 1. Disable WiFi power-save (survives reboots; takes effect on next
 #    connection activation, so it won't disrupt an already-active session).
@@ -59,6 +59,14 @@ fi
 # 2. Hardened watchdog script.
 cp /home/pi/.failsafe-staging/tailscale-watchdog.sh /home/pi/tailscale-watchdog.sh
 chmod +x /home/pi/tailscale-watchdog.sh
+
+# 2b. Push-notification helper (ntfy.sh) -- called by tailscale-watchdog.sh
+#     (and any other watchdog going forward) at points that need a human,
+#     not just a log line nobody's watching in real time.
+if [ -f /home/pi/.failsafe-staging/alert.sh ]; then
+  cp /home/pi/.failsafe-staging/alert.sh /home/pi/alert.sh
+  chmod +x /home/pi/alert.sh
+fi
 
 # 3. HDMI output recovery watchdog (X11 kiosks only -- no-ops harmlessly
 #    if this Pi has no xrandr, e.g. KDS1's labwc/Wayland stack).

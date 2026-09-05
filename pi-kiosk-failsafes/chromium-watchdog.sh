@@ -16,13 +16,34 @@
 #      URL that never crashed the process)
 # On either failure, kills chromium -- fix-chromium.sh's own while-loop
 # (already running) picks it back up fresh within ~2s.
+#
+# Real incident 2026-09-02/04 (kds-display-2): during the tailscale-watchdog
+# reboot-loop bug (see tailscale-watchdog.sh), this watchdog logged over a
+# thousand "main thread likely deadlocked" restarts that were never real
+# hangs -- Xorg's own log for the same window is completely clean (no GPU/
+# driver errors, clean start/stop each boot), and the daily restart count
+# tracked the daily reboot count almost exactly (up to 1.4x it -- checked
+# 2026-09-05). Root cause: every forced reboot restarted chromium from
+# cold, and with no grace period this watchdog's 1-min cron tick + 5s curl
+# timeout kept catching it mid cold-start (GPU compositor init, page load)
+# and killing it again before it ever had a chance to finish -- sometimes
+# twice per boot, compounding the churn from the reboot loop itself.
 LOG=/home/pi/chromium-watchdog.log
 EXPECTED_ORIGIN="https://dp-kds.vercel.app"
+GRACE_SECONDS=45
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"; }
 
 # fix-chromium.sh's own loop already handles a fully-dead process; nothing
 # for this watchdog to do until Chromium is actually up.
-pgrep -x chromium >/dev/null 2>&1 || exit 0
+OLDEST_PID=$(pgrep -x chromium -o 2>/dev/null)
+[ -z "$OLDEST_PID" ] && exit 0
+
+# Give a freshly-launched chromium time to actually finish starting before
+# judging it -- see incident note above.
+ELAPSED=$(ps -o etimes= -p "$OLDEST_PID" 2>/dev/null | tr -d ' ')
+if [ -n "$ELAPSED" ] && [ "$ELAPSED" -lt "$GRACE_SECONDS" ]; then
+  exit 0
+fi
 
 if ! curl -s --max-time 5 http://localhost:9222/json/version >/dev/null 2>&1; then
   log "debug port unresponsive (main thread likely deadlocked), restarting chromium"

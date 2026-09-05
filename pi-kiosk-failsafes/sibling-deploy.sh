@@ -30,7 +30,7 @@ try_deploy() {
     return 0   # not reachable yet, quietly wait for the next run
   fi
 
-  if $SSH "pi@$host" "test -f /home/pi/.failsafe-v6-installed" >/dev/null 2>&1; then
+  if $SSH "pi@$host" "test -f /home/pi/.failsafe-v7-installed" >/dev/null 2>&1; then
     return 0   # already installed
   fi
 
@@ -38,7 +38,7 @@ try_deploy() {
   if ! $SSH "pi@$host" "mkdir -p $STAGING_REMOTE"; then
     log "$name: mkdir failed"; return 1
   fi
-  if ! $SCP "$STAGING_LOCAL/tailscale-watchdog.sh" "$STAGING_LOCAL/hdmi-watchdog.sh" "$STAGING_LOCAL/power-watchdog.sh" "$STAGING_LOCAL/chromium-watchdog.sh" "$STAGING_LOCAL/wifi-signal-log.sh" "$STAGING_LOCAL/wifi-auth-watchdog.sh" "$STAGING_LOCAL/session-watchdog.sh" "$STAGING_LOCAL/install-failsafes.sh" "pi@$host:$STAGING_REMOTE/"; then
+  if ! $SCP "$STAGING_LOCAL/tailscale-watchdog.sh" "$STAGING_LOCAL/alert.sh" "$STAGING_LOCAL/hdmi-watchdog.sh" "$STAGING_LOCAL/power-watchdog.sh" "$STAGING_LOCAL/chromium-watchdog.sh" "$STAGING_LOCAL/wifi-signal-log.sh" "$STAGING_LOCAL/wifi-auth-watchdog.sh" "$STAGING_LOCAL/session-watchdog.sh" "$STAGING_LOCAL/install-failsafes.sh" "pi@$host:$STAGING_REMOTE/"; then
     log "$name: scp failed"; return 1
   fi
   if $SSH "pi@$host" "bash $STAGING_REMOTE/install-failsafes.sh"; then
