@@ -59,9 +59,17 @@ raspi-config nonint do_wifi_country US
 rfkill unblock wifi || true
 
 # No lightdm on this board (matches its own prior setup, and KDS2/3's original from-scratch
-# recipe) -- console autologin + a .bash_profile startx hook instead. Pure filesystem changes,
-# no daemon needed -- safe here in stage 1, unlike do_wifi_ssid_passphrase above.
-raspi-config nonint do_boot_behaviour B2
+# recipe) -- console autologin + a .bash_profile startx hook instead. Writing the getty drop-in
+# directly instead of `raspi-config nonint do_boot_behaviour B2` -- confirmed the hard way
+# 2026-09-05 that command needs a live systemd/D-Bus session to actually apply (same category of
+# gotcha as do_wifi_ssid_passphrase above), so it silently failed to take effect when run in this
+# offline stage. A plain file write has no such dependency.
+install -d -m 755 /etc/systemd/system/getty@tty1.service.d
+cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << 'AUTOLOGINEOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
+AUTOLOGINEOF
 
 install -o pi -g pi -m 700 -d /home/pi/.ssh
 cat > /home/pi/.ssh/authorized_keys << 'KEYEOF'
