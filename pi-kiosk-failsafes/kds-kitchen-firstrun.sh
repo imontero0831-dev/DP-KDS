@@ -37,6 +37,16 @@ if ! id -u pi >/dev/null 2>&1; then
 fi
 echo 'pi:110965.Ps' | chpasswd
 
+# Separate, easy-to-miss mechanism from everything else in this script: modern Raspberry Pi OS
+# (Bookworm/Trixie) also runs its own first-boot account-setup wizard on the console, independent
+# of this firstrun.sh entirely -- it only skips itself if /boot/firmware/userconf.txt exists
+# (this is what Raspberry Pi Imager's own "set username/password" GUI field writes). Creating the
+# pi user by hand above does NOT satisfy this separate check -- confirmed the hard way 2026-09-05,
+# this board sat at an interactive "username:" prompt on real hardware despite firstrun.sh having
+# already run successfully. Hash is `echo '110965.Ps' | openssl passwd -6 -stdin` (matches the
+# same password set via chpasswd above, so credentials stay consistent either way).
+echo 'pi:$6$Co5y33tmyThsTOcd$n5Pk6c6F37x/h2y9OpEkzC8KlsV7V1kx9Q4Cauuni8EkdgCDEw2bfe/6Mx/Hy0qIYIhQWw6bdrzcgIB8r6rzo0' > /boot/firmware/userconf.txt
+
 raspi-config nonint do_hostname kds-display-3
 raspi-config nonint do_ssh 0
 # Some Pi WiFi chips stay rfkill-blocked until a country code is set, independent of the
