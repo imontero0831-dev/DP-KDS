@@ -94,10 +94,8 @@ chmod 755 /usr/local/sbin/ensure-tty1-autologin.sh
 cat > /etc/systemd/system/ensure-tty1-autologin.service << 'UNITEOF2'
 [Unit]
 Description=Re-assert tty1 console autologin drop-in before every getty start
-DefaultDependencies=no
+After=local-fs.target
 Before=getty@tty1.service
-Conflicts=shutdown.target
-Before=shutdown.target
 
 [Service]
 Type=oneshot
