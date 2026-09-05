@@ -68,6 +68,47 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
 AUTOLOGINEOF
 
+# Belt-and-suspenders on the above: confirmed 2026-09-05 that this exact drop-in, written here in
+# stage 1 and verified byte-correct in firstrun.log with no error, was GONE from the filesystem
+# after a real boot -- board came up to an interactive "kds-display-2 login:" prompt with no
+# keyboard attached to answer it. Everything else stage 1 wrote in this same run (sudoers, both
+# NetworkManager keyfiles, hostname) survived fine, so this isn't a wholesale rollback -- something
+# specific to console/tty config removed just this directory on a later boot. Prime suspect: a
+# Recommends-pulled package from stage 2's `apt-get install xserver-xorg ...` (no
+# --no-install-recommends was used) running a postinst that resets tty1's getty config, since that's
+# the only thing that runs after stage 1 and before the board was next observed. Rather than chase
+# the exact package, make autologin unconditionally self-healing instead: a tiny oneshot that
+# rewrites this same drop-in fresh on every single boot, ordered before getty@tty1 even starts, so
+# it doesn't matter what removes it -- there is no keyboard on this board to ever answer that prompt.
+cat > /usr/local/sbin/ensure-tty1-autologin.sh << 'ENSUREEOF'
+#!/bin/bash
+install -d -m 755 /etc/systemd/system/getty@tty1.service.d
+cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << 'AUTOLOGINEOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
+AUTOLOGINEOF
+ENSUREEOF
+chmod 755 /usr/local/sbin/ensure-tty1-autologin.sh
+
+cat > /etc/systemd/system/ensure-tty1-autologin.service << 'UNITEOF2'
+[Unit]
+Description=Re-assert tty1 console autologin drop-in before every getty start
+DefaultDependencies=no
+Before=getty@tty1.service
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ensure-tty1-autologin.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=getty.target
+UNITEOF2
+systemctl enable ensure-tty1-autologin.service
+
 install -o pi -g pi -m 700 -d /home/pi/.ssh
 cat > /home/pi/.ssh/authorized_keys << 'KEYEOF'
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIuTSj0oEMtHqrhPqlaANFE72gCZk5LU/b9Yag2nVc/c claude-code-dpkds-fleet
