@@ -150,18 +150,48 @@ cat > /usr/local/sbin/kds-provision-stage2.sh << 'STAGE2EOF'
 exec > /home/pi/stage2-provision.log 2>&1
 set -x
 
-# Wait for real internet, not just "network-online.target reached" (belt-and-suspenders --
-# fix-chromium.sh uses the same pattern for the same reason).
-for i in $(seq 1 60); do
-  ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && break
+# Wait for real internet (up to ~10 min -- restaurant WiFi association can be slow after a
+# fresh boot; confirmed the hard way 2026-09-05 that a 2-minute wait wasn't enough, and this
+# script used to plow ahead into a doomed apt-get anyway, self-disabling despite installing
+# nothing at all -- Kitchen sat at a bare login shell with no Xorg/chromium for exactly this
+# reason).
+NETWORK_OK=0
+for i in $(seq 1 300); do
+  if ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
+    NETWORK_OK=1
+    break
+  fi
   sleep 2
 done
 
+if [ "$NETWORK_OK" -ne 1 ]; then
+  echo "no network after 10 min -- leaving stage2 service enabled, will retry on next boot"
+  exit 1
+fi
+
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y xserver-xorg xinit openbox chromium chromium-common chromium-sandbox \
-  rpi-chromium-mods unclutter xbindkeys xdotool pulseaudio pulseaudio-utils alsa-utils
+INSTALL_OK=0
+for attempt in 1 2 3; do
+  apt-get update && apt-get install -y xserver-xorg xinit openbox chromium chromium-common chromium-sandbox \
+    rpi-chromium-mods unclutter xbindkeys xdotool pulseaudio pulseaudio-utils alsa-utils && { INSTALL_OK=1; break; }
+  sleep 15
+done
+
+if [ "$INSTALL_OK" -ne 1 ]; then
+  echo "apt-get install failed after 3 attempts -- leaving stage2 service enabled, will retry on next boot"
+  exit 1
+fi
 which startx Xorg openbox chromium
+
+# Tailscale -- missed entirely in the first version of this script (confirmed the hard way
+# 2026-09-05: a freshly re-flashed board never appeared on Tailscale because the binary
+# simply wasn't there -- the original boards only had it because it was installed by hand
+# months before this script existed). `tailscale up` itself needs an interactive login (no
+# reusable authkey on file), so that part stays a manual follow-up over LAN SSH.
+if ! command -v tailscale >/dev/null 2>&1; then
+  curl -fsSL https://tailscale.com/install.sh | sh
+fi
+systemctl enable --now tailscaled
 
 # No lightdm on this board (matches its own prior setup, and KDS2/3's original from-scratch
 # recipe) -- console autologin + a .bash_profile startx hook instead.
