@@ -114,11 +114,20 @@ if [ -f /home/pi/.failsafe-staging/session-watchdog.sh ]; then
   chmod +x /home/pi/session-watchdog.sh
 fi
 
+# 3g. Disk-fill watchdog -- Chromium's BrowserMetrics + Crash Reports dirs
+#     grow unbounded during any crash-loop; this cleared the disk before it
+#     filled during the 2026-09-04 incidents but had never actually been
+#     added to this installer before (deployed by hand only) -- fixed here.
+if [ -f /home/pi/.failsafe-staging/disk-watchdog.sh ]; then
+  cp /home/pi/.failsafe-staging/disk-watchdog.sh /home/pi/disk-watchdog.sh
+  chmod +x /home/pi/disk-watchdog.sh
+fi
+
 # 4. Cron: pi user's own crontab (matches how the original watchdog was
 #    installed) -- not root's, so no sudo here. Replaces any older lines
 #    for the same scripts so re-running this installer doesn't duplicate.
 (
-  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh|chromium-watchdog\.sh|wifi-signal-log\.sh|wifi-auth-watchdog\.sh|session-watchdog\.sh' || true
+  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh|chromium-watchdog\.sh|wifi-signal-log\.sh|wifi-auth-watchdog\.sh|session-watchdog\.sh|disk-watchdog\.sh' || true
   echo "*/3 * * * * /home/pi/tailscale-watchdog.sh"
   if [ -f /home/pi/hdmi-watchdog.sh ]; then
     echo "*/2 * * * * /home/pi/hdmi-watchdog.sh"
@@ -137,6 +146,9 @@ fi
   fi
   if [ -f /home/pi/session-watchdog.sh ]; then
     echo "*/2 * * * * /home/pi/session-watchdog.sh"
+  fi
+  if [ -f /home/pi/disk-watchdog.sh ]; then
+    echo "*/15 * * * * /home/pi/disk-watchdog.sh"
   fi
 ) | crontab -
 
