@@ -5,20 +5,23 @@
 # Why this exists: the previous card on this board panicked at boot with "Kernel panic - not
 # syncing: No working init found" on 2026-09-05, right after a direct debugfs -w patch (fixing
 # the tailscale-watchdog reboot-loop bug in place, without reflashing) was applied to it and it
-# was reinserted. Filesystem checks (e2fsck -f, ELF headers on the init chain) showed nothing
-# wrong even afterward -- but two raw-device write-completion errors ("Invalid argument") during
-# that patch session mean silent content-level corruption from the write itself can't be ruled
-# out, and this exact "clean everywhere, still won't boot" pattern is the same one seen on
-# Kitchen's card the same week (see kds-kitchen-firstrun.sh). Patching in place isn't reliable
-# on this hardware -- re-flashing fresh is.
+# was reinserted. Re-flashed clean from here on out instead of patching cards in place.
 #
 # Two-stage design, because firstrun.sh runs under a minimal systemd.run target with NO network
 # services up yet:
-#   Stage 1 (this script): only things that work fully offline -- user/hostname/SSH/WiFi-as-
-#     static-files -- plus writing + enabling a oneshot systemd service for stage 2.
+#   Stage 1 (this script): everything that doesn't actually need a network connection --
+#     user/hostname/SSH/WiFi-as-static-files, console autologin, all watchdog scripts, cron,
+#     openbox/chromium launch config -- plus writing + enabling a oneshot systemd service for
+#     stage 2. This is deliberately almost everything: the first version of this script only put
+#     user/hostname/SSH/WiFi here and left autologin + all the config files in stage 2, which
+#     meant a board sat at an interactive password prompt until WiFi came up -- confirmed the
+#     hard way 2026-09-05 that restaurant WiFi association can take longer than expected, and a
+#     kiosk with no keyboard/mouse has no business ever showing a login prompt at all.
 #   Stage 2 (embedded below, runs once on the FIRST NORMAL boot after this, when NetworkManager
-#     has actually brought wlan0 up): apt-get installs, X11/openbox setup, and the full v7
-#     failsafe bundle -- all baked in before this board is ever exposed to the restaurant floor.
+#     has actually brought wlan0 up): ONLY the things that truly require internet -- apt-get
+#     installs and the Tailscale install. Everything else is already in place by the time this
+#     runs, so the worst case if WiFi is slow is a blank/incomplete kiosk screen, never a login
+#     prompt.
 #
 # Usage (unmount the card first, then target its raw disk):
 #   /Applications/Raspberry\ Pi\ Imager.app/Contents/MacOS/rpi-imager --cli \
@@ -51,6 +54,11 @@ raspi-config nonint do_ssh 0
 # do_wifi_ssid_passphrase, which needs live NetworkManager D-Bus access not available yet here).
 raspi-config nonint do_wifi_country US
 rfkill unblock wifi || true
+
+# No lightdm on this board (matches its own prior setup) -- console autologin + a
+# .bash_profile startx hook instead. Pure filesystem changes, no daemon needed -- safe here in
+# stage 1, unlike do_wifi_ssid_passphrase above.
+raspi-config nonint do_boot_behaviour B2
 
 install -o pi -g pi -m 700 -d /home/pi/.ssh
 cat > /home/pi/.ssh/authorized_keys << 'KEYEOF'
@@ -138,59 +146,6 @@ CONFEOF2
 systemctl disable wpa_supplicant.service 2>/dev/null || true
 systemctl mask wpa_supplicant.service 2>/dev/null || true
 
-# Stage 2 -- deferred to the first NORMAL boot, when NetworkManager has real connectivity.
-# Embedded here (not fetched from anywhere) so the whole provision is one self-contained file.
-cat > /usr/local/sbin/kds-provision-stage2.sh << 'STAGE2EOF'
-#!/bin/bash
-exec > /home/pi/stage2-provision.log 2>&1
-set -x
-
-# Wait for real internet (up to ~10 min -- restaurant WiFi association can be slow after a
-# fresh boot; confirmed the hard way 2026-09-05 on Kitchen's card that a 2-minute wait wasn't
-# enough, and this script used to plow ahead into a doomed apt-get anyway, self-disabling
-# despite installing nothing at all).
-NETWORK_OK=0
-for i in $(seq 1 300); do
-  if ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
-    NETWORK_OK=1
-    break
-  fi
-  sleep 2
-done
-
-if [ "$NETWORK_OK" -ne 1 ]; then
-  echo "no network after 10 min -- leaving stage2 service enabled, will retry on next boot"
-  exit 1
-fi
-
-export DEBIAN_FRONTEND=noninteractive
-INSTALL_OK=0
-for attempt in 1 2 3; do
-  apt-get update && apt-get install -y xserver-xorg xinit openbox chromium chromium-common chromium-sandbox \
-    rpi-chromium-mods unclutter xbindkeys xdotool && { INSTALL_OK=1; break; }
-  sleep 15
-done
-
-if [ "$INSTALL_OK" -ne 1 ]; then
-  echo "apt-get install failed after 3 attempts -- leaving stage2 service enabled, will retry on next boot"
-  exit 1
-fi
-which startx Xorg openbox chromium
-
-# Tailscale -- missed entirely in the first version of this script (confirmed the hard way
-# 2026-09-05 on Kitchen's card: a freshly re-flashed board never appeared on Tailscale because
-# the binary simply wasn't there -- the original boards only had it because it was installed
-# by hand months before this script existed). `tailscale up` itself needs an interactive login
-# (no reusable authkey on file), so that part stays a manual follow-up over LAN SSH.
-if ! command -v tailscale >/dev/null 2>&1; then
-  curl -fsSL https://tailscale.com/install.sh | sh
-fi
-systemctl enable --now tailscaled
-
-# No lightdm on this board (matches its own prior setup) -- console autologin + a
-# .bash_profile startx hook instead.
-raspi-config nonint do_boot_behaviour B2
-
 cat > /home/pi/.bash_profile << 'PROFEOF'
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
   startx
@@ -225,7 +180,9 @@ chmod 755 /home/pi/restart-chromium.sh
 
 # --remote-debugging-port=9222 from day one -- forgetting this on Kitchen's original setup was
 # its own bug (chromium-watchdog's healthcheck fails forever without it, looking like a crash
-# loop).
+# loop). The while-loop here waits out slow WiFi on its own, same reasoning as stage 2 below --
+# if Xorg/chromium aren't installed yet by the time this first runs, `chromium` just fails and
+# the loop retries every 2s until stage 2 finishes installing it and reboots.
 cat > /home/pi/fix-chromium.sh << 'CHROMEEOF'
 #!/bin/bash
 for i in $(seq 1 30); do
@@ -510,14 +467,9 @@ chmod 755 /home/pi/disk-watchdog.sh
 chown pi:pi /home/pi/*.sh /home/pi/.bash_profile /home/pi/.xinitrc /home/pi/.xbindkeysrc \
   /home/pi/.config/openbox/autostart
 
-# psk-flags=0 (secret stored in the connection file, not agent-owned) -- already true since we
-# wrote the keyfiles with psk= directly above, but force it explicitly to match install-
-# failsafes.sh's own defense-in-depth for any profile that might get recreated later.
-for c in $(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | cut -d: -f1); do
-  nmcli connection modify "$c" wifi-sec.psk-flags 0 2>/dev/null || true
-done
-
-# Cron: pi's own crontab, matching the rest of the fleet.
+# Cron: pi's own crontab, matching the rest of the fleet. `crontab` just writes the spool file --
+# no daemon interaction needed, safe here in stage 1 (cron itself only needs to be running when a
+# job's schedule actually fires, not when it's installed).
 crontab -u pi - << 'CRONEOF'
 */3 * * * * /home/pi/tailscale-watchdog.sh
 */2 * * * * /home/pi/hdmi-watchdog.sh
@@ -530,11 +482,72 @@ crontab -u pi - << 'CRONEOF'
 CRONEOF
 
 # Hardware watchdog: this board's BCM chip ignores the requested timeout and hardwires 60s
-# regardless -- see install-failsafes.sh for the confirmation via `wdctl`.
+# regardless -- see install-failsafes.sh for the confirmation via `wdctl`. Just the file edit
+# here (no daemon-reexec needed) -- takes effect on the next real boot, which stage 2 below
+# triggers anyway once it finishes.
 if [ -e /dev/watchdog ]; then
   sed -i 's/^#\?RuntimeWatchdogSec=.*/RuntimeWatchdogSec=60s/' /etc/systemd/system.conf
-  systemctl daemon-reexec
 fi
+
+# Stage 2 -- deferred to the first NORMAL boot, when NetworkManager has real connectivity.
+# ONLY the things that truly need internet: apt-get installs + Tailscale. Everything else is
+# already in place from stage 1 above, so a slow/flaky WiFi connection just delays Chromium
+# actually launching (fix-chromium.sh's own retry loop handles that) -- it never blocks on a
+# login prompt or leaves the board in a half-configured state waiting on human input.
+cat > /usr/local/sbin/kds-provision-stage2.sh << 'STAGE2EOF'
+#!/bin/bash
+exec > /home/pi/stage2-provision.log 2>&1
+set -x
+
+# Wait for real internet (up to ~10 min -- restaurant WiFi association can be slow after a
+# fresh boot; confirmed the hard way 2026-09-05 on Kitchen's card that a 2-minute wait wasn't
+# enough, and this script used to plow ahead into a doomed apt-get anyway, self-disabling
+# despite installing nothing at all).
+NETWORK_OK=0
+for i in $(seq 1 300); do
+  if ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
+    NETWORK_OK=1
+    break
+  fi
+  sleep 2
+done
+
+if [ "$NETWORK_OK" -ne 1 ]; then
+  echo "no network after 10 min -- leaving stage2 service enabled, will retry on next boot"
+  exit 1
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+INSTALL_OK=0
+for attempt in 1 2 3; do
+  apt-get update && apt-get install -y xserver-xorg xinit openbox chromium chromium-common chromium-sandbox \
+    rpi-chromium-mods unclutter xbindkeys xdotool && { INSTALL_OK=1; break; }
+  sleep 15
+done
+
+if [ "$INSTALL_OK" -ne 1 ]; then
+  echo "apt-get install failed after 3 attempts -- leaving stage2 service enabled, will retry on next boot"
+  exit 1
+fi
+which startx Xorg openbox chromium
+
+# Tailscale -- missed entirely in the first version of this script (confirmed the hard way
+# 2026-09-05 on Kitchen's card: a freshly re-flashed board never appeared on Tailscale because
+# the binary simply wasn't there -- the original boards only had it because it was installed
+# by hand months before this script existed). `tailscale up` itself needs an interactive login
+# (no reusable authkey on file), so that part stays a manual follow-up over LAN SSH.
+if ! command -v tailscale >/dev/null 2>&1; then
+  curl -fsSL https://tailscale.com/install.sh | sh
+fi
+systemctl enable --now tailscaled
+
+# psk-flags=0 (secret stored in the connection file, not agent-owned) -- already true since
+# stage 1 wrote the keyfiles with psk= directly, but force it explicitly to match install-
+# failsafes.sh's own defense-in-depth for any profile that might get recreated later. Needs
+# nmcli/a live NetworkManager, hence down here in stage 2 rather than stage 1.
+for c in $(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | cut -d: -f1); do
+  nmcli connection modify "$c" wifi-sec.psk-flags 0 2>/dev/null || true
+done
 
 date '+%Y-%m-%d %H:%M:%S' > /home/pi/.failsafe-v7-installed
 echo "stage2 provisioning completed successfully" >> /home/pi/stage2-provision.log
