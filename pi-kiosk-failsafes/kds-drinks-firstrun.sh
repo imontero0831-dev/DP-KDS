@@ -154,6 +154,39 @@ CONFEOF2
 systemctl disable wpa_supplicant.service 2>/dev/null || true
 systemctl mask wpa_supplicant.service 2>/dev/null || true
 
+# Passwordless sudo for pi -- confirmed missing 2026-09-05 via wifi-auth-watchdog.log, which
+# showed every single recovery attempt failing with "sudo: a password is required" for the
+# card's entire run. The original boards all have this (see reference_dpkds_kiosk_pi_fleet.md);
+# it was simply never carried into this re-provisioning script. Every watchdog script's sudo
+# calls are silently useless without this.
+cat > /etc/sudoers.d/010_pi-nopasswd << 'SUDOEOF'
+pi ALL=(ALL) NOPASSWD:ALL
+SUDOEOF
+chmod 0440 /etc/sudoers.d/010_pi-nopasswd
+chown root:root /etc/sudoers.d/010_pi-nopasswd
+
+# Second WiFi bring-up path via cloud-init's own network-config (netplan format) -- this image
+# already ships a `ds=nocloud` cloud-init datasource (confirmed via cmdline.txt) with dsmode
+# "local", meaning cloud-init applies this before/alongside first boot regardless. The
+# NetworkManager keyfiles above are the officially-documented approach and should be sufficient
+# on their own, but wifi-signal.log showed wlan0 never appearing in /proc/net/wireless at all
+# after 2026-09-05's fresh re-flash (not a slow-association issue -- the interface itself never
+# came up), and this is a second, independent mechanism worth having in place at the same time
+# in case the keyfile path alone isn't what actually brings the radio up on this hardware.
+cat > /boot/firmware/network-config << 'NETCFGEOF'
+network:
+  version: 2
+  wifis:
+    wlan0:
+      dhcp4: true
+      optional: true
+      access-points:
+        "ATTiGiwtdS":
+          password: "9ss4?2p2sufd"
+        "ForAllTheDogs":
+          password: "chicago23"
+NETCFGEOF
+
 cat > /home/pi/.bash_profile << 'PROFEOF'
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
   startx
