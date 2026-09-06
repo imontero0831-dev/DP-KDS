@@ -188,10 +188,15 @@ CONFEOF2
 # wpa_supplicant.service was enabled system-wide (multi-user.target.wants) at the same time as
 # NetworkManager.service, even though /etc/wpa_supplicant/wpa_supplicant.conf didn't exist on the
 # rootfs -- so it would start, fail immediately with no config, and keep retrying, repeatedly
-# contending with NetworkManager for wlan0. Same conflict already confirmed and fixed on Kitchen's
-# card the same week. Masking it here so a fresh image never has this fight in the first place.
+# contending with NetworkManager for wlan0. disable alone (drop the multi-user.target.wants
+# symlink) fixes that. Confirmed 2026-09-05 via live journal capture on Drinks' board that also
+# masking it was wrong: mask replaces the unit with a /dev/null symlink, which blocks systemd from
+# ever starting it again for ANY reason -- including NetworkManager's own on-demand D-Bus
+# activation of wpa_supplicant as its wifi backend. Every wlan0 connection attempt failed with
+# "Couldn't initialize supplicant interface: Failed to D-Bus activate wpa_supplicant service" until
+# NetworkManager gave up and reported the device as unavailable -- looked exactly like a dead radio,
+# wasn't. disable only; do not mask.
 systemctl disable wpa_supplicant.service 2>/dev/null || true
-systemctl mask wpa_supplicant.service 2>/dev/null || true
 
 # Passwordless sudo for pi -- confirmed missing 2026-09-05 via wifi-auth-watchdog.log, which
 # showed every single recovery attempt failing with "sudo: a password is required" for the
