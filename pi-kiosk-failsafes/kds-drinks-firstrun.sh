@@ -241,7 +241,12 @@ cat > /home/pi/.xinitrc << 'XINITEOF'
 exec openbox-session
 XINITEOF
 
-install -d -m 755 /home/pi/.config/openbox
+# -o pi -g pi on BOTH path components: `install -d` running as root here would otherwise leave
+# /home/pi/.config itself root-owned, and chromium (running as pi) then can't create its
+# crash-handler dir under it -- it aborts on every launch with "mkdir: Permission denied" ->
+# NOTREACHED -> zygote dies, ~30x/min inside fix-chromium.sh's respawn loop, giving a
+# permanently blank screen with no console text. Confirmed the hard way on Drinks 2026-09-05.
+install -d -m 755 -o pi -g pi /home/pi/.config /home/pi/.config/openbox
 cat > /home/pi/.config/openbox/autostart << 'AUTOSTARTEOF'
 xset s off
 xset s noblank
@@ -549,8 +554,8 @@ fi
 DISKEOF
 chmod 755 /home/pi/disk-watchdog.sh
 
-chown pi:pi /home/pi/*.sh /home/pi/.bash_profile /home/pi/.xinitrc /home/pi/.xbindkeysrc \
-  /home/pi/.config/openbox/autostart
+chown pi:pi /home/pi/*.sh /home/pi/.bash_profile /home/pi/.xinitrc /home/pi/.xbindkeysrc
+chown -R pi:pi /home/pi/.config   # belt-and-suspenders for the root-owned-.config bug above
 
 # Cron: pi's own crontab, matching the rest of the fleet. `crontab` just writes the spool file --
 # no daemon interaction needed, safe here in stage 1 (cron itself only needs to be running when a
