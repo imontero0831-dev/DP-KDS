@@ -39,6 +39,17 @@ GIVEUP_ALERT_STAMP=/home/pi/.tailscale-watchdog-last-giveup-alert
 MAX_REBOOTS=3
 ALERT=/home/pi/alert.sh
 
+# Shared fleet-wide reboot budget (reboot-budget.sh), honoured ON TOP OF
+# this script's own per-incident MAX_REBOOTS: even mid-incident, if the box
+# has already rebooted 3x in 6h from here OR any other watchdog, stop and
+# alert instead of adding another power-cycle.
+if [ -r /home/pi/reboot-budget.sh ]; then
+  . /home/pi/reboot-budget.sh
+else
+  reboot_allowed() { return 0; }
+  record_reboot() { :; }
+fi
+
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"; }
 
 alert() {
@@ -107,12 +118,28 @@ if [ "$FAILS" -ge 10 ]; then
     sleep 5
     sudo /usr/bin/systemctl restart tailscaled
     echo 0 > "$STATE"
+  elif ! reboot_allowed; then
+    NOW=$(date +%s)
+    LAST=$(cat "$GIVEUP_ALERT_STAMP" 2>/dev/null || echo 0)
+    if [ $((NOW - LAST)) -ge 3600 ]; then
+      log "would reboot (check #$FAILS) but shared reboot budget (3/6h) is spent -- lighter recovery + alert instead"
+      alert "KDS $(hostname) needs hands" "Tailscale unreachable ~$((FAILS * 3)) min and the shared reboot budget is spent (3 reboots/6h from all watchdogs). Not rebooting again. See tailscale-watchdog-diag.log."
+      echo "$NOW" > "$GIVEUP_ALERT_STAMP"
+    fi
+    sudo /usr/sbin/ip link set wlan0 down
+    sleep 3
+    sudo /usr/sbin/ip link set wlan0 up
+    sleep 5
+    sudo /usr/bin/systemctl restart tailscaled
+    echo 0 > "$STATE"
   else
     REBOOTS=$((REBOOTS + 1))
     echo "$REBOOTS" > "$REBOOT_STATE"
     log "still unreachable after $FAILS checks (~$((FAILS * 3)) min), rebooting (attempt $REBOOTS/$MAX_REBOOTS)"
     alert "KDS $(hostname) rebooting" "Tailscale unreachable for ~$((FAILS * 3)) min. Reboot attempt $REBOOTS/$MAX_REBOOTS."
+    record_reboot "tailscale unreachable ~$((FAILS * 3))min"
     echo 0 > "$STATE"
+    sync
     sudo /sbin/reboot
     exit 0
   fi
