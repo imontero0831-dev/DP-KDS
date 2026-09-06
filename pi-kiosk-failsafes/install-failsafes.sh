@@ -4,7 +4,7 @@
 # any KDS kiosk Pi. Safe to re-run.
 set -e
 
-MARKER=/home/pi/.failsafe-v7-installed
+MARKER=/home/pi/.failsafe-v8-installed
 
 # 1. Disable WiFi power-save (survives reboots; takes effect on next
 #    connection activation, so it won't disrupt an already-active session).
@@ -123,12 +123,34 @@ if [ -f /home/pi/.failsafe-staging/disk-watchdog.sh ]; then
   chmod +x /home/pi/disk-watchdog.sh
 fi
 
+# 3h. Shared reboot budget (sourced by kiosk-health.sh + tailscale-watchdog.sh):
+#     one 3-per-6h cap across ALL watchdogs so no combination of them can
+#     power-cycle the box to death the way tailscale-watchdog did solo in Sept.
+if [ -f /home/pi/.failsafe-staging/reboot-budget.sh ]; then
+  cp /home/pi/.failsafe-staging/reboot-budget.sh /home/pi/reboot-budget.sh
+  chmod +x /home/pi/reboot-budget.sh
+fi
+
+# 3i. Health brain -- the tiered NOTICE/DEGRADED/CRITICAL supervisor. Owns
+#     Chromium crash-LOOP detection (restarts/10min + "never healthy"),
+#     which nothing else had: every prior watchdog only reacts to a process
+#     EXITING, and the Sept Drinks blank-screen was a respawn loop where
+#     chromium never exited, just never lived >2s. Also folds in wifi/disk/
+#     load/temp and escalates to a budgeted reboot when a heal doesn't take.
+if [ -f /home/pi/.failsafe-staging/kiosk-health.sh ]; then
+  cp /home/pi/.failsafe-staging/kiosk-health.sh /home/pi/kiosk-health.sh
+  chmod +x /home/pi/kiosk-health.sh
+fi
+
 # 4. Cron: pi user's own crontab (matches how the original watchdog was
 #    installed) -- not root's, so no sudo here. Replaces any older lines
 #    for the same scripts so re-running this installer doesn't duplicate.
 (
-  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh|chromium-watchdog\.sh|wifi-signal-log\.sh|wifi-auth-watchdog\.sh|session-watchdog\.sh|disk-watchdog\.sh' || true
+  crontab -l 2>/dev/null | grep -vE 'tailscale-watchdog\.sh|hdmi-watchdog\.sh|power-watchdog\.sh|chromium-watchdog\.sh|wifi-signal-log\.sh|wifi-auth-watchdog\.sh|session-watchdog\.sh|disk-watchdog\.sh|kiosk-health\.sh' || true
   echo "*/3 * * * * /home/pi/tailscale-watchdog.sh"
+  if [ -f /home/pi/kiosk-health.sh ]; then
+    echo "* * * * * /home/pi/kiosk-health.sh"
+  fi
   if [ -f /home/pi/hdmi-watchdog.sh ]; then
     echo "*/2 * * * * /home/pi/hdmi-watchdog.sh"
   fi
