@@ -1,23 +1,35 @@
 #!/bin/bash
-# firstrun.sh for provisioning the KDS3/Expo board's microSD card via Raspberry Pi Imager's
-# --first-run-script flag. Logs its own output to /boot/firmware/firstrun.log (readable from a
-# Mac, since that's the FAT32 boot partition) since HDMI/serial console isn't reliably available
-# during the special systemd.run boot target this runs under.
+# firstrun.sh for provisioning/re-provisioning Expo (kds-expo)'s microSD, via Raspberry Pi
+# Imager's --first-run-script flag.
 #
-# Usage (unmount the card first, e.g. `diskutil unmountDisk disk4`, then target its raw disk):
+# Rewritten 2026-09-06 to match kds-drinks-firstrun.sh's current structure -- the version of
+# this file used to actually provision the live Expo card (2026-08-27) was a hand-modified copy
+# of the Kitchen/Drinks script with the hostname swapped, not this file, which had drifted to a
+# stale 88-line stub missing the entire stage-2/watchdog/Tailscale install. This version brings
+# the repo back in sync with what's really running, so a future Expo reflash doesn't have to be
+# reconstructed from scratch again. Expo runs the same hardware/software stack as Drinks (plain
+# X11/Openbox, no audio) -- see reference_dpkds_kiosk_pi_fleet.md -- so this mirrors that script
+# rather than Kitchen's labwc/Wayland + PulseAudio one.
+#
+# Two-stage design, because firstrun.sh runs under a minimal systemd.run target with NO network
+# services up yet:
+#   Stage 1 (this script): everything that doesn't actually need a network connection --
+#     user/hostname/SSH/WiFi-as-static-files, console autologin, all watchdog scripts, cron,
+#     openbox/chromium launch config -- plus writing + enabling a oneshot systemd service for
+#     stage 2.
+#   Stage 2 (embedded below, runs once on the FIRST NORMAL boot after this, when NetworkManager
+#     has actually brought wlan0 up): ONLY the things that truly require internet -- apt-get
+#     installs and the Tailscale install.
+#
+# Usage (unmount the card first, then target its raw disk):
 #   /Applications/Raspberry\ Pi\ Imager.app/Contents/MacOS/rpi-imager --cli \
 #     --first-run-script pi-kiosk-failsafes/kds-expo-firstrun.sh \
 #     https://downloads.raspberrypi.com/raspios_lite_arm64_latest /dev/diskN
-#
-# Status as of 2026-08-27: gets hostname/SSH/user set up correctly (confirmed via
-# firstrun.log), but the Pi still isn't showing up on the restaurant WiFi afterward — the
-# rfkill/country fix above is the untested fix for that, not yet confirmed on real hardware.
 exec > /boot/firmware/firstrun.log 2>&1
 set -x
 set -e
 
-# Modern Raspberry Pi OS (Bookworm/Trixie) images no longer ship a pre-existing "pi" user —
-# create it if missing rather than assuming it's there (this was the bug in the first attempt).
+# Modern Raspberry Pi OS (Bookworm/Trixie) images no longer ship a pre-existing "pi" user.
 if ! id -u pi >/dev/null 2>&1; then
   useradd -m -s /bin/bash pi
   usermod -a -G adm,dialout,cdrom,sudo,audio,video,plugdev,games,users,input,render,netdev,gpio,i2c,spi pi 2>/dev/null || true
@@ -29,38 +41,83 @@ echo 'pi:110965.Ps' | chpasswd
 # of this firstrun.sh entirely -- it only skips itself if /boot/firmware/userconf.txt exists
 # (this is what Raspberry Pi Imager's own "set username/password" GUI field writes). Creating the
 # pi user by hand above does NOT satisfy this separate check -- confirmed the hard way 2026-09-05
-# on kds-kitchen-firstrun.sh, a board sat at an interactive "username:" prompt on real hardware
-# despite firstrun.sh having already run successfully. Hash is
-# `echo '110965.Ps' | openssl passwd -6 -stdin` (matches the chpasswd password above).
+# on Kitchen's board. Hash is `echo '110965.Ps' | openssl passwd -6 -stdin` (matches the same
+# password set via chpasswd above, so credentials stay consistent either way).
 echo 'pi:$6$Co5y33tmyThsTOcd$n5Pk6c6F37x/h2y9OpEkzC8KlsV7V1kx9Q4Cauuni8EkdgCDEw2bfe/6Mx/Hy0qIYIhQWw6bdrzcgIB8r6rzo0' > /boot/firmware/userconf.txt
 
 raspi-config nonint do_hostname kds-expo
 raspi-config nonint do_ssh 0
 # Some Pi WiFi chips stay rfkill-blocked until a country code is set, independent of the
-# cfg80211.ieee80211_regdom= kernel cmdline arg. This specific raspi-config call does not hang
-# (confirmed via firstrun.log on a prior attempt) — do_wifi_ssid_passphrase below does hang, hence
-# writing the NetworkManager profile directly instead.
+# cfg80211.ieee80211_regdom= kernel cmdline arg. do_wifi_country doesn't hang (unlike
+# do_wifi_ssid_passphrase, which needs live NetworkManager D-Bus access not available yet here).
 raspi-config nonint do_wifi_country US
 rfkill unblock wifi || true
+
+# No lightdm on this board -- console autologin + a .bash_profile startx hook instead. Writing
+# the getty drop-in directly instead of `raspi-config nonint do_boot_behaviour B2` -- that
+# command needs a live systemd/D-Bus session to actually apply, so it silently fails to take
+# effect when run in this offline stage. A plain file write has no such dependency.
+install -d -m 755 /etc/systemd/system/getty@tty1.service.d
+cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << 'AUTOLOGINEOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
+AUTOLOGINEOF
+
+# Belt-and-suspenders on the above: confirmed 2026-09-05 on Kitchen/Drinks that this exact
+# drop-in, written here in stage 1 and verified byte-correct in firstrun.log with no error, was
+# GONE from the filesystem after a real boot -- board came up to an interactive login prompt
+# with no keyboard attached to answer it. Prime suspect: a Recommends-pulled package from stage
+# 2's `apt-get install xserver-xorg ...` running a postinst that resets tty1's getty config.
+# Rather than chase the exact package, make autologin unconditionally self-healing instead: a
+# tiny oneshot that rewrites this same drop-in fresh on every single boot, ordered before
+# getty@tty1 even starts.
+cat > /usr/local/sbin/ensure-tty1-autologin.sh << 'ENSUREEOF'
+#!/bin/bash
+install -d -m 755 /etc/systemd/system/getty@tty1.service.d
+cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << 'AUTOLOGINEOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
+AUTOLOGINEOF
+ENSUREEOF
+chmod 755 /usr/local/sbin/ensure-tty1-autologin.sh
+
+cat > /etc/systemd/system/ensure-tty1-autologin.service << 'UNITEOF2'
+[Unit]
+Description=Re-assert tty1 console autologin drop-in before every getty start
+After=local-fs.target
+Before=getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ensure-tty1-autologin.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=getty.target
+UNITEOF2
+systemctl enable ensure-tty1-autologin.service
 
 install -o pi -g pi -m 700 -d /home/pi/.ssh
 cat > /home/pi/.ssh/authorized_keys << 'KEYEOF'
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIuTSj0oEMtHqrhPqlaANFE72gCZk5LU/b9Yag2nVc/c claude-code-dpkds-fleet
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIAkZIxelLukrvKfxM11iY5/Sq0NS8sMejqM5Ejdr681 mac-mini-to-kds
 KEYEOF
 chown pi:pi /home/pi/.ssh/authorized_keys
 chmod 600 /home/pi/.ssh/authorized_keys
 
-# Write the WiFi connection directly as a NetworkManager keyfile instead of calling
-# `raspi-config nonint do_wifi_ssid_passphrase`, which hangs during this boot target: it needs to
-# talk to NetworkManager live over D-Bus, and networking services aren't up yet under the minimal
-# kernel-command-line.target this script runs under. A keyfile just gets picked up by
-# NetworkManager on its own next normal startup, no live service interaction needed.
+# WiFi as NetworkManager keyfiles instead of `raspi-config nonint do_wifi_ssid_passphrase`
+# (hangs at this boot stage). Restaurant WiFi as the preferred network, plus the same fallback
+# hotspot the rest of the fleet is configured with. Deliberately ONE mechanism only
+# (NetworkManager) -- see the wpa_supplicant.service disabling below for why.
 install -d -m 700 /etc/NetworkManager/system-connections
 cat > /etc/NetworkManager/system-connections/preconfigured.nmconnection << 'NMEOF'
 [connection]
 id=preconfigured
 uuid=D6ECEB16-DB12-4726-B238-2F462868229A
 type=wifi
+autoconnect-priority=10
 
 [wifi]
 mode=infrastructure
@@ -81,7 +138,517 @@ addr-gen-mode=default
 NMEOF
 chmod 600 /etc/NetworkManager/system-connections/preconfigured.nmconnection
 
-echo "firstrun.sh completed successfully" >> /boot/firmware/firstrun.log
+cat > /etc/NetworkManager/system-connections/fallback-hotspot.nmconnection << 'NMEOF2'
+[connection]
+id=fallback-hotspot
+uuid=9D3A7B5C-2E4F-4A1D-8C6B-5F9E1A3D7C2C
+type=wifi
+autoconnect-priority=5
+
+[wifi]
+mode=infrastructure
+ssid=ForAllTheDogs
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=chicago23
+
+[ipv4]
+method=auto
+
+[ipv6]
+method=auto
+addr-gen-mode=default
+
+[proxy]
+NMEOF2
+chmod 600 /etc/NetworkManager/system-connections/fallback-hotspot.nmconnection
+
+# Global WiFi hardening, matching the rest of the fleet (install-failsafes.sh steps 1/1b).
+install -d -m 755 /etc/NetworkManager/conf.d
+cat > /etc/NetworkManager/conf.d/wifi-powersave-off.conf << 'CONFEOF'
+[connection]
+wifi.powersave = 2
+CONFEOF
+cat > /etc/NetworkManager/conf.d/wifi-band-24ghz.conf << 'CONFEOF2'
+[connection-wifi-band-24ghz]
+match-device=type:wifi
+802-11-wireless.band=bg
+CONFEOF2
+
+# disable (not mask) wpa_supplicant.service -- it starts enabled system-wide alongside
+# NetworkManager.service with no /etc/wpa_supplicant/wpa_supplicant.conf present, so it fails
+# immediately and keeps retrying, contending with NetworkManager for wlan0. disable alone (drop
+# the multi-user.target.wants symlink) fixes that. Confirmed 2026-09-05 on Kitchen/Drinks that
+# masking it instead is wrong: mask blocks systemd from ever starting the unit again for ANY
+# reason, including NetworkManager's own on-demand D-Bus activation of wpa_supplicant as its
+# WiFi backend -- every wlan0 connection attempt then fails with "Couldn't initialize supplicant
+# interface: Failed to D-Bus activate wpa_supplicant service", looking exactly like dead WiFi
+# hardware. disable only; do not mask.
+systemctl disable wpa_supplicant.service 2>/dev/null || true
+
+# Passwordless sudo for pi -- every watchdog script's sudo calls are silently useless without
+# this (confirmed the hard way on Drinks 2026-09-05, via wifi-auth-watchdog.log showing every
+# recovery attempt failing with "sudo: a password is required").
+cat > /etc/sudoers.d/010_pi-nopasswd << 'SUDOEOF'
+pi ALL=(ALL) NOPASSWD:ALL
+SUDOEOF
+chmod 0440 /etc/sudoers.d/010_pi-nopasswd
+chown root:root /etc/sudoers.d/010_pi-nopasswd
+
+# Second WiFi bring-up path via cloud-init's own network-config (netplan format) -- this image
+# already ships a `ds=nocloud` cloud-init datasource with dsmode "local", meaning cloud-init
+# applies this before/alongside first boot regardless. The NetworkManager keyfiles above are the
+# officially-documented approach and should be sufficient on their own, but this is a second,
+# independent mechanism worth having in place in case the keyfile path alone isn't what actually
+# brings the radio up on this hardware.
+cat > /boot/firmware/network-config << 'NETCFGEOF'
+network:
+  version: 2
+  wifis:
+    wlan0:
+      dhcp4: true
+      optional: true
+      access-points:
+        "ATTiGiwtdS":
+          password: "9ss4?2p2sufd"
+        "ForAllTheDogs":
+          password: "chicago23"
+NETCFGEOF
+
+cat > /home/pi/.bash_profile << 'PROFEOF'
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+  startx
+fi
+PROFEOF
+
+cat > /home/pi/.xinitrc << 'XINITEOF'
+exec openbox-session
+XINITEOF
+
+install -d -m 755 /home/pi/.config/openbox
+cat > /home/pi/.config/openbox/autostart << 'AUTOSTARTEOF'
+xset s off
+xset s noblank
+xset -dpms
+unclutter -idle 0.5 -root &
+xbindkeys &
+/home/pi/fix-chromium.sh &
+AUTOSTARTEOF
+chmod 755 /home/pi/.config/openbox/autostart
+
+cat > /home/pi/.xbindkeysrc << 'XBINDEOF'
+"/home/pi/restart-chromium.sh"
+    Num_Lock
+XBINDEOF
+
+cat > /home/pi/restart-chromium.sh << 'RESTARTEOF'
+#!/bin/bash
+pkill -x chromium
+RESTARTEOF
+chmod 755 /home/pi/restart-chromium.sh
+
+# --remote-debugging-port=9222 from day one -- forgetting this on Kitchen's original setup was
+# its own bug (chromium-watchdog's healthcheck fails forever without it, looking like a crash
+# loop). The while-loop here waits out slow WiFi on its own, same reasoning as stage 2 below --
+# if Xorg/chromium aren't installed yet by the time this first runs, `chromium` just fails and
+# the loop retries every 2s until stage 2 finishes installing it and reboots.
+cat > /home/pi/fix-chromium.sh << 'CHROMEEOF'
+#!/bin/bash
+for i in $(seq 1 30); do
+  ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && break
+  sleep 2
+done
+while true; do
+  chromium \
+    --remote-debugging-port=9222 --noerrdialogs \
+    --disable-infobars \
+    --disable-background-networking \
+    --kiosk \
+    --no-first-run \
+    --disable-session-crashed-bubble \
+    --disable-restore-session-state \
+    "https://dp-kds.vercel.app/?screen=expo"
+  sleep 2
+done
+CHROMEEOF
+chmod 755 /home/pi/fix-chromium.sh
+
+# --- v7 failsafe bundle, baked in from boot one (see pi-kiosk-failsafes/ in the DP-KDS repo,
+#     commit 1f472ec, for the source of truth -- these are embedded verbatim) ---
+
+cat > /home/pi/alert.sh << 'ALERTEOF'
+#!/bin/bash
+TOPIC="dpkds-kiosk-0d13f59d64cb"
+TITLE="${1:-DP-KDS alert}"
+MSG="${2:-}"
+curl -s -m 10 \
+  -H "Title: $TITLE" \
+  -H "Priority: high" \
+  -H "Tags: warning" \
+  -d "$MSG" \
+  "https://ntfy.sh/$TOPIC" >/dev/null 2>&1
+ALERTEOF
+chmod 755 /home/pi/alert.sh
+
+cat > /home/pi/tailscale-watchdog.sh << 'TSWEOF'
+#!/bin/bash
+LOG=/home/pi/tailscale-watchdog.log
+DIAG_LOG=/home/pi/tailscale-watchdog-diag.log
+DIAG_MAX_BYTES=524288
+PEER=100.123.176.96
+STATE=/home/pi/.tailscale-watchdog-fails
+REBOOT_STATE=/home/pi/.tailscale-watchdog-reboots
+GIVEUP_ALERT_STAMP=/home/pi/.tailscale-watchdog-last-giveup-alert
+MAX_REBOOTS=3
+ALERT=/home/pi/alert.sh
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"; }
+alert() { [ -x "$ALERT" ] && "$ALERT" "$1" "$2" >/dev/null 2>&1 & }
+
+capture_diag() {
+  {
+    echo "=== $(date '+%Y-%m-%d %H:%M:%S') diagnostic snapshot (check #$FAILS) ==="
+    echo "--- nmcli device status ---"
+    nmcli device status 2>&1
+    echo "--- wlan0 detail ---"
+    nmcli -t -f GENERAL.STATE,GENERAL.REASON,IP4.ADDRESS device show wlan0 2>&1
+    echo "--- interface ownership ---"
+    systemctl is-active wpa_supplicant 2>&1 | sed 's/^/wpa_supplicant: /'
+    systemctl is-active NetworkManager 2>&1 | sed 's/^/NetworkManager: /'
+    echo "--- NetworkManager journal (last 10 min) ---"
+    journalctl -u NetworkManager --no-pager --since '10 min ago' 2>&1
+    echo
+  } >> "$DIAG_LOG"
+  if [ "$(wc -c < "$DIAG_LOG" 2>/dev/null || echo 0)" -gt "$DIAG_MAX_BYTES" ]; then
+    tail -c "$DIAG_MAX_BYTES" "$DIAG_LOG" > "$DIAG_LOG.tmp" && mv "$DIAG_LOG.tmp" "$DIAG_LOG"
+  fi
+}
+
+check_ok() { tailscale ping -c 1 --timeout=5s "$PEER" >/dev/null 2>&1; }
+
+if check_ok; then
+  rm -f "$STATE" "$REBOOT_STATE"
+  exit 0
+fi
+
+sleep 30
+if check_ok; then
+  rm -f "$STATE" "$REBOOT_STATE"
+  exit 0
+fi
+
+FAILS=$(cat "$STATE" 2>/dev/null || echo 0)
+FAILS=$((FAILS + 1))
+echo "$FAILS" > "$STATE"
+
+if [ "$FAILS" -ge 10 ]; then
+  REBOOTS=$(cat "$REBOOT_STATE" 2>/dev/null || echo 0)
+  capture_diag
+  if [ "$REBOOTS" -ge "$MAX_REBOOTS" ]; then
+    NOW=$(date +%s)
+    LAST=$(cat "$GIVEUP_ALERT_STAMP" 2>/dev/null || echo 0)
+    if [ $((NOW - LAST)) -ge 3600 ]; then
+      log "still unreachable after $REBOOTS reboots + $FAILS checks -- giving up on auto-reboot, needs on-site attention"
+      alert "KDS $(hostname) still down" "Rebooted $REBOOTS times, still can't reach Tailscale. Giving up on auto-reboot -- needs on-site check. See tailscale-watchdog-diag.log."
+      echo "$NOW" > "$GIVEUP_ALERT_STAMP"
+    fi
+    sudo /usr/sbin/ip link set wlan0 down
+    sleep 3
+    sudo /usr/sbin/ip link set wlan0 up
+    sleep 5
+    sudo /usr/bin/systemctl restart tailscaled
+    echo 0 > "$STATE"
+  else
+    REBOOTS=$((REBOOTS + 1))
+    echo "$REBOOTS" > "$REBOOT_STATE"
+    log "still unreachable after $FAILS checks (~$((FAILS * 3)) min), rebooting (attempt $REBOOTS/$MAX_REBOOTS)"
+    alert "KDS $(hostname) rebooting" "Tailscale unreachable for ~$((FAILS * 3)) min. Reboot attempt $REBOOTS/$MAX_REBOOTS."
+    echo 0 > "$STATE"
+    sudo /sbin/reboot
+    exit 0
+  fi
+elif [ "$FAILS" -ge 2 ]; then
+  log "still unreachable (check #$FAILS), bouncing wlan0 + restarting tailscaled"
+  capture_diag
+  sudo /usr/sbin/ip link set wlan0 down
+  sleep 3
+  sudo /usr/sbin/ip link set wlan0 up
+  sleep 5
+  sudo /usr/bin/systemctl restart tailscaled
+else
+  log "peer unreachable (check #$FAILS), restarting tailscaled"
+  sudo /usr/bin/systemctl restart tailscaled
+fi
+
+sleep 10
+if check_ok; then
+  log "recovered on check #$FAILS"
+  if [ "$(cat "$REBOOT_STATE" 2>/dev/null || echo 0)" -gt 0 ]; then
+    alert "KDS $(hostname) recovered" "Tailscale reachable again after $FAILS checks and $(cat "$REBOOT_STATE") reboot(s)."
+  fi
+  rm -f "$STATE" "$REBOOT_STATE"
+fi
+TSWEOF
+chmod 755 /home/pi/tailscale-watchdog.sh
+
+cat > /home/pi/chromium-watchdog.sh << 'CWEOF'
+#!/bin/bash
+LOG=/home/pi/chromium-watchdog.log
+EXPECTED_ORIGIN="https://dp-kds.vercel.app"
+GRACE_SECONDS=45
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"; }
+
+OLDEST_PID=$(pgrep -x chromium -o 2>/dev/null)
+[ -z "$OLDEST_PID" ] && exit 0
+
+ELAPSED=$(ps -o etimes= -p "$OLDEST_PID" 2>/dev/null | tr -d ' ')
+if [ -n "$ELAPSED" ] && [ "$ELAPSED" -lt "$GRACE_SECONDS" ]; then
+  exit 0
+fi
+
+if ! curl -s --max-time 5 http://localhost:9222/json/version >/dev/null 2>&1; then
+  log "debug port unresponsive (main thread likely deadlocked), restarting chromium"
+  pkill -x chromium
+  exit 0
+fi
+
+TABS=$(curl -s --max-time 5 http://localhost:9222/json)
+TAB_URLS=$(grep -oE '"url": *"[^"]*"' <<< "$TABS" | sed -E 's/"url": *"//; s/"$//')
+
+if ! grep -q "^${EXPECTED_ORIGIN}" <<< "$TAB_URLS"; then
+  log "no tab loaded at $EXPECTED_ORIGIN, restarting chromium (open tabs: $(tr '\n' ' ' <<< "$TAB_URLS"))"
+  pkill -x chromium
+fi
+CWEOF
+chmod 755 /home/pi/chromium-watchdog.sh
+
+cat > /home/pi/hdmi-watchdog.sh << 'HDMIEOF'
+#!/bin/bash
+LOG=/home/pi/hdmi-watchdog.log
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"; }
+command -v xrandr >/dev/null 2>&1 || exit 0
+export DISPLAY=:0
+export XAUTHORITY=$(find /tmp -maxdepth 1 -name 'serverauth.*' 2>/dev/null | head -1)
+[ -z "$XAUTHORITY" ] && exit 0
+xrandr --query >/dev/null 2>&1 || exit 0
+CONNECTED=$(xrandr --query | grep ' connected' | awk '{print $1}')
+ACTIVE=$(xrandr --listactivemonitors | awk 'NR>1{print $NF}')
+for out in $CONNECTED; do
+  if ! grep -qx "$out" <<< "$ACTIVE"; then
+    log "output $out connected but inactive, forcing --auto"
+    xrandr --output "$out" --auto
+  fi
+done
+HDMIEOF
+chmod 755 /home/pi/hdmi-watchdog.sh
+
+cat > /home/pi/power-watchdog.sh << 'PWEOF'
+#!/bin/bash
+LOG=/home/pi/power-watchdog.log
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"; }
+command -v vcgencmd >/dev/null 2>&1 || exit 0
+FLAGS=$(vcgencmd get_throttled 2>/dev/null | grep -oE '0x[0-9a-fA-F]+')
+[ -z "$FLAGS" ] && exit 0
+[ "$FLAGS" = "0x0" ] && exit 0
+log "throttled=$FLAGS (undervoltage/throttle/frequency-cap event -- see 'vcgencmd get_throttled' bit reference for decoding)"
+PWEOF
+chmod 755 /home/pi/power-watchdog.sh
+
+cat > /home/pi/session-watchdog.sh << 'SESSEOF'
+#!/bin/bash
+LOG=/home/pi/session-watchdog.log
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"; }
+systemctl is-active --quiet lightdm 2>/dev/null || exit 0
+UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
+[ "$UPTIME" -lt 120 ] && exit 0
+pgrep -u pi -x 'labwc|openbox|wayfire' >/dev/null 2>&1 && exit 0
+log "lightdm active, system up ${UPTIME}s, but no WM session running for pi -- restarting lightdm"
+sudo systemctl restart lightdm
+SESSEOF
+chmod 755 /home/pi/session-watchdog.sh
+
+cat > /home/pi/wifi-signal-log.sh << 'WSLEOF'
+#!/bin/bash
+LOG=/home/pi/wifi-signal.log
+IFACE=wlan0
+WIRELESS_LINE=$(grep "^ *$IFACE:" /proc/net/wireless 2>/dev/null)
+if [ -z "$WIRELESS_LINE" ]; then
+  echo "$(date '+%Y-%m-%d %H:%M:%S') no data for $IFACE" >> "$LOG"
+  exit 0
+fi
+QUALITY=$(echo "$WIRELESS_LINE" | awk '{print $3}' | tr -d '.')
+LEVEL=$(echo "$WIRELESS_LINE" | awk '{print $4}' | tr -d '.')
+RETRY=$(echo "$WIRELESS_LINE" | awk '{print $9}')
+ACTIVE_AP=$(nmcli -t -f active,freq,rate device wifi list --rescan no 2>/dev/null | grep '^yes:')
+FREQ=$(echo "$ACTIVE_AP" | cut -d: -f2)
+RATE=$(echo "$ACTIVE_AP" | cut -d: -f3)
+echo "$(date '+%Y-%m-%d %H:%M:%S') quality=${QUALITY:-?}/70 level=${LEVEL:-?}dBm retries=${RETRY:-0} freq=${FREQ:-?} rate=${RATE:-?}" >> "$LOG"
+LINES=$(wc -l < "$LOG" 2>/dev/null || echo 0)
+if [ "$LINES" -gt 15000 ]; then
+  tail -n 10000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+fi
+WSLEOF
+chmod 755 /home/pi/wifi-signal-log.sh
+
+cat > /home/pi/wifi-auth-watchdog.sh << 'WAWEOF'
+#!/bin/bash
+LOG=/home/pi/wifi-auth-watchdog.log
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"; }
+STATE=$(nmcli -t -f DEVICE,STATE,CONNECTION device status 2>/dev/null | grep '^wlan0:')
+CONN_STATE=$(echo "$STATE" | cut -d: -f2)
+[ -z "$STATE" ] && { log "no wlan0 device found, skipping"; exit 0; }
+[ "$CONN_STATE" = "connected" ] && exit 0
+log "wlan0 state=$CONN_STATE, not connected -- intervening"
+for proc in nm-applet nm-connection-editor polkit-gnome-authentication-agent-1 polkit-mate-authentication-agent-1 lxpolkit xfce-polkit; do
+  if pgrep -x "$proc" >/dev/null 2>&1; then
+    log "killing stray $proc"
+    pkill -x "$proc"
+  fi
+done
+for pid in $(pgrep -f 'polkit|authentication-agent' 2>/dev/null); do
+  cmd=$(ps -o comm= -p "$pid" 2>/dev/null)
+  [ -z "$cmd" ] && continue
+  log "killing stray auth-agent-like process: $cmd (pid $pid)"
+  kill "$pid" 2>/dev/null
+done
+WIFI_CONN=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | head -1 | cut -d: -f1)
+if [ -n "$WIFI_CONN" ]; then
+  log "forcing 'nmcli connection up $WIFI_CONN'"
+  sudo nmcli connection up "$WIFI_CONN" >>"$LOG" 2>&1
+else
+  log "no wifi connection profile found"
+fi
+WAWEOF
+chmod 755 /home/pi/wifi-auth-watchdog.sh
+
+cat > /home/pi/disk-watchdog.sh << 'DISKEOF'
+#!/bin/bash
+LOG=/home/pi/disk-watchdog.log
+THRESHOLD=85
+USE=$(df / | tail -1 | awk '{print $5}' | tr -d '%')
+if [ "$USE" -ge "$THRESHOLD" ]; then
+  rm -rf /home/pi/.config/chromium/BrowserMetrics/* /home/pi/.config/chromium/"Crash Reports"/*
+  echo "$(date '+%Y-%m-%d %H:%M:%S') disk at ${USE}%, cleared BrowserMetrics + Crash Reports" >> "$LOG"
+fi
+DISKEOF
+chmod 755 /home/pi/disk-watchdog.sh
+
+chown pi:pi /home/pi/*.sh /home/pi/.bash_profile /home/pi/.xinitrc /home/pi/.xbindkeysrc \
+  /home/pi/.config/openbox/autostart
+
+# Cron: pi's own crontab, matching the rest of the fleet. `crontab` just writes the spool file --
+# no daemon interaction needed, safe here in stage 1 (cron itself only needs to be running when a
+# job's schedule actually fires, not when it's installed).
+crontab -u pi - << 'CRONEOF'
+*/3 * * * * /home/pi/tailscale-watchdog.sh
+*/2 * * * * /home/pi/hdmi-watchdog.sh
+*/5 * * * * /home/pi/power-watchdog.sh
+* * * * * /home/pi/chromium-watchdog.sh
+* * * * * /home/pi/wifi-signal-log.sh
+*/2 * * * * /home/pi/wifi-auth-watchdog.sh
+*/2 * * * * /home/pi/session-watchdog.sh
+*/15 * * * * /home/pi/disk-watchdog.sh
+CRONEOF
+
+# Hardware watchdog: this board's BCM chip ignores the requested timeout and hardwires 60s
+# regardless -- see install-failsafes.sh for the confirmation via `wdctl`. Just the file edit
+# here (no daemon-reexec needed) -- takes effect on the next real boot, which stage 2 below
+# triggers anyway once it finishes.
+if [ -e /dev/watchdog ]; then
+  sed -i 's/^#\?RuntimeWatchdogSec=.*/RuntimeWatchdogSec=60s/' /etc/systemd/system.conf
+fi
+
+# Stage 2 -- deferred to the first NORMAL boot, when NetworkManager has real connectivity.
+# ONLY the things that truly need internet: apt-get installs + Tailscale. Everything else is
+# already in place from stage 1 above, so a slow/flaky WiFi connection just delays Chromium
+# actually launching (fix-chromium.sh's own retry loop handles that) -- it never blocks on a
+# login prompt or leaves the board in a half-configured state waiting on human input.
+cat > /usr/local/sbin/kds-provision-stage2.sh << 'STAGE2EOF'
+#!/bin/bash
+exec > /home/pi/stage2-provision.log 2>&1
+set -x
+
+# Wait for real internet (up to ~10 min -- restaurant WiFi association can be slow after a
+# fresh boot).
+NETWORK_OK=0
+for i in $(seq 1 300); do
+  if ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
+    NETWORK_OK=1
+    break
+  fi
+  sleep 2
+done
+
+if [ "$NETWORK_OK" -ne 1 ]; then
+  echo "no network after 10 min -- leaving stage2 service enabled, will retry on next boot"
+  exit 1
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+INSTALL_OK=0
+for attempt in 1 2 3; do
+  apt-get update && apt-get install -y xserver-xorg xinit openbox chromium chromium-common chromium-sandbox \
+    rpi-chromium-mods unclutter xbindkeys xdotool && { INSTALL_OK=1; break; }
+  sleep 15
+done
+
+if [ "$INSTALL_OK" -ne 1 ]; then
+  echo "apt-get install failed after 3 attempts -- leaving stage2 service enabled, will retry on next boot"
+  exit 1
+fi
+which startx Xorg openbox chromium
+
+# Tailscale -- installed here in stage 2 since it needs real internet. `tailscale up` uses a
+# reusable authkey generated from the admin console so this runs unattended -- a manual
+# interactive login follow-up over LAN SSH was the old approach, but a freshly re-flashed board
+# sitting in NeedsLogin state just gets reboot-looped forever by its own watchdog, which can't
+# fix an auth problem no matter how many times it restarts (confirmed the hard way 2026-09-06
+# on Kitchen's card).
+if ! command -v tailscale >/dev/null 2>&1; then
+  curl -fsSL https://tailscale.com/install.sh | sh
+fi
+systemctl enable --now tailscaled
+tailscale up --authkey=tskey-auth-kzoBvVwJBo11CNTRL-ZFYhnueLnmJoJA1Je43omJvHctfNSNHJ --hostname=kds-expo || true
+
+# psk-flags=0 (secret stored in the connection file, not agent-owned) -- already true since
+# stage 1 wrote the keyfiles with psk= directly, but force it explicitly to match install-
+# failsafes.sh's own defense-in-depth for any profile that might get recreated later. Needs
+# nmcli/a live NetworkManager, hence down here in stage 2 rather than stage 1.
+for c in $(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | cut -d: -f1); do
+  nmcli connection modify "$c" wifi-sec.psk-flags 0 2>/dev/null || true
+done
+
+date '+%Y-%m-%d %H:%M:%S' > /home/pi/.failsafe-v7-installed
+echo "stage2 provisioning completed successfully" >> /home/pi/stage2-provision.log
+
+# Self-cleanup -- never run again after this.
+systemctl disable kds-provision-stage2.service 2>/dev/null || true
+rm -f /etc/systemd/system/kds-provision-stage2.service /usr/local/sbin/kds-provision-stage2.sh
+
+sleep 5
+reboot
+STAGE2EOF
+chmod 755 /usr/local/sbin/kds-provision-stage2.sh
+
+cat > /etc/systemd/system/kds-provision-stage2.service << 'UNITEOF'
+[Unit]
+Description=DP-KDS Expo kiosk stage-2 provisioning (runs once on first real boot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kds-provision-stage2.sh
+RemainAfterExit=yes
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+systemctl enable kds-provision-stage2.service
+
+echo "firstrun.sh (stage 1) completed successfully" >> /boot/firmware/firstrun.log
 
 rm -f /boot/firmware/firstrun.sh
 sed -i 's| systemd\.[^ ]*||g' /boot/firmware/cmdline.txt

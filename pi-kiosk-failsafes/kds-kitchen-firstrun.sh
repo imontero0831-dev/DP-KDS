@@ -50,7 +50,7 @@ echo 'pi:110965.Ps' | chpasswd
 # same password set via chpasswd above, so credentials stay consistent either way).
 echo 'pi:$6$Co5y33tmyThsTOcd$n5Pk6c6F37x/h2y9OpEkzC8KlsV7V1kx9Q4Cauuni8EkdgCDEw2bfe/6Mx/Hy0qIYIhQWw6bdrzcgIB8r6rzo0' > /boot/firmware/userconf.txt
 
-raspi-config nonint do_hostname kds-display-3
+raspi-config nonint do_hostname kds-kitchen
 raspi-config nonint do_ssh 0
 # Some Pi WiFi chips stay rfkill-blocked until a country code is set, independent of the
 # cfg80211.ieee80211_regdom= kernel cmdline arg. do_wifi_country doesn't hang (unlike
@@ -634,12 +634,16 @@ which startx Xorg openbox chromium
 # Tailscale -- missed entirely in the first version of this script (confirmed the hard way
 # 2026-09-05: a freshly re-flashed board never appeared on Tailscale because the binary
 # simply wasn't there -- the original boards only had it because it was installed by hand
-# months before this script existed). `tailscale up` itself needs an interactive login (no
-# reusable authkey on file), so that part stays a manual follow-up over LAN SSH.
+# months before this script existed). `tailscale up` used to need a manual interactive
+# login follow-up over LAN SSH every reflash (confirmed the hard way again 2026-09-06: a
+# freshly re-flashed board sat in NeedsLogin state for 2 days getting reboot-looped by its
+# own watchdog, which can't fix an auth problem no matter how many times it restarts). Now
+# uses a reusable authkey generated from the admin console so this is unattended.
 if ! command -v tailscale >/dev/null 2>&1; then
   curl -fsSL https://tailscale.com/install.sh | sh
 fi
 systemctl enable --now tailscaled
+tailscale up --authkey=tskey-auth-kzoBvVwJBo11CNTRL-ZFYhnueLnmJoJA1Je43omJvHctfNSNHJ --hostname=kds-kitchen || true
 
 # psk-flags=0 (secret stored in the connection file, not agent-owned) -- already true since
 # stage 1 wrote the keyfiles with psk= directly, but force it explicitly to match install-
