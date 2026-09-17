@@ -421,6 +421,10 @@ const CLOVER_ORDER_TYPES = {
   dineIn: "HC7A7MP3VH9C0",
   takeOut: "RFE2M1R5QRJWR",
 };
+// Merchant's default "Sales Tax" rate (8.75%), from GET tax_rates. Only
+// needed for "Special" cart lines, which use a synthetic special-* id with
+// no real Clover catalog counterpart to inherit defaultTaxRates from.
+const CLOVER_SALES_TAX_RATE_ID = "XWPY9F1BNGHSJ";
 
 function buildCloverOrderNote(order) {
   if (order.isToGo) return `${order.toGoName}${order.note ? " | " + order.note : ""}`;
@@ -441,12 +445,17 @@ async function sendOrderToClover(order) {
     // approach left a multi-second window where the register/terminal could
     // open an order while it was still being built, which is a documented
     // cause of the POS "won't let you charge" glitch on API-created orders.
+    // Line items must reference their Clover catalog item (or, for Specials,
+    // carry an explicit tax rate) -- a bare name/price line has nothing for
+    // Clover to compute tax from and posts to the POS untaxed.
     const lineItems = [];
     for (const item of order.items) {
+      const isSpecial = item.id.startsWith("special-");
       for (let unit = 0; unit < item.qty; unit++) {
         lineItems.push({
           name: item.name,
           price: item.price,
+          ...(isSpecial ? { taxRates: [{ id: CLOVER_SALES_TAX_RATE_ID }] } : { item: { id: item.id } }),
           ...(item.modifiers && item.modifiers.length > 0
             ? { modifications: item.modifiers.map(mod => ({ modifier: { id: mod.id }, name: mod.name, amount: mod.price })) }
             : {}),
