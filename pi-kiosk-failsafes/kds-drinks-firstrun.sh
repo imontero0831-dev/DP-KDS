@@ -53,6 +53,27 @@ raspi-config nonint do_ssh 0
 # cfg80211.ieee80211_regdom= kernel cmdline arg. do_wifi_country doesn't hang (unlike
 # do_wifi_ssid_passphrase, which needs live NetworkManager D-Bus access not available yet here).
 raspi-config nonint do_wifi_country US
+
+# Timezone. Never set on the 2026-09-05 re-flash, so all three kiosks sat on the
+# imager default (Europe/London) -- six hours ahead of the restaurant. Nothing in
+# the app breaks (elapsed timers use epoch ms, which is timezone-independent), but
+# every watchdog log line, journal entry and ntfy alert is stamped six hours wrong,
+# which made the 2026-09-13 outage investigation actively misleading.
+raspi-config nonint do_change_timezone America/Chicago
+
+# Bound the journal. A chatty driver can otherwise log unboundedly: on 2026-09-13
+# Kitchen's brcmfmac wedged into a "Connecting" state after a WiFi drop and logged
+# a rejected scan ~1/sec (~3600 lines/hour) for 8 hours straight. The 2026-09-01
+# outage was ultimately a disk-full on a 14G card, so cap this explicitly rather
+# than relying on journald's default 10%-of-filesystem.
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/10-kds-cap.conf << 'JCONF'
+[Journal]
+SystemMaxUse=200M
+SystemMaxFileSize=20M
+RateLimitIntervalSec=30s
+RateLimitBurst=1000
+JCONF
 rfkill unblock wifi || true
 
 # No lightdm on this board (matches its own prior setup) -- console autologin + a
@@ -548,10 +569,18 @@ done
 for pid in $(pgrep -f 'polkit|authentication-agent' 2>/dev/null); do
   cmd=$(ps -o comm= -p "$pid" 2>/dev/null)
   [ -z "$cmd" ] && continue
+  # polkitd is the SYSTEM policy daemon, not a GUI auth agent -- it renders no
+  # dialog, runs as root (so this kill always failed silently anyway), and is
+  # what authorizes the `sudo nmcli` call below. Skip it; the broad pattern
+  # above was matching it on every run and writing a misleading log line.
+  case "$cmd" in
+    polkitd|polkit-agent-helper-1) continue ;;
+  esac
   log "killing stray auth-agent-like process: $cmd (pid $pid)"
   kill "$pid" 2>/dev/null
 done
-WIFI_CONN=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | head -1 | cut -d: -f1)
+WIFI_CONN=$(nmcli -t -f NAME,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show 2>/dev/null | awk -F: '$2 == "802-11-wireless" && $3 == "yes" { print $4"\t"$1 }' | sort -k1,1nr | head -1 | cut -f2-)
+[ -z "$WIFI_CONN" ] && WIFI_CONN=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | head -1 | cut -d: -f1)
 if [ -n "$WIFI_CONN" ]; then
   log "forcing 'nmcli connection up $WIFI_CONN'"
   sudo nmcli connection up "$WIFI_CONN" >>"$LOG" 2>&1
@@ -932,7 +961,8 @@ else
       log "HEAL wifi: wlan0 down ${DOWN_FOR}s -- rfkill unblock + radio bounce"
       sudo /usr/sbin/rfkill unblock wifi 2>/dev/null
       sudo nmcli radio wifi off 2>/dev/null; sleep 2; sudo nmcli radio wifi on 2>/dev/null
-      WIFI_CONN=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | head -1 | cut -d: -f1)
+      WIFI_CONN=$(nmcli -t -f NAME,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show 2>/dev/null | awk -F: '$2 == "802-11-wireless" && $3 == "yes" { print $4"\t"$1 }' | sort -k1,1nr | head -1 | cut -f2-)
+      [ -z "$WIFI_CONN" ] && WIFI_CONN=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | head -1 | cut -d: -f1)
       [ -n "$WIFI_CONN" ] && sudo nmcli connection up "$WIFI_CONN" >/dev/null 2>&1 &
       sset wifi-heal-at "$now"
     fi

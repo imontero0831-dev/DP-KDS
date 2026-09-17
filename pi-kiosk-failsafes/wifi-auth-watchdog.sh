@@ -50,6 +50,14 @@ done
 for pid in $(pgrep -f 'polkit|authentication-agent' 2>/dev/null); do
   cmd=$(ps -o comm= -p "$pid" 2>/dev/null)
   [ -z "$cmd" ] && continue
+  # polkitd is the SYSTEM policy daemon, not a GUI auth agent -- it renders no
+  # dialog and killing it would only break the `sudo nmcli` call below. The
+  # broad pattern above matched it on every single run (it runs as root, so the
+  # kill always failed silently and just wrote a misleading "killing stray
+  # auth-agent-like process: polkitd" line into this log every 2 minutes).
+  case "$cmd" in
+    polkitd|polkit-agent-helper-1) continue ;;
+  esac
   log "killing stray auth-agent-like process: $cmd (pid $pid)"
   kill "$pid" 2>/dev/null
 done
@@ -58,7 +66,27 @@ done
 # this uses whatever secret is already stored (system-file or agent-owned)
 # without ever blocking on a GUI prompt the way NetworkManager's own
 # automatic retry can.
-WIFI_CONN=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | head -1 | cut -d: -f1)
+#
+# Pick the HIGHEST-AUTOCONNECT-PRIORITY wifi profile, not just the first one
+# nmcli happens to print. Real incident 2026-09-13: this used `head -1` on
+# unsorted output, but `nmcli connection show` orders by active-then-last-used,
+# so the ordering changes the instant the real AP drops -- which is precisely
+# when this watchdog runs. On all three kiosks it ended up repeatedly forcing
+# `fallback-hotspot` (priority 5, an SSID that isn't present at the restaurant)
+# instead of `preconfigured` (priority 10, the restaurant AP), driving the radio
+# at a network that doesn't exist. Kitchen cycled through three different
+# profiles in one afternoon; Drinks forced fallback-hotspot four times in a row
+# and a ~2 minute blip became an 11 minute outage. Sorting by priority is also
+# exactly how NetworkManager itself picks, so the watchdog now agrees with it
+# instead of fighting it.
+WIFI_CONN=$(nmcli -t -f NAME,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show 2>/dev/null \
+  | awk -F: '$2 == "802-11-wireless" && $3 == "yes" { print $4"\t"$1 }' \
+  | sort -k1,1nr | head -1 | cut -f2-)
+# Fall back to the old "any wifi profile at all" behaviour only if nothing is
+# marked autoconnect -- better to try something than to give up entirely.
+if [ -z "$WIFI_CONN" ]; then
+  WIFI_CONN=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | head -1 | cut -d: -f1)
+fi
 if [ -n "$WIFI_CONN" ]; then
   log "forcing 'nmcli connection up $WIFI_CONN'"
   # Must be `sudo nmcli`, not plain `nmcli`: cron jobs have no active

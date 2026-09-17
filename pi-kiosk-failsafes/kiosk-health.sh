@@ -291,7 +291,8 @@ else
       log "HEAL wifi: wlan0 down ${DOWN_FOR}s -- rfkill unblock + radio bounce"
       sudo /usr/sbin/rfkill unblock wifi 2>/dev/null
       sudo nmcli radio wifi off 2>/dev/null; sleep 2; sudo nmcli radio wifi on 2>/dev/null
-      WIFI_CONN=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | head -1 | cut -d: -f1)
+      WIFI_CONN=$(nmcli -t -f NAME,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show 2>/dev/null | awk -F: '$2 == "802-11-wireless" && $3 == "yes" { print $4"\t"$1 }' | sort -k1,1nr | head -1 | cut -f2-)
+      [ -z "$WIFI_CONN" ] && WIFI_CONN=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | grep ':802-11-wireless$' | head -1 | cut -d: -f1)
       [ -n "$WIFI_CONN" ] && sudo nmcli connection up "$WIFI_CONN" >/dev/null 2>&1 &
       sset wifi-heal-at "$now"
     fi
