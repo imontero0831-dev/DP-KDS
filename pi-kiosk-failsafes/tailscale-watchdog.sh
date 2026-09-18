@@ -32,7 +32,16 @@ DIAG_LOG=/home/pi/tailscale-watchdog-diag.log
 DIAG_MAX_BYTES=524288   # 512KB cap -- the 2026-09-01 outage was partly
                         # caused by unbounded log/dump growth filling the
                         # disk; this file must never be able to repeat that.
-PEER=100.123.176.96   # israels-mac-mini, kept online as the reachability check
+# Reachability check peers. Real incident 2026-09-18: this used to check
+# a single peer (the mini), which sleeps overnight -- so every kiosk saw
+# "peer unreachable" while the mini napped and ran its full escalation
+# ladder (reboots, hourly giveup alerts) against a problem that didn't
+# exist on the kiosk's end at all. Now OK if ANY peer answers: the two
+# sibling kiosks first (always-on restaurant hardware, so a real answer
+# from either means this box's own tailscale/network is fine), falling
+# back to the mini only if both siblings are also unreachable.
+KIOSK_PEERS=(100.66.69.82 100.65.113.51 100.93.44.63)  # kds-kitchen kds-drinks kds-expo
+MINI_PEER=100.123.176.96                                # israels-mac-mini, can sleep -- last resort only
 STATE=/home/pi/.tailscale-watchdog-fails
 REBOOT_STATE=/home/pi/.tailscale-watchdog-reboots
 GIVEUP_ALERT_STAMP=/home/pi/.tailscale-watchdog-last-giveup-alert
@@ -83,7 +92,15 @@ capture_diag() {
   fi
 }
 
-check_ok() { tailscale ping -c 1 --timeout=5s "$PEER" >/dev/null 2>&1; }
+check_ok() {
+  local self_ip peer
+  self_ip=$(tailscale ip -4 2>/dev/null)
+  for peer in "${KIOSK_PEERS[@]}"; do
+    [ "$peer" = "$self_ip" ] && continue
+    tailscale ping -c 1 --timeout=5s "$peer" >/dev/null 2>&1 && return 0
+  done
+  tailscale ping -c 1 --timeout=5s "$MINI_PEER" >/dev/null 2>&1
+}
 
 if check_ok; then
   rm -f "$STATE" "$REBOOT_STATE"

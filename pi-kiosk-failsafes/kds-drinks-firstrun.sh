@@ -337,7 +337,8 @@ cat > /home/pi/tailscale-watchdog.sh << 'TSWEOF'
 LOG=/home/pi/tailscale-watchdog.log
 DIAG_LOG=/home/pi/tailscale-watchdog-diag.log
 DIAG_MAX_BYTES=524288
-PEER=100.123.176.96
+KIOSK_PEERS=(100.66.69.82 100.65.113.51 100.93.44.63)
+MINI_PEER=100.123.176.96
 STATE=/home/pi/.tailscale-watchdog-fails
 REBOOT_STATE=/home/pi/.tailscale-watchdog-reboots
 GIVEUP_ALERT_STAMP=/home/pi/.tailscale-watchdog-last-giveup-alert
@@ -369,7 +370,15 @@ capture_diag() {
   fi
 }
 
-check_ok() { tailscale ping -c 1 --timeout=5s "$PEER" >/dev/null 2>&1; }
+check_ok() {
+  local self_ip peer
+  self_ip=$(tailscale ip -4 2>/dev/null)
+  for peer in "${KIOSK_PEERS[@]}"; do
+    [ "$peer" = "$self_ip" ] && continue
+    tailscale ping -c 1 --timeout=5s "$peer" >/dev/null 2>&1 && return 0
+  done
+  tailscale ping -c 1 --timeout=5s "$MINI_PEER" >/dev/null 2>&1
+}
 
 if check_ok; then
   rm -f "$STATE" "$REBOOT_STATE"
