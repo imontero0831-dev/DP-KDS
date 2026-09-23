@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, doc, onSnapshot,
-  addDoc, updateDoc, deleteDoc, getDoc, getDocs, query, orderBy, limit, serverTimestamp
+  addDoc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, orderBy, limit, serverTimestamp
 } from "firebase/firestore";
 
 // ============================================================
@@ -250,7 +250,15 @@ async function cloverRequest(endpoint, method = "GET", body = null) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ endpoint, method, body }),
   });
-  if (!res.ok) throw new Error(`Clover API error: ${res.status}`);
+  if (!res.ok) {
+    // Carry the status on the error. Callers need to tell "this order does
+    // not exist" (404) apart from "the API is unhappy right now" -- those
+    // want opposite handling, and collapsing both into a bare throw is how
+    // a deleted Clover order used to strand its ticket on screen forever.
+    const err = new Error(`Clover API error: ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -495,27 +503,42 @@ async function updateOrderInClover(order) {
   return (await sendOrderToClover(order)) || null;
 }
 
-// Confirmed against real orders in the live account: a Clover order that
-// was actually charged on the register comes back state:"locked" with a
-// payments.elements entry whose result is "SUCCESS". Orders paid in cash
-// (or rung up separately at the register, disconnected from this specific
-// Clover order) stay state:"open" with no payments at all — this check
-// correctly returns false for those, by design, not by bug. Callers must
-// NOT treat "false" as "not paid yet, keep waiting" for such orders; it
-// just means this signal doesn't apply and a human needs to close it.
-async function isOrderPaidOnClover(cloverOrderId, total) {
-  if (!cloverOrderId) return false;
+// Returns a verdict, not a boolean. This used to answer "is the Clover
+// payment total at least what the KDS thinks the table owes", which is a
+// different and much stricter question than "is this order settled", and it
+// stranded tickets on the screens permanently:
+//
+//   - Any split check, comp, discount, or item re-rung on a fresh register
+//     order makes Clover's paid amount smaller than the KDS total, so the
+//     old `paidAmount >= total` never became true. On 2026-09-21 that was
+//     Mesa 2 (Clover $49.46 vs KDS $90.96) and David ($47.83 vs $48.48).
+//   - A Clover order that had been deleted 404'd, the catch swallowed it,
+//     and "deleted" came back indistinguishable from "not paid yet", so the
+//     ticket retried forever. That was Pinocho and Vicente, one of them for
+//     more than five days.
+//
+// Clover's own paymentState is the authority on whether an order is settled,
+// so trust it instead of re-deriving settlement from amounts. Note this does
+// clear tickets sooner than the old rule in the under-payment case -- that is
+// the intended behaviour change, not an oversight.
+//
+//   "PAID"    Clover considers the order settled            -> safe to close
+//   "GONE"    the order 404s; it can never be paid now       -> see caller
+//   "UNPAID"  the order exists and is not settled            -> keep waiting
+//   "UNKNOWN" could not tell (network/API failure)           -> keep waiting
+//
+// Cash orders, and anything rung up separately at the register disconnected
+// from this Clover order, still come back UNPAID by design -- this signal
+// does not apply to them and a human closes them, same as before.
+async function getCloverSettlementStatus(cloverOrderId) {
+  if (!cloverOrderId) return "UNKNOWN";
   try {
     const data = await cloverRequest(`orders/${cloverOrderId}?expand=payments`);
-    if (data.state !== "locked") return false;
-    const payments = data.payments?.elements || [];
-    const paidAmount = payments
-      .filter(p => p.result === "SUCCESS")
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-    return paidAmount >= total;
+    return data.paymentState === "PAID" ? "PAID" : "UNPAID";
   } catch (err) {
+    if (err.status === 404) return "GONE";
     console.warn("Clover payment check failed:", err.message);
-    return false;
+    return "UNKNOWN";
   }
 }
 
@@ -648,11 +671,12 @@ async function updateOrderStatus(orderId, status) {
   await updateDoc(orderRef, updates);
 }
 
-// Guards against the same order being archived twice when multiple devices
-// race to close it -- same failure shape as bumpingIds/undoingIds above.
-// This got a lot more likely once the auto-close-on-payment check (below in
-// App) started running on every open device instead of just whichever
-// tablet happened to be sitting on the table-select screen.
+// Dedupes overlapping closes WITHIN one browser tab -- same failure shape as
+// bumpingIds/undoingIds above. It is a module-level Set, so despite what this
+// comment used to claim it cannot coordinate across devices at all, and the
+// auto-close check runs on every open device (all three Pis plus every waiter
+// tablet). Cross-device safety comes from the deterministic archive id in
+// closeTable below, not from here.
 const closingIds = new Set();
 async function closeTable(tableOrders) {
   for (const order of tableOrders) {
@@ -662,7 +686,19 @@ async function closeTable(tableOrders) {
       const orderRef = doc(db, "orders", order.firestoreId);
       const snap = await getDoc(orderRef);
       if (snap.exists()) {
-        await addDoc(collection(db, "completedOrders"), { ...snap.data(), completedAt: Date.now() });
+        // setDoc on the order's own id, NOT addDoc. addDoc mints a fresh
+        // document id on every call, so two devices racing here both
+        // succeed and the order is archived twice -- that happened to 5 of
+        // 27 completed orders on 2026-09-13. The read-then-write below is
+        // not atomic and cannot be made atomic from the client, so the
+        // archive has to be idempotent instead: writing to a deterministic
+        // id means the loser of the race overwrites an identical document
+        // rather than creating a duplicate.
+        const data = snap.data();
+        await setDoc(doc(db, "completedOrders", String(data.id || order.firestoreId)), {
+          ...data,
+          completedAt: Date.now(),
+        });
         await deleteDoc(orderRef);
       }
     } finally {
@@ -673,7 +709,7 @@ async function closeTable(tableOrders) {
 
 // ── AUTO-CLOSE ON CONFIRMED CLOVER PAYMENT ────────────────────
 // Checks each active table/bar-seat/patio/to-go group's Clover order for a
-// real completed payment (isOrderPaidOnClover) and, if found, closes that
+// real completed payment (getCloverSettlementStatus) and, if found, closes that
 // group exactly like the waitress's own Cerrar Mesa tap. Deliberately does
 // nothing for groups with no confirmed Clover payment — cash, or anything
 // rung up separately at the register, never shows a payment on this order —
@@ -683,9 +719,11 @@ async function closeTable(tableOrders) {
 // device -- Kitchen/Drinks/Expo Pis included -- not just whichever tablet
 // happens to be sitting on the table-select screen. `autoClosingKeys` is a
 // Set ref local to whichever component's interval is calling this, just
-// to dedupe within that one device's own repeated 45s ticks; closeTable's
-// own closingIds guard (above) is what actually protects against two
-// different devices racing to close the same table.
+// to dedupe within that one device's own repeated 45s ticks. Neither it nor
+// closeTable's closingIds can see other devices -- both are in-memory to one
+// tab. What actually makes a cross-device race safe is that closeTable
+// archives to a deterministic document id, so a double close overwrites
+// rather than duplicating.
 async function checkPendingPayments(liveOrders, autoClosingKeys) {
   const groups = {};
   function addTo(gk, o) {
@@ -708,7 +746,19 @@ async function checkPendingPayments(liveOrders, autoClosingKeys) {
     // that alone, not on top of every station remembering to tap done.
     let paid = false;
     for (const o of groupOrders) {
-      if (o.cloverOrderId && await isOrderPaidOnClover(o.cloverOrderId, o.total)) { paid = true; break; }
+      if (!o.cloverOrderId) continue;
+      const settlement = await getCloverSettlementStatus(o.cloverOrderId);
+      if (settlement === "PAID") { paid = true; break; }
+      // A Clover order that no longer exists can never be paid, so retrying
+      // it forever just parks the ticket on screen. Closing on GONE is
+      // deliberately gated on `delivered` though: updateOrderInClover works
+      // by DELETE-then-recreate, so a failed recreate can leave a live,
+      // uncooked ticket pointing at an id that 404s, and closing that would
+      // yank food off the line. Requiring the runner to have confirmed
+      // handoff first means we only ever clear tickets the floor is already
+      // done with. (The dangling id itself is now cleared at the source --
+      // see the cloverSyncFailed branches in the send handler.)
+      if (settlement === "GONE" && o.delivered) { paid = true; break; }
     }
     if (paid) {
       autoClosingKeys.add(key);
@@ -3305,7 +3355,12 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         if (newCloverOrderId) {
           await updateDoc(doc(db, "orders", editingOrder.firestoreId), { cloverOrderId: newCloverOrderId, cloverSyncFailed: false });
         } else {
-          await updateDoc(doc(db, "orders", editingOrder.firestoreId), { cloverSyncFailed: true });
+          // updateOrderInClover already DELETEd the old Clover order before
+          // trying to recreate it, so on failure that id points at nothing.
+          // Leaving it set is how orders ended up permanently unclosable:
+          // every later payment check 404'd on a ghost. Clear it -- no id is
+          // honest ("never synced"), a dead id is a lie.
+          await updateDoc(doc(db, "orders", editingOrder.firestoreId), { cloverOrderId: null, cloverSyncFailed: true });
           alert(t.cloverSyncFailedAlert);
         }
       }
@@ -3326,7 +3381,9 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         if (newCloverOrderId) {
           await updateDoc(doc(db, "orders", existing.firestoreId), { cloverOrderId: newCloverOrderId, cloverSyncFailed: false });
         } else {
-          await updateDoc(doc(db, "orders", existing.firestoreId), { cloverSyncFailed: true });
+          // Same as the edit path above: the old Clover order is already
+          // gone, so don't keep a dead id on the doc.
+          await updateDoc(doc(db, "orders", existing.firestoreId), { cloverOrderId: null, cloverSyncFailed: true });
           alert(t.cloverSyncFailedAlert);
         }
         setSending(false); setSent(true);
