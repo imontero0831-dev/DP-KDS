@@ -729,15 +729,13 @@ async function _completeOrder(orderId) {
   await updateDoc(ref, { allReady: true, allReadyAt: Date.now() });
 }
 
-// Kitchen is almost always the last station to finish in practice (Drinks/
-// Sides prep is quick by comparison), so a kitchen bump now also closes out
-// the Drinks/Sides side of the ticket instead of waiting on a separate tap
-// there. KDS2 still shows the order live the whole time Kitchen is cooking
-// it -- this only skips the extra confirmation once Kitchen says done.
 async function markKitchenReady(order) {
   const ref = doc(db, "orders", order.firestoreId);
-  await updateDoc(ref, { kitchenReady: true, drinksReady: true });
-  await _completeOrder(order.firestoreId);
+  await updateDoc(ref, { kitchenReady: true });
+  const hasDrinks = orderNeedsDrinksStation(order);
+  if (!hasDrinks || order.drinksReady) {
+    await _completeOrder(order.firestoreId);
+  }
 }
 
 async function markDrinksReady(order) {
@@ -2248,10 +2246,10 @@ function DrinksStationScreen({ lang, menu }) {
   if (menu) menu.categories.forEach(c => { catNameById[c.id] = c.name[lang] || c.name.en || ""; });
 
   // A ticket drops off this screen the instant it's marked ready here --
-  // same as KitchenScreen's own `active` filter below. Kitchen bumps now
-  // also flip drinksReady (see markKitchenReady), so in practice a ticket
-  // clears KDS1 and KDS2 together instead of lingering checked-off on KDS2
-  // until the table's payment closes it.
+  // same as KitchenScreen's own `active` filter below. A Kitchen bump no
+  // longer force-flips drinksReady (see markKitchenReady) -- an order with
+  // real drinks items still has to be bumped here separately; only orders
+  // that don't need this station at all skip straight to allReady.
   const pending = orders.filter(o => !o.drinksReady && orderHasDrinksItems(o));
   const done    = orders.filter(o => o.drinksReady && orderHasDrinksItems(o));
   const active  = pending;
@@ -2417,7 +2415,7 @@ function DrinksStationScreen({ lang, menu }) {
 // ============================================================
 // EXPO TICKET
 // ============================================================
-function ExpoTicket({ order, catNameById }) {
+function ExpoTicket({ order, catNameById, isFocused }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick(n => n + 1), 1000);
@@ -2458,10 +2456,24 @@ function ExpoTicket({ order, catNameById }) {
         flexDirection: "column",
         opacity: order.delivered ? 0.7 : 1,
         transition: "border-color 0.3s, box-shadow 0.3s",
-        boxShadow: order.delivered ? "0 2px 8px rgba(0,0,0,0.06)" : allDone ? "0 4px 20px rgba(21,128,61,0.3)" : "0 2px 8px rgba(0,0,0,0.06)",
+        boxShadow: isFocused
+          ? "0 0 0 4px rgba(37,99,235,0.25), 0 4px 20px rgba(21,128,61,0.3)"
+          : order.delivered ? "0 2px 8px rgba(0,0,0,0.06)" : allDone ? "0 4px 20px rgba(21,128,61,0.3)" : "0 2px 8px rgba(0,0,0,0.06)",
+        outline: isFocused ? "4px solid #2563EB" : "none",
+        outlineOffset: isFocused ? "3px" : "0",
         containerType: "inline-size",
       }}
     >
+      {/* Keyboard shortcut hint — only shown on the focused ready ticket, matches Kitchen/Drinks' hint bar */}
+      {isFocused && (
+        <div style={S.keyboardHintBar}>
+          <span style={S.keyboardHint}><strong>ENTER</strong> = Marcar Entregado</span>
+          <span style={S.keyboardHint}><strong>2</strong> = Anterior</span>
+          <span style={S.keyboardHint}><strong>3</strong> = Siguiente</span>
+          <span style={S.keyboardHint}><strong>0</strong> = Deshacer</span>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ background: allDone ? "#DCFCE7" : "#F5EFE0", padding: "10px 14px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ flex: 1 }}>
@@ -2570,8 +2582,24 @@ function ExpoTicket({ order, catNameById }) {
 // ============================================================
 function ExpoScreen({ menu }) {
   const [orders, setOrders] = useState([]);
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [actionFlash, setActionFlash] = useState(null);
   const lastCompleted = useLastCompletedOrder();
   useOrderChimes(orders);
+
+  // Orders this Expo screen itself just marked delivered — 0 pops the most
+  // recent one off to undo it, repeatable up to UNDO_STACK_LIMIT deep. Same
+  // local/live-only pattern as Kitchen/Drinks' undo stack: it only flips
+  // `delivered` back on an order still sitting in `orders`, never touches
+  // `completedOrders` or resurrects anything archived.
+  const UNDO_STACK_LIMIT = 3;
+  const lastDeliveredStackRef = useRef([]);
+  const lastZeroFireRef = useRef(0);
+
+  function flash(msg, color = "#15803D") {
+    setActionFlash({ msg, color });
+    setTimeout(() => setActionFlash(null), 1200);
+  }
 
   function handleUndoLastCompleted() {
     if (!lastCompleted) return;
@@ -2617,8 +2645,77 @@ function ExpoScreen({ menu }) {
   const deliveredOrders = expoOrders.filter(o => isOrderReady(o) && o.delivered);
   const activeOrders    = expoOrders.filter(o => !isOrderReady(o));
 
+  // Keyboard focus only ever moves across readyOrders — that's the only
+  // group with a keyed action (bump/deliver). Keep focus in bounds as that
+  // list shrinks/grows out from under the runner.
+  useEffect(() => {
+    if (focusedIndex >= readyOrders.length && readyOrders.length > 0) {
+      setFocusedIndex(readyOrders.length - 1);
+    }
+  }, [readyOrders.length, focusedIndex]);
+
+  // ── Keyboard / numpad handler ──────────────────────────────
+  // Mirrors Kitchen/Drinks: Enter bumps the focused ready ticket (same
+  // action as the on-screen BUMP button), 2/3 move focus, 0 undoes this
+  // screen's own last Enter.
+  //
+  // This screen's numpad has "00" / "0" / "Delete" where Kitchen/Drinks'
+  // just has one long "0" — there's only one undo action to give it, so all
+  // three collapse onto the same "0" case below.
+  const handleKeyDown = useCallback((e) => {
+    if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
+    const order = readyOrders[focusedIndex];
+    let key = e.key;
+    if (e.code === "NumpadEnter") key = "Enter";
+    if (/^Numpad[0-9]$/.test(e.code)) key = e.code.slice(6);
+    if (key === "00" || key === "Delete" || key === "Backspace" || key === "Clear" || e.code === "NumpadDecimal") key = "0";
+    switch (key) {
+      case "Enter": {
+        e.preventDefault();
+        if (!order || order.delivered) return;
+        markDelivered(order);
+        lastDeliveredStackRef.current = [...lastDeliveredStackRef.current, order].slice(-UNDO_STACK_LIMIT);
+        flash("Entregado", "#15803D");
+        break;
+      }
+      case "2": { e.preventDefault(); setFocusedIndex(i => Math.max(i - 1, 0)); break; }
+      case "3": { e.preventDefault(); setFocusedIndex(i => Math.min(i + 1, readyOrders.length - 1)); break; }
+      // The physical "00" key isn't a distinct keycode on this pad -- it
+      // fires two back-to-back Numpad0 presses (confirmed by watching raw
+      // output: "00" and "0" both stream literal "0" characters). Without
+      // debouncing, one "00" tap would pop two entries off the undo stack
+      // instead of one. 300ms comfortably covers the gap between a macro's
+      // two auto-fired presses while still letting a runner deliberately
+      // press "0" twice in a row a moment later.
+      case "0": {
+        e.preventDefault();
+        const now = Date.now();
+        if (now - lastZeroFireRef.current < 300) break;
+        lastZeroFireRef.current = now;
+        const stack = lastDeliveredStackRef.current;
+        const last = stack[stack.length - 1];
+        if (last) {
+          const ref = doc(db, "orders", last.firestoreId);
+          updateDoc(ref, { delivered: false, deliveredAt: null });
+          lastDeliveredStackRef.current = stack.slice(0, -1);
+          flash("Orden Restaurada", "#7C3AED");
+        }
+        break;
+      }
+      default: break;
+    }
+  }, [focusedIndex, readyOrders]);
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
   return (
     <div style={S.kitchenRoot}>
+      {actionFlash && (
+        <div style={{ ...S.actionFlash, background: actionFlash.color }}>{actionFlash.msg}</div>
+      )}
       <div style={S.kitchenHeader}>
         <div style={S.kitchenHeaderLeft}>
           <span style={{ ...S.kitchenTitle, fontSize: "clamp(13px, calc(0.9vw + 6px), 22px)" }}>Expo / Entrega</span>
@@ -2654,8 +2751,8 @@ function ExpoScreen({ menu }) {
       ) : (
         <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 440px))", gap: 14, padding: 16, alignItems: "start", overflowY: "auto" }}>
           {/* Ready orders first (at top), then still-cooking, then delivered-but-unpaid last (least urgent) */}
-          {readyOrders.map(order => (
-            <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} />
+          {readyOrders.map((order, idx) => (
+            <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} isFocused={idx === focusedIndex} />
           ))}
           {activeOrders.map(order => (
             <ExpoTicket key={order.firestoreId} order={order} catNameById={catNameById} />
