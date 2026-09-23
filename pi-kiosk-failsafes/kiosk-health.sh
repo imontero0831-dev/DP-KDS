@@ -32,6 +32,7 @@
 STATE_DIR=/home/pi/.kiosk-health
 LOG=/home/pi/kiosk-health.log
 ALERT=/home/pi/alert.sh
+DEVTOOLS_EVAL=/home/pi/devtools-eval.py
 EXPECTED_ORIGIN="https://dp-kds.vercel.app"
 
 BOOT_GRACE=90            # ignore everything for the first 90s after boot
@@ -153,6 +154,7 @@ fi
 # working kitchen screen mid-service.
 CHROMIUM_ALIVE=0
 HEALTHY=0
+KIOSK_DETAIL=""
 if [ -n "$OLDEST_PID" ] && curl -s --max-time 5 http://localhost:9222/json/version >/dev/null 2>&1; then
   TABS=$(curl -s --max-time 5 http://localhost:9222/json 2>/dev/null)
   ORIGIN_TAB=$(printf '%s' "$TABS" | tr ',' '\n' | grep -o "\"url\": *\"${EXPECTED_ORIGIN}[^\"]*\"" | head -1)
@@ -166,6 +168,58 @@ if [ -n "$OLDEST_PID" ] && curl -s --max-time 5 http://localhost:9222/json/versi
         *)
           HEALTHY=1 ;;
       esac
+
+      # A matching tab EXISTING is not the same as the screen SHOWING it.
+      # ORIGIN_TAB/TITLE_LINE above both grep for the tab AT our origin and
+      # take the first hit, so they describe the app's tab no matter what is
+      # actually in front of it. On 2026-09-21 the AT&T gateway page sat in
+      # the foreground of Expo for 33 hours while the KDS tab lived on behind
+      # it -- and this block scored HEALTHY=1 for every minute of that.
+      # Two extra checks close that, both folded into HEALTHY and NOT into
+      # CHROMIUM_ALIVE, deliberately: HEALTHY drives the targeted heal (a
+      # reload) and the alerts, while only ALIVE can reach the reboot path.
+      # So a mis-read here can cost a needless reload, never a power-cycle
+      # of a working screen mid-service.
+
+      # 1. Any page target that is NOT ours is, by definition, in front of or
+      #    competing with the app. kiosk-tab-guard.sh closes these within a
+      #    minute; if one is still here when this runs, that guard is failing.
+      if [ "$HEALTHY" -eq 1 ]; then
+        STRAYS=$(printf '%s' "$TABS" | python3 -c "
+import json,sys
+try: targets=json.load(sys.stdin)
+except Exception: sys.exit(0)
+n=[t for t in targets if t.get('type')=='page' and not t.get('url','').startswith('$EXPECTED_ORIGIN')]
+print(len(n))
+" 2>/dev/null)
+        if [ -n "$STRAYS" ] && [ "$STRAYS" -gt 0 ] 2>/dev/null; then
+          HEALTHY=0
+          KIOSK_DETAIL="${STRAYS} stray tab(s) in front of the app"
+        fi
+      fi
+
+      # 2. The app's own tab can be loaded but never mounted -- a cached
+      #    index.html naming a purged bundle hash renders a blank white page
+      #    whose <title> is still "KDS", so the title check above passes.
+      #    Needs the DOM, hence devtools-eval.py. If it can't answer, leave
+      #    HEALTHY alone: "couldn't tell" must not read as "unhealthy".
+      if [ "$HEALTHY" -eq 1 ] && [ -x "$DEVTOOLS_EVAL" ]; then
+        KDS_TID=$(printf '%s' "$TABS" | python3 -c "
+import json,sys
+try: targets=json.load(sys.stdin)
+except Exception: sys.exit(0)
+for t in targets:
+    if t.get('type')=='page' and t.get('url','').startswith('$EXPECTED_ORIGIN'):
+        print(t['id']); break
+" 2>/dev/null)
+        if [ -n "$KDS_TID" ]; then
+          KIDS=$("$DEVTOOLS_EVAL" "$KDS_TID" "(function(){var r=document.getElementById('root');return r?r.childElementCount:-1;})()" 2>/dev/null)
+          if [ -n "$KIDS" ] && [ "$KIDS" -le 0 ] 2>/dev/null; then
+            HEALTHY=0
+            KIOSK_DETAIL="app shell loaded but #root is empty (blank screen)"
+          fi
+        fi
+      fi
     fi
   fi
 fi
@@ -223,7 +277,7 @@ elif [ "$CHROMIUM_ALIVE" -eq 1 ] && [ "$HEALTHY_AGE" -ge "$NO_HEALTHY_CRITICAL" 
   # alive but stuck (error page / never matured) for 10 min -- heal (which
   # reloads it), do NOT reboot: the box is otherwise fine.
   CHROMIUM_TIER=2
-  CHROMIUM_MSG="chromium alive but not healthy for ${HEALTHY_AGE}s (stuck page?)"
+  CHROMIUM_MSG="chromium alive but not healthy for ${HEALTHY_AGE}s (${KIOSK_DETAIL:-stuck page?})"
 elif [ "$RESTARTS" -ge "$CRASHLOOP_NOTICE" ]; then
   CHROMIUM_TIER=1
   CHROMIUM_MSG="chromium restarted ${RESTARTS}x/10min (currently $( [ "$HEALTHY" -eq 1 ] && echo healthy || echo 'not yet healthy'))"
