@@ -678,6 +678,9 @@ async function updateOrderStatus(orderId, status) {
 // tablet). Cross-device safety comes from the deterministic archive id in
 // closeTable below, not from here.
 const closingIds = new Set();
+// How long a payment-closed order may linger on the station screens before the
+// auto-close sweep archives it regardless of delivery.
+const TABLE_CLOSED_STALE_MS = 3 * 60 * 60 * 1000;
 async function closeTable(tableOrders) {
   for (const order of tableOrders) {
     if (closingIds.has(order.firestoreId)) continue;
@@ -730,10 +733,20 @@ async function checkPendingPayments(liveOrders, autoClosingKeys) {
     if (!groups[gk]) groups[gk] = [];
     groups[gk].push(o);
   }
-  liveOrders.filter(o => o.status !== "done" && !o.isToGo && !o.isBar && !o.isPatio).forEach(o => addTo(`table:${o.table}`, o));
-  liveOrders.filter(o => o.status !== "done" && o.isBar).forEach(o => addTo(`bar:${o.table}`, o));
-  liveOrders.filter(o => o.status !== "done" && o.isPatio).forEach(o => addTo(`patio:${o.table}`, o));
-  liveOrders.filter(o => o.status !== "done" && o.isToGo).forEach(o => addTo(`togo:${o.toGoSlot}`, o));
+  // Orders already flagged tableClosed are paid and off the waitress side;
+  // they're only waiting on the stations, so they're not re-checked here.
+  const open = liveOrders.filter(o => !o.tableClosed);
+  open.filter(o => o.status !== "done" && !o.isToGo && !o.isBar && !o.isPatio).forEach(o => addTo(`table:${o.table}`, o));
+  open.filter(o => o.status !== "done" && o.isBar).forEach(o => addTo(`bar:${o.table}`, o));
+  open.filter(o => o.status !== "done" && o.isPatio).forEach(o => addTo(`patio:${o.table}`, o));
+  open.filter(o => o.status !== "done" && o.isToGo).forEach(o => addTo(`togo:${o.toGoSlot}`, o));
+
+  // Sweep: archive paid-closed orders once the floor is done with them
+  // (Expo delivered), or after a long stale window so one that never gets
+  // bumped can't sit on the screens forever.
+  const staleBefore = Date.now() - TABLE_CLOSED_STALE_MS;
+  const finished = liveOrders.filter(o => o.tableClosed && (o.delivered || (o.tableClosedAt || 0) < staleBefore));
+  if (finished.length) await closeTable(finished);
 
   for (const [key, groupOrders] of Object.entries(groups)) {
     if (autoClosingKeys.has(key)) continue;
@@ -762,8 +775,20 @@ async function checkPendingPayments(liveOrders, autoClosingKeys) {
     }
     if (paid) {
       autoClosingKeys.add(key);
-      await closeTable(groupOrders);
-      autoClosingKeys.delete(key);
+      try {
+        // Close the table for the waitress, but do NOT archive: archiving
+        // deletes the order and yanks it off Kitchen/Drinks/Expo even if the
+        // food is still being made. Those screens keep showing it until it's
+        // bumped/delivered (see the sweep above); a second round at this
+        // table starts a fresh order because tableClosed orders no longer
+        // count as the table's active order.
+        const closedAt = Date.now();
+        await Promise.all(groupOrders.map(o =>
+          updateDoc(doc(db, "orders", o.firestoreId), { tableClosed: true, tableClosedAt: closedAt })));
+        await closeTable(groupOrders.filter(o => o.delivered));
+      } finally {
+        autoClosingKeys.delete(key);
+      }
     }
   }
 }
@@ -1863,11 +1888,11 @@ function KitchenScreen({ lang, menu }) {
   const lastCompleted = useLastCompletedOrder();
   // Orders this Kitchen screen itself just soft-completed (kitchenReady,
   // not archived) — 0 pops the most recent one off to undo it, repeatable
-  // up to 3 deep. Deliberately local/live-only: it only flips flags back on
+  // up to 10 deep. Deliberately local/live-only: it only flips flags back on
   // orders already sitting in `orders`, never touches `completedOrders` or
   // recreates anything, so it can never flood the waitress screen or Clover
   // with resurrected old data (see the "0" handler below).
-  const UNDO_STACK_LIMIT = 3;
+  const UNDO_STACK_LIMIT = 10;
   const lastMarkedReadyStackRef = useRef([]);
 
   const catNameById = {};
@@ -2280,8 +2305,8 @@ function DrinksStationScreen({ lang, menu }) {
   const lastCompleted = useLastCompletedOrder();
   // Orders this Drinks screen itself just soft-completed via numpad Enter
   // (drinksReady, not archived) — 0 pops the most recent one off to undo
-  // it, repeatable up to 3 deep. Same pattern as Kitchen's own stack.
-  const UNDO_STACK_LIMIT = 3;
+  // it, repeatable up to 10 deep. Same pattern as Kitchen's own stack.
+  const UNDO_STACK_LIMIT = 10;
   const lastMarkedReadyStackRef = useRef([]);
 
   useEffect(() => {
@@ -2915,22 +2940,22 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
   }, []);
 
   const activeByTable = {};
-  orders.filter(o => o.status !== "done" && !o.isToGo && !o.isBar && !o.isPatio).forEach(o => {
+  orders.filter(o => o.status !== "done" && !o.tableClosed && !o.isToGo && !o.isBar && !o.isPatio).forEach(o => {
     if (!activeByTable[o.table]) activeByTable[o.table] = [];
     activeByTable[o.table].push(o);
   });
   const activeByBarSeat = {};
-  orders.filter(o => o.status !== "done" && o.isBar).forEach(o => {
+  orders.filter(o => o.status !== "done" && !o.tableClosed && o.isBar).forEach(o => {
     if (!activeByBarSeat[o.table]) activeByBarSeat[o.table] = [];
     activeByBarSeat[o.table].push(o);
   });
   const activeByPatio = {};
-  orders.filter(o => o.status !== "done" && o.isPatio).forEach(o => {
+  orders.filter(o => o.status !== "done" && !o.tableClosed && o.isPatio).forEach(o => {
     if (!activeByPatio[o.table]) activeByPatio[o.table] = [];
     activeByPatio[o.table].push(o);
   });
   const activeByToGoSlot = {};
-  orders.filter(o => o.status !== "done" && o.isToGo).forEach(o => {
+  orders.filter(o => o.status !== "done" && !o.tableClosed && o.isToGo).forEach(o => {
     if (!activeByToGoSlot[o.toGoSlot]) activeByToGoSlot[o.toGoSlot] = [];
     activeByToGoSlot[o.toGoSlot].push(o);
   });
@@ -3416,7 +3441,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     const snap = await getDocs(collection(db, "orders"));
     const orders = snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
     return orders.find(o => {
-      if (o.status === "done" || o.cancelled) return false;
+      if (o.status === "done" || o.cancelled || o.tableClosed) return false;
       if (orderType === "table") return !o.isToGo && !o.isBar && !o.isPatio && String(o.table) === String(tableNum);
       if (orderType === "togo") return o.isToGo && String(o.toGoSlot) === String(toGoSlot);
       if (orderType === "bar") return o.isBar && String(o.table) === String(barSeat);
