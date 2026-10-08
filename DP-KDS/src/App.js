@@ -19,7 +19,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+export const db = getFirestore(app);
 
 // ============================================================
 // TRANSLATIONS
@@ -1042,7 +1042,7 @@ function useOrderChimes(orders, needsDrinksAlert) {
 // local state, and yanking the page out from under a waitress mid-order
 // would lose whatever she'd typed so far. The check just runs again next
 // interval until she's back on a safe screen.
-function useAutoUpdate(viewRef) {
+export function useAutoUpdate(viewRef) {
   const currentBundleRef = useRef(
     document.querySelector('script[src*="/static/js/main."]')?.getAttribute("src") || null
   );
