@@ -7,7 +7,7 @@ import { db, useAutoUpdate } from "./App";
 // ============================================================
 // Everything inventory lives in this file, separate from App.js.
 //
-// Flow: 6-digit PIN (checked server-side by api/staff-auth.js) -> pick AM/PM
+// Flow: 6-digit PIN (checked server-side by api/staff-auth.js) -> PM count
 // -> count -> submit one document to Firestore `inventoryCounts`.
 //
 // LOCAL DRAFT: every keypress is saved to this tablet's localStorage, so a
@@ -45,10 +45,11 @@ const ITEMS = [
 
 const CATEGORY_ORDER = ["protein", "produce", "beer"];
 
-// AM = Tier A. PM = Tiers A + B per the spec; Tier B isn't seeded yet, so PM
-// is Tier A too until it is. Weekly (Tier C) is hidden until it has items.
+// One count a day, at close (PM): Tiers A + B per the spec. Tier B isn't
+// seeded yet, so for now it's Tier A only. The AM count was dropped on
+// 2026-11-05 -- to bring it back, add `AM: { tiers: ["A"] }` here (its strings
+// are gone from IT; restore AM/AMsub). Weekly (Tier C) is hidden until it has items.
 const COUNT_TYPES = {
-  AM: { tiers: ["A"] },
   PM: { tiers: ["A", "B"] },
 };
 // ── ROLES ────────────────────────────────────────────────────
@@ -65,13 +66,13 @@ const itemsFor = type => ITEMS.filter(i => COUNT_TYPES[type].tiers.includes(i.ti
 
 const IT = {
   es: {
-    title: "Inventario", enterPin: "Escribe tu PIN", pinSub: "6 dígitos", checking: "Verificando…",
+    title: "Inventario", toKds: "◀ Estación", enterPin: "Escribe tu PIN", pinSub: "6 dígitos", checking: "Verificando…",
     badPin: "PIN incorrecto", locked: s => `Demasiados intentos. Espera ${s}s`,
     noNet: "Sin conexión. No se pudo verificar el PIN.", notConfigured: "PINs no configurados en el servidor.",
     role: { admin: "Admin", cook: "Cocinero", prep: "Preparadora", waitress: "Mesera" },
     noAccess: "Tu PIN no tiene permiso para hacer conteos.",
-    hello: n => `Hola, ${n}`, lock: "Salir", chooseCount: "¿Qué conteo vas a hacer?",
-    AM: "Conteo AM", AMsub: "Al empezar la mañana", PM: "Conteo PM", PMsub: "Al cerrar",
+    hello: n => `Hola, ${n}`, lock: "Salir", chooseCount: "Conteo de hoy",
+    PM: "Conteo PM", PMsub: "Al cerrar",
     resume: (n, total) => `Continuar · ${n}/${total}`, startedBy: n => `Empezado por ${n}`,
     lastSent: (who, when) => `✓ Enviado ${when} · ${who}`,
     pendingBanner: n => `${n} conteo(s) guardado(s) en esta tableta, esperando conexión…`,
@@ -87,13 +88,13 @@ const IT = {
     unit: { lb: "lb", each: "pzas" },
   },
   en: {
-    title: "Inventory", enterPin: "Enter your PIN", pinSub: "6 digits", checking: "Checking…",
+    title: "Inventory", toKds: "◀ KDS", enterPin: "Enter your PIN", pinSub: "6 digits", checking: "Checking…",
     badPin: "Wrong PIN", locked: s => `Too many tries. Wait ${s}s`,
     noNet: "No connection. Couldn't check the PIN.", notConfigured: "PINs aren't set up on the server.",
     role: { admin: "Admin", cook: "Cook", prep: "Prep", waitress: "Waitress" },
     noAccess: "Your PIN isn't allowed to do counts.",
-    hello: n => `Hi, ${n}`, lock: "Sign out", chooseCount: "Which count are you doing?",
-    AM: "AM count", AMsub: "Start of the morning", PM: "PM count", PMsub: "At close",
+    hello: n => `Hi, ${n}`, lock: "Sign out", chooseCount: "Today's count",
+    PM: "PM count", PMsub: "At close",
     resume: (n, total) => `Continue · ${n}/${total}`, startedBy: n => `Started by ${n}`,
     lastSent: (who, when) => `✓ Sent ${when} · ${who}`,
     pendingBanner: n => `${n} count(s) saved on this tablet, waiting for a connection…`,
@@ -602,7 +603,11 @@ export default function InventoryApp() {
   return (
     <div style={IS.root}>
       <div style={IS.nav}>
-        <span style={IS.navTitle}>📦 {t.title}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* Drafts live in localStorage, so leaving mid-count loses nothing. */}
+          <button style={IS.navBtn} onClick={() => { window.location.href = "/"; }}>{t.toKds}</button>
+          <span style={IS.navTitle}>📦 {t.title}</span>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {session && <span style={IS.navUser}>{t.hello(session.name)} · {t.role[session.role]}</span>}
           {session && <button style={IS.navBtn} onClick={() => { logAuth("signout", session); setSession(null); setActiveType(null); }}>🔒 {t.lock}</button>}
