@@ -117,6 +117,7 @@ const T = {
     selectRequired: "Selecciona las opciones requeridas",
     free: "gratis",
     expoDisplay: "Expo / Entrega",
+    inventory: "Inventario",
     readyForPickup: "LISTO PARA ENTREGAR",
     bumpOrder: "BUMP",
     waitingKitchen: "Esperando Cocina...",
@@ -224,6 +225,7 @@ const T = {
     selectRequired: "Please select required options",
     free: "free",
     expoDisplay: "Expo / Delivery",
+    inventory: "Inventory",
     readyForPickup: "READY FOR PICKUP",
     bumpOrder: "BUMP",
     waitingKitchen: "Waiting on Kitchen...",
@@ -3982,6 +3984,8 @@ export default function App() {
               </span>
             )}
           </button>
+          {/* Inventory is its own root in index.js, so this is a full page load, not a setView. */}
+          <button style={S.navBtn} onClick={() => { window.location.href = "/?screen=inventory"; }}>📦 {t.inventory}</button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {translating && <span style={S.translatingPill}>🌐 {t.translating}</span>}
