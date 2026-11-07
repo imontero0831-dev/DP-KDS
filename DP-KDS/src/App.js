@@ -438,10 +438,24 @@ const CLOVER_SALES_TAX_RATE_ID = "XWPY9F1BNGHSJ";
 
 function buildCloverOrderNote(order) {
   if (order.isToGo) return `${order.toGoName}${order.note ? " | " + order.note : ""}`;
-  if (order.isBar) return `B${order.table}${order.note ? " | " + order.note : ""}`;
-  if (order.isPatio) return `P${order.table}${order.note ? " | " + order.note : ""}`;
-  return `MESA ${order.table}${order.note ? " | " + order.note : ""}`;
+  // Items flagged To Go on a dine-in tab can't change the Clover order type
+  // (the tab is one dine-in check), so they ride along in the note instead.
+  const toGoItems = (order.items || []).filter(i => i.toGo && i.qty > 0);
+  const toGoNote = toGoItems.length ? ` | PARA LLEVAR: ${toGoItems.map(i => `${i.qty}x ${i.name}`).join(", ")}` : "";
+  const tail = `${order.note ? " | " + order.note : ""}${toGoNote}`;
+  if (order.isBar) return `B${order.table}${tail}`;
+  if (order.isPatio) return `P${order.table}${tail}`;
+  return `MESA ${order.table}${tail}`;
 }
+
+// The free "Dine In Chips" line the waitress screen seeds on every new
+// table / patio / bar order. It exists only on the KDS (so the cooks make it)
+// and never goes to Clover: it's $0, and keeping it out means no catalog
+// item to maintain and nothing for the POS to choke on.
+const DINE_IN_CHIPS_ITEM = {
+  id: "local-dine-in-chips", name: "Dine In Chips", nameEs: "Dine In Chips",
+  price: 0, emoji: "🍟", categoryId: null, catName: "Extras", noClover: true,
+};
 
 async function sendOrderToClover(order) {
   try {
@@ -460,6 +474,7 @@ async function sendOrderToClover(order) {
     // Clover to compute tax from and posts to the POS untaxed.
     const lineItems = [];
     for (const item of order.items) {
+      if (item.noClover) continue;
       const isSpecial = item.id.startsWith("special-");
       for (let unit = 0; unit < item.qty; unit++) {
         lineItems.push({
@@ -472,6 +487,7 @@ async function sendOrderToClover(order) {
         });
       }
     }
+    if (lineItems.length === 0) return undefined;
     const cloverOrder = await cloverRequest("atomic_order/orders", "POST", {
       orderCart: {
         orderType: { id: orderTypeId },
@@ -574,8 +590,14 @@ const MOCK_MENU = {
 // ============================================================
 // DIFF HELPER
 // ============================================================
+// Each entry carries `deltaQty` -- how many units actually changed -- so a
+// ticket that only shows the changes can say "+1 taco" instead of the new
+// total. A line the waitress zeroed out counts as removed (the edit UI keeps
+// zeroed lines around at qty 0 instead of deleting them).
 function diffItems(oldItems, newItems) {
-  const diffKey = i => i.id + "::" + (i.seat ?? "");
+  // Same identity as a cart line (item + seat + modifiers + note + to-go), so
+  // changing a line's modifiers or flipping it to-go shows as a change.
+  const diffKey = i => cartLineKey(i.id, i.seat, i.modifiers, i.specialNote, i.toGo);
   const result = [];
   const oldMap = {};
   oldItems.forEach(i => { oldMap[diffKey(i)] = i; });
@@ -583,13 +605,16 @@ function diffItems(oldItems, newItems) {
   newItems.forEach(i => { newMap[diffKey(i)] = i; });
   newItems.forEach(item => {
     const old = oldMap[diffKey(item)];
-    if (!old) result.push({ ...item, changeType: "added" });
-    else if (item.qty > old.qty) result.push({ ...item, changeType: "increased" });
-    else if (item.qty < old.qty) result.push({ ...item, changeType: "decreased" });
-    else result.push({ ...item, changeType: "unchanged" });
+    if (!old) {
+      if (item.qty > 0) result.push({ ...item, changeType: "added", deltaQty: item.qty });
+    }
+    else if (item.qty === 0 && old.qty > 0) result.push({ ...item, changeType: "removed", deltaQty: old.qty });
+    else if (item.qty > old.qty) result.push({ ...item, changeType: "increased", deltaQty: item.qty - old.qty });
+    else if (item.qty < old.qty) result.push({ ...item, changeType: "decreased", deltaQty: old.qty - item.qty });
+    else result.push({ ...item, changeType: "unchanged", deltaQty: 0 });
   });
   oldItems.forEach(item => {
-    if (!newMap[diffKey(item)]) result.push({ ...item, changeType: "removed" });
+    if (!newMap[diffKey(item)]) result.push({ ...item, changeType: "removed", deltaQty: item.qty });
   });
   return result;
 }
@@ -610,6 +635,7 @@ async function pushOrderToKitchen(order) {
 async function editKitchenOrder(orderId, oldItems, newItems, newNote) {
   const diff = diffItems(oldItems, newItems);
   const orderRef = doc(db, "orders", orderId);
+  const existing = (await getDoc(orderRef)).data() || {};
   const updates = {
     items: newItems,
     note: newNote,
@@ -619,14 +645,37 @@ async function editKitchenOrder(orderId, oldItems, newItems, newNote) {
     latestDiff: diff,
     editHistory: [],
   };
-  // If items were added/increased, the kitchen/drinks station hasn't cooked
-  // them yet — reset both ready flags so the ticket reappears on the active
-  // screen instead of staying invisible if it had already been marked done
-  // (e.g. a second round sent after the first round finished cooking).
-  if (diff.some(i => i.changeType === "added" || i.changeType === "increased")) {
-    updates.kitchenReady = false;
-    updates.drinksReady = false;
-  }
+
+  // A station whose ticket was already bumped (or never had anything to show)
+  // gets its ticket back showing ONLY what changed -- the new items and the
+  // removed ones -- instead of the whole order replayed. A station that's
+  // still mid-ticket keeps showing the full order, with the changes
+  // highlighted, so nothing it hasn't finished yet drops off the screen; if
+  // it's already in changes-only mode, further edits pile onto that list.
+  const changes = diff.filter(i => i.changeType !== "unchanged");
+  const adds = changes.filter(i => i.changeType === "added" || i.changeType === "increased");
+  const stations = [
+    {
+      flag: "kitchenReady", field: "kitchenDelta",
+      hadItems: orderHasKitchenItems({ items: oldItems }),
+      needs: adds.some(i => !isKitchenDimmed(i.name, i.catName || "")),
+    },
+    {
+      flag: "drinksReady", field: "drinksDelta",
+      hadItems: orderHasDrinksItems({ isToGo: existing.isToGo, items: oldItems }),
+      needs: existing.isToGo ? adds.length > 0 : adds.some(i => getDrinksRule(i.name, i.catName)),
+    },
+  ];
+  stations.forEach(({ flag, field, hadItems, needs }) => {
+    if (existing[flag] || !hadItems) {
+      // Bumped (or first time this station is involved): only comes back --
+      // with a fresh changes-only list -- if the edit added something it
+      // actually has to make. A removal alone doesn't resurrect a bumped ticket.
+      if (needs) { updates[flag] = false; updates[field] = changes; }
+    } else if (existing[field]) {
+      updates[field] = [...existing[field], ...changes];
+    }
+  });
   await updateDoc(orderRef, updates);
 }
 
@@ -1204,10 +1253,14 @@ const DRINKS_RULES = [
   },
 ];
 
-const TOGO_COLOR   = "#92400E";
-const TOGO_BG      = "#FEF3C7";
-const DINEIN_COLOR = "#1D4ED8";
-const DINEIN_BG    = "#EFF6FF";
+// To-go is the one stark red on the cook-facing screens so a bag order can't
+// be mistaken for a plate. Dine-in, bar and patio all share the plain white
+// look (their banners just carry different names: MESA 6, BARRA 1, PATIO 1).
+// Cancelled used to be this same red -- see S.cancelledBanner.
+const TOGO_COLOR   = "#DC2626";
+const TOGO_BG      = "#FEE2E2";
+const DINEIN_COLOR = "#1F2937";
+const DINEIN_BG    = "#FFFFFF";
 const BAR_COLOR    = "#7C3AED";
 const BAR_BG       = "#F3E8FF";
 const PATIO_COLOR  = "#0D9488";
@@ -1334,17 +1387,11 @@ function scalePx(px, scale = 1) {
 }
 
 function getOrderAccentColor(order) {
-  if (order.isToGo) return TOGO_COLOR;
-  if (order.isBar) return BAR_COLOR;
-  if (order.isPatio) return PATIO_COLOR;
-  return DINEIN_COLOR;
+  return order.isToGo ? TOGO_COLOR : DINEIN_COLOR;
 }
 
 function getOrderAccentBg(order) {
-  if (order.isToGo) return TOGO_BG;
-  if (order.isBar) return BAR_BG;
-  if (order.isPatio) return PATIO_BG;
-  return DINEIN_BG;
+  return order.isToGo ? TOGO_BG : DINEIN_BG;
 }
 
 function getDrinksRule(itemName, catName) {
@@ -1383,10 +1430,28 @@ function orderHasKitchenItems(order) {
 // KitchenScreen's card-count/MAX_VISIBLE accounting and GuestCheckTicket's
 // own render so both agree on how many cards an order actually needs.
 function getKitchenTicketItems(order, catNameById) {
-  const source = order.modified && order.latestDiff
-    ? order.latestDiff
-    : order.items.map(i => ({ ...i, changeType: "unchanged" }));
+  let source;
+  if (order.modified && order.kitchenDelta?.length) source = deltaView(order.kitchenDelta);
+  else if (order.modified && order.latestDiff) source = order.latestDiff;
+  else source = order.items.map(i => ({ ...i, changeType: "unchanged" }));
   return source.filter(i => !isKitchenDimmed(i.name, i.catName || catNameById[i.categoryId] || ""));
+}
+
+// Changes-only view (see editKitchenOrder): each entry's qty becomes the
+// amount that changed, so the ticket reads "+1 taco" / "2 removed" rather
+// than the order's new totals.
+function deltaView(entries) {
+  return entries.map(e => ({ ...e, qty: e.deltaQty ?? e.qty, isDelta: true }));
+}
+
+// Drinks/Sides station's item list: its own changes-only list after an edit
+// that came back to it, otherwise the whole order. Bottled beverages that
+// need no prep never appear (isDrinksTicketNoise).
+function getDrinksTicketItems(order, catNameById) {
+  const source = order.modified && order.drinksDelta?.length
+    ? deltaView(order.drinksDelta)
+    : (order.items || []).map(i => ({ ...i, changeType: "unchanged" }));
+  return source.filter(i => !isDrinksTicketNoise(i.name, i.catName || catNameById?.[i.categoryId] || ""));
 }
 
 // ============================================================
@@ -1714,22 +1779,31 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
   // on the ticket instead of a tiny inline tag per item — only when the
   // order actually has per-guest tagging; otherwise render flat as before.
   const hasSeats = items.some(i => i.seat);
-  const seatGroups = [];
-  const seatIndex = new Map();
-  items.forEach(item => {
-    const key = item.seat ?? null;
-    if (!seatIndex.has(key)) {
-      seatIndex.set(key, seatGroups.length);
-      seatGroups.push({ seat: key, items: [] });
-    }
-    seatGroups[seatIndex.get(key)].items.push(item);
-  });
+  const groupBySeat = (list) => {
+    const groups = [];
+    const index = new Map();
+    list.forEach(item => {
+      const key = item.seat ?? null;
+      if (!index.has(key)) {
+        index.set(key, groups.length);
+        groups.push({ seat: key, items: [] });
+      }
+      groups[index.get(key)].items.push(item);
+    });
+    return groups;
+  };
+  // Items the waitress tagged To Go on a dine-in tab get their own red block
+  // so the cook packs them instead of plating them.
+  const sections = [
+    { toGo: false, groups: groupBySeat(items.filter(i => !i.toGo)) },
+    { toGo: true,  groups: groupBySeat(items.filter(i => i.toGo)) },
+  ].filter(sec => sec.groups.length > 0);
 
   const changeStyle = (changeType) => {
     switch (changeType) {
-      case "added":     return { color: "#15803D", bg: "#F0FDF4" };
-      case "increased": return { color: "#15803D", bg: "#F0FDF4" };
-      case "decreased": return { color: "#D97706", bg: "#FFFBEB" };
+      case "added":     return { color: "#15803D", bg: "#F0FDF4", tagBg: "#15803D", label: "+ NUEVO" };
+      case "increased": return { color: "#15803D", bg: "#F0FDF4", tagBg: "#15803D", label: "+ MÁS" };
+      case "decreased": return { color: "#D97706", bg: "#FFFBEB", tagBg: "#D97706", label: "− MENOS" };
       case "removed":   return { color: "#BE202E", bg: "#FFF1F2", tagBg: "#BE202E", label: `✕ ${t.removed}` };
       default:          return { color: "#1A1A1A", bg: "transparent" };
     }
@@ -1759,11 +1833,11 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
         : "0 2px 10px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
     }}>
       {order.cancelled && <div style={S.cancelledBanner}>{t.cancelled}</div>}
-      {order.isToGo && <div style={S.toGoBanner}>{t.toGoLabel} — {order.toGoName}{isContinuation ? " CONT." : ""}</div>}
-      {order.isBar && <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>{t.barLabel} — {order.table}{isContinuation ? " CONT." : ""}</div>}
-      {order.isPatio && <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>{t.patioLabel} — {order.table}{isContinuation ? " CONT." : ""}</div>}
-      {!order.isToGo && !order.isBar && !order.isPatio && <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>{t.table2} — {order.table}{isContinuation ? " CONT." : ""}</div>}
-      {order.modified && !order.cancelled && <div style={S.modifiedBanner}>{t.modified}</div>}
+      {order.isToGo && <div style={{ ...S.toGoBanner, background: TOGO_COLOR }}>🥡 {t.toGoLabel} — {order.toGoName}{isContinuation ? " CONT." : ""}</div>}
+      {order.isBar && <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>{t.barLabel} {order.table}{isContinuation ? " CONT." : ""}</div>}
+      {order.isPatio && <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>{t.patioLabel} {order.table}{isContinuation ? " CONT." : ""}</div>}
+      {!order.isToGo && !order.isBar && !order.isPatio && <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>{t.table2} {order.table}{isContinuation ? " CONT." : ""}</div>}
+      {order.modified && !order.cancelled && <div className="modified-flash" style={S.modifiedBanner}>{t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket */}
       {isFocused && !isQueue && (
@@ -1792,7 +1866,10 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
       <div style={S.ruledLine} />
 
       <div style={S.itemsList}>
-        {seatGroups.map((group, gi) => (
+        {sections.map(sec => (
+          <div key={sec.toGo ? "togo" : "dine"} style={sec.toGo ? S.toGoBlock : undefined}>
+            {sec.toGo && <div style={S.toGoBlockHeader}>🥡 PARA LLEVAR</div>}
+            {sec.groups.map((group, gi) => (
           <div key={group.seat ?? "shared"}>
             {hasSeats && gi > 0 && <div style={{ ...S.plateDivider, margin: `${scalePx(6, scale)}px 14px 0` }} />}
             {hasSeats && (
@@ -1808,11 +1885,11 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
               const isRemoved = item.changeType === "removed" || isZeroed;
               return (
                 <div key={idx} style={{ ...S.itemRow, padding: `${scalePx(6, scale)}px 14px`, minHeight: scalePx(36, scale), background: order.cancelled ? "#FFF1F2" : isZeroed ? "#F3F4F6" : cs.bg, borderBottom: idx < group.items.length - 1 ? "1px solid #E5DFD0" : "none", opacity: isZeroed ? 0.35 : 1 }}>
-                  <span style={{ ...S.itemQty, fontSize: clampFont(FONT_ITEM_QTY, scale), width: clampFont(FONT_ITEM_QTY, scale), color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: isZeroed ? "line-through" : "none" }}>{item.qty}</span>
+                  <span style={{ ...S.itemQty, fontSize: clampFont(FONT_ITEM_QTY, scale), width: clampFont(FONT_ITEM_QTY, scale), color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: isZeroed ? "line-through" : "none" }}>{item.isDelta && item.changeType === "increased" ? "+" : item.isDelta && item.changeType === "decreased" ? "−" : ""}{item.qty}</span>
                   <div style={{ flex: 1 }}>
                     <span style={{ ...S.itemName, fontSize: clampFont(FONT_ITEM_NAME, scale), color: order.cancelled ? "#BE202E" : isZeroed ? "#9CA3AF" : cs.color, textDecoration: order.cancelled || isRemoved ? "line-through" : "none", fontWeight: item.changeType !== "unchanged" ? 900 : 700 }}>
                       {item.name}
-                      {cs.tagBg && !order.cancelled && !isZeroed && <span style={{ ...S.changeTag, fontSize: clampFont(FONT_COL, scale), background: cs.tagBg }}>{cs.label}</span>}
+                      {cs.tagBg && !order.cancelled && !isZeroed && (item.isDelta || item.changeType === "removed") && <span style={{ ...S.changeTag, fontSize: clampFont(FONT_COL, scale), background: cs.tagBg }}>{cs.label}</span>}
                     </span>
                     {item.modifiers && item.modifiers.length > 0 && (
                       <div style={{ ...S.ticketModifiers, marginTop: scalePx(4, scale) }}>
@@ -1839,6 +1916,8 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
                 </div>
               );
             })}
+          </div>
+            ))}
           </div>
         ))}
       </div>
@@ -2139,9 +2218,7 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
   const timerColor = isUrgent ? "#BE202E" : isWarning ? "#D97706" : "#15803D";
 
   const isContinuation = cardIndex > 0;
-  const drinksTicketItems = (order.items || []).filter(
-    i => !isDrinksTicketNoise(i.name, i.catName || catNameById?.[i.categoryId] || "")
-  );
+  const drinksTicketItems = getDrinksTicketItems(order, catNameById);
   const cardItems = buildTicketCards(drinksTicketItems)[cardIndex] || [];
 
   const ticketAccentColor = getOrderAccentColor(order);
@@ -2165,20 +2242,20 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
     }}>
       {order.isToGo && (
         <div style={{ ...S.toGoBanner, background: TOGO_COLOR }}>
-          PARA LLEVAR — {order.toGoName}{isContinuation ? " CONT." : ""}
+          🥡 PARA LLEVAR — {order.toGoName}{isContinuation ? " CONT." : ""}
         </div>
       )}
       {order.isBar && (
-        <div style={{ ...S.toGoBanner, background: BAR_COLOR }}>
-          BARRA — {order.table}{isContinuation ? " CONT." : ""}
+        <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>
+          BARRA {order.table}{isContinuation ? " CONT." : ""}
         </div>
       )}
       {order.isPatio && (
-        <div style={{ ...S.toGoBanner, background: PATIO_COLOR }}>
-          PATIO — {order.table}{isContinuation ? " CONT." : ""}
+        <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>
+          PATIO {order.table}{isContinuation ? " CONT." : ""}
         </div>
       )}
-      {order.modified && !order.cancelled && <div style={S.modifiedBanner}>{t.modified}</div>}
+      {order.modified && !order.cancelled && <div className="modified-flash" style={S.modifiedBanner}>{t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket, matches Kitchen's hint bar */}
       {isFocused && (
@@ -2226,10 +2303,16 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
               opacity: dimmed ? 0.3 : 1,
               borderBottom: idx < cardItems.length - 1 ? "1px solid #E5DFD0" : "none",
             }}>
-              <span style={{ ...S.itemQty, color }}>{item.qty}</span>
+              <span style={{ ...S.itemQty, color }}>{item.isDelta && item.changeType === "increased" ? "+" : item.isDelta && item.changeType === "decreased" ? "−" : ""}{item.qty}</span>
               <div style={{ flex: 1 }}>
-                <span style={{ ...S.itemName, color, fontWeight: rule ? 900 : 700 }}>
+                <span style={{ ...S.itemName, color, fontWeight: rule ? 900 : 700, textDecoration: item.changeType === "removed" ? "line-through" : "none" }}>
                   {item.name}
+                  {item.toGo && <span style={{ ...S.changeTag, background: TOGO_COLOR, color: "#fff", marginLeft: 6 }}>🥡 LLEVAR</span>}
+                  {item.isDelta && item.changeType !== "unchanged" && (
+                    <span style={{ ...S.changeTag, background: item.changeType === "removed" ? "#BE202E" : item.changeType === "decreased" ? "#D97706" : "#15803D", color: "#fff", marginLeft: 6 }}>
+                      {item.changeType === "removed" ? "✕ QUITAR" : item.changeType === "decreased" ? "− MENOS" : item.changeType === "increased" ? "+ MÁS" : "+ NUEVO"}
+                    </span>
+                  )}
                   {label && (
                     <span style={{ ...S.changeTag, background: color, color: "#fff", marginLeft: 6 }}>
                       {label}
@@ -2335,9 +2418,7 @@ function DrinksStationScreen({ lang, menu }) {
   const visible = useMemo(() => {
     const result = [];
     for (const order of active) {
-      const drinksTicketItems = (order.items || []).filter(
-        i => !isDrinksTicketNoise(i.name, i.catName || catNameById[i.categoryId] || "")
-      );
+      const drinksTicketItems = getDrinksTicketItems(order, catNameById);
       const cardCount = buildTicketCards(drinksTicketItems).length;
       if (result.length + cardCount > MAX_VISIBLE) break;
       for (let i = 0; i < cardCount; i++) {
@@ -2557,7 +2638,7 @@ function ExpoTicket({ order, catNameById, isFocused }) {
           <div style={{ fontSize: "clamp(18px, calc(10.578cqw - 18.46px), 45px)", fontWeight: 800, color: "#9B8B72", letterSpacing: "0.18em", textTransform: "uppercase" }}>
             {order.isToGo ? "Para Llevar" : order.isBar ? "Barra" : order.isPatio ? "Patio" : "Mesa"}
           </div>
-          <div style={{ fontSize: order.isToGo ? "clamp(20px, calc(17.308cqw - 38.85px), 65px)" : "clamp(39px, calc(35.096cqw - 80.57px), 130px)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : (order.isBar ? BAR_COLOR : order.isPatio ? PATIO_COLOR : "#1A1A1A"), textTransform: "uppercase", wordBreak: "break-word" }}>
+          <div style={{ fontSize: order.isToGo ? "clamp(20px, calc(17.308cqw - 38.85px), 65px)" : "clamp(39px, calc(35.096cqw - 80.57px), 130px)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em", color: allDone ? "#15803D" : (order.isToGo ? TOGO_COLOR : "#1A1A1A"), textTransform: "uppercase", wordBreak: "break-word" }}>
             {order.isToGo ? order.toGoName : order.table}
           </div>
         </div>
@@ -2566,7 +2647,13 @@ function ExpoTicket({ order, catNameById, isFocused }) {
         </div>
       </div>
 
-      {order.modified && <div style={{ background: "#7C3AED", color: "#fff", fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>MODIFICADA</div>}
+      {order.modified && <div className={!allDone && !order.delivered ? "modified-flash" : ""} style={{ background: "#7C3AED", color: "#fff", fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>MODIFICADA</div>}
+
+      {!order.isToGo && order.items?.some(i => i.toGo && i.qty > 0) && (
+        <div style={{ background: TOGO_COLOR, color: "#fff", fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", fontWeight: 900, padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          🥡 {order.items.filter(i => i.toGo && i.qty > 0).reduce((n, i) => n + i.qty, 0)} PARA LLEVAR
+        </div>
+      )}
 
       {/* Station columns */}
       <div style={{ display: "flex", flex: 1, minHeight: 100 }}>
@@ -2578,7 +2665,7 @@ function ExpoTicket({ order, catNameById, isFocused }) {
             </div>
             {kitchenItems.map((item, i) => (
               <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: order.kitchenReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.kitchenReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "break-word" }}>
-                <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}
+                <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}{item.toGo && <span style={{ color: TOGO_COLOR, fontWeight: 900 }}> 🥡</span>}
               </div>
             ))}
             <div style={{ marginTop: 8, background: order.kitchenReady ? "#DCFCE7" : order.status === "in_progress" ? "#FEF3C7" : "#F5F3F0", color: order.kitchenReady ? "#15803D" : order.status === "in_progress" ? "#D97706" : "#9CA3AF", borderRadius: 6, padding: "4px 8px", fontSize: "clamp(22px, calc(12.500cqw - 20.00px), 55px)", fontWeight: 800, textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" }}>
@@ -2595,7 +2682,7 @@ function ExpoTicket({ order, catNameById, isFocused }) {
             </div>
             {drinksItems.map((item, i) => (
               <div key={i} style={{ fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", fontWeight: 700, color: order.drinksReady ? "#9CA3AF" : "#1A1A1A", textDecoration: order.drinksReady ? "line-through" : "none", marginBottom: 3, lineHeight: 1.3, textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "break-word" }}>
-                <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}
+                <span style={{ fontWeight: 900 }}>{item.qty}×</span> {item.name}{item.toGo && <span style={{ color: TOGO_COLOR, fontWeight: 900 }}> 🥡</span>}
               </div>
             ))}
             <div style={{ marginTop: 8, background: order.drinksReady ? "#DCFCE7" : "#EDE9FE", color: order.drinksReady ? "#15803D" : "#7C3AED", borderRadius: 6, padding: "4px 8px", fontSize: "clamp(22px, calc(12.500cqw - 20.00px), 55px)", fontWeight: 800, textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" }}>
@@ -3111,9 +3198,9 @@ function getCategoryEmoji(cat) {
 
 // Distinguishes cart lines by item + seat + exact modifier set + note, so the
 // same item with different modifiers gets its own line instead of merging qty.
-function cartLineKey(id, seat, modifiers, specialNote) {
+function cartLineKey(id, seat, modifiers, specialNote, toGo) {
   const modKey = (modifiers || []).map(m => m.id).sort().join(",");
-  return `${id}|${seat ?? ""}|${modKey}|${specialNote || ""}`;
+  return `${id}|${seat ?? ""}|${modKey}|${specialNote || ""}|${toGo ? "T" : ""}`;
 }
 
 // Shortens the ordering-screen label for items whose full Clover name repeats
@@ -3177,6 +3264,9 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const [activeCategory, setActiveCategory] = useState(null);
   const [cart, setCart] = useState([]);
   const [activeSeat, setActiveSeat] = useState(null);
+  // "To Go" mode: while on, every item the waitress taps is tagged toGo so the
+  // cooks pack it up, but it stays on the same tab / same payment.
+  const [activeToGo, setActiveToGo] = useState(false);
   const [seatCount, setSeatCount] = useState(0);
   const MAX_SEATS = 4;
   const [orderType, setOrderType] = useState(initialOrderType || "table");
@@ -3232,7 +3322,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   // Exit swap mode if the targeted line disappears from the cart (e.g. its
   // qty was zeroed out via the − button while a replacement was pending).
   useEffect(() => {
-    if (swapTargetKey && !cart.some(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === swapTargetKey)) {
+    if (swapTargetKey && !cart.some(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote, c.toGo) === swapTargetKey)) {
       setSwapTargetKey(null);
     }
   }, [cart, swapTargetKey]);
@@ -3283,9 +3373,31 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   const cartTotal = cart.reduce((sum, i) => sum + (i.price + (i.modifiers?.reduce((ms, m) => ms + m.price, 0) ?? 0)) * i.qty, 0);
   const isEditing = !!editingOrder;
   const identifier = orderType === "togo" ? toGoName : orderType === "bar" ? barSeat : tableNum;
-  const canSend = identifier.trim() && (cart.length > 0 || isEditing);
+  // To Go tagging applies to tabs that keep going (table / patio / bar); real
+  // to-go orders are already all to-go.
+  const canTagToGo = orderType === "table" || orderType === "patio" || orderType === "bar";
+  // The free chips line alone isn't an order -- something real has to be on it.
+  const hasRealItem = cart.some(i => !i.autoChips && i.qty > 0);
+  const canSend = identifier.trim() && ((cart.length > 0 && hasRealItem) || isEditing);
   const isCancellingOrder = isEditing && cart.every(i => i.qty === 0);
-  const swapTargetItem = swapTargetKey ? cart.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === swapTargetKey) : null;
+
+  // Every new table / patio / bar order starts with one free Dine In Chips
+  // line so the cooks make a basket for the table. It's a normal cart line:
+  // the waitress can remove it, or bump the qty for a bigger table. Seeded
+  // once per order -- when the first item lands in an empty cart -- so
+  // removing it doesn't make it pop back, and never when editing an order
+  // that already exists.
+  const chipsSeededRef = useRef(false);
+  useEffect(() => {
+    if (cart.length === 0) { chipsSeededRef.current = false; return; }
+    if (isEditing || !canTagToGo || chipsSeededRef.current) return;
+    chipsSeededRef.current = true;
+    setCart(prev => prev.some(i => i.autoChips) ? prev : [
+      { ...DINE_IN_CHIPS_ITEM, displayName: DINE_IN_CHIPS_ITEM.name, qty: 1, modifiers: [], specialNote: null, seat: null, toGo: false, autoChips: true },
+      ...prev,
+    ]);
+  }, [cart, isEditing, canTagToGo]);
+  const swapTargetItem = swapTargetKey ? cart.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote, c.toGo) === swapTargetKey) : null;
 
   function getItemDisplayName(item) {
     if (ITEM_DISPLAY_OVERRIDES[item.name]) return ITEM_DISPLAY_OVERRIDES[item.name];
@@ -3304,18 +3416,19 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     if (swapTargetKey) {
       const targetKey = swapTargetKey;
       setSwapTargetKey(null);
-      setCart(prev => prev.map(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === targetKey
-        ? { ...item, catName, displayName: getItemDisplayName(item), qty: c.qty, modifiers: selectedMods, specialNote: specialNote || null, seat: c.seat }
+      setCart(prev => prev.map(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote, c.toGo) === targetKey
+        ? { ...item, catName, displayName: getItemDisplayName(item), qty: c.qty, modifiers: selectedMods, specialNote: specialNote || null, seat: c.seat, toGo: c.toGo || false }
         : c));
       return;
     }
 
     const seat = (orderType === "table" || orderType === "patio") ? activeSeat : null;
-    const newKey = cartLineKey(item.id, seat, selectedMods, specialNote || null);
+    const toGo = canTagToGo && activeToGo;
+    const newKey = cartLineKey(item.id, seat, selectedMods, specialNote || null, toGo);
     setCart(prev => {
-      const existing = prev.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === newKey);
+      const existing = prev.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote, c.toGo) === newKey);
       if (existing) return prev.map(c => c === existing ? { ...c, qty: c.qty + 1 } : c);
-      return [...prev, { ...item, catName, displayName: getItemDisplayName(item), qty: 1, modifiers: selectedMods, specialNote: specialNote || null, seat }];
+      return [...prev, { ...item, catName, displayName: getItemDisplayName(item), qty: 1, modifiers: selectedMods, specialNote: specialNote || null, seat, toGo }];
     });
   }
 
@@ -3332,13 +3445,13 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
     // with different descriptions/amounts must never collapse into one cart
     // line via cartLineKey matching on id.
     const id = `special-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    setCart(prev => [...prev, { id, categoryId, name, nameEs: name, price: amountCents, emoji: "⭐", catName, displayName: name, qty: 1, modifiers: [], specialNote: null, seat }]);
+    setCart(prev => [...prev, { id, categoryId, name, nameEs: name, price: amountCents, emoji: "⭐", catName, displayName: name, qty: 1, modifiers: [], specialNote: null, seat, toGo: canTagToGo && activeToGo }]);
   }
 
   function removeFromCart(target) {
-    const key = cartLineKey(target.id, target.seat, target.modifiers, target.specialNote);
+    const key = cartLineKey(target.id, target.seat, target.modifiers, target.specialNote, target.toGo);
     setCart(prev => {
-      const existing = prev.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === key);
+      const existing = prev.find(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote, c.toGo) === key);
       if (existing?.qty === 1) {
         if (isEditing) return prev.map(c => c === existing ? { ...c, qty: 0 } : c);
         return prev.filter(c => c !== existing);
@@ -3348,8 +3461,8 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   }
 
   function incrementCartItem(target) {
-    const key = cartLineKey(target.id, target.seat, target.modifiers, target.specialNote);
-    setCart(prev => prev.map(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote) === key ? { ...c, qty: c.qty + 1 } : c));
+    const key = cartLineKey(target.id, target.seat, target.modifiers, target.specialNote, target.toGo);
+    setCart(prev => prev.map(c => cartLineKey(c.id, c.seat, c.modifiers, c.specialNote, c.toGo) === key ? { ...c, qty: c.qty + 1 } : c));
   }
 
   function loadOrderForEdit(order) {
@@ -3365,7 +3478,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   }
 
   function cancelEdit() {
-    setEditingOrder(null); setCart([]); setNote(""); setTableNum(""); setToGoName(""); setToGoSlot(null); setBarSeat(""); setActiveSeat(null); setSeatCount(0);
+    setEditingOrder(null); setCart([]); setNote(""); setTableNum(""); setToGoName(""); setToGoSlot(null); setBarSeat(""); setActiveSeat(null); setActiveToGo(false); setSeatCount(0);
   }
 
   async function handleSend() {
@@ -3401,7 +3514,9 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
       // the same table — so check for one first and merge into it instead.
       const existing = await findActiveOrderForIdentifier();
       if (existing) {
-        const mergedItems = [...existing.items, ...cart.map(i => ({ ...i, name: i.name }))];
+        // The table already has its free chips on the existing order, so the
+        // auto-seeded line from this cart doesn't get added a second time.
+        const mergedItems = [...existing.items, ...cart.filter(i => !i.autoChips).map(i => ({ ...i, name: i.name }))];
         const mergedNote = [existing.note, note].filter(Boolean).join(" | ");
         await editKitchenOrder(existing.firestoreId, existing.items, mergedItems, mergedNote);
         const newCloverOrderId = await updateOrderInClover({ ...existing, items: mergedItems, note: mergedNote });
@@ -3431,7 +3546,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         onOrderSent?.(order);
       }
       setTimeout(() => {
-        setCart([]); setNote(""); setSent(false); setActiveSeat(null); setSeatCount(0);
+        setCart([]); setNote(""); setSent(false); setActiveSeat(null); setActiveToGo(false); setSeatCount(0);
         if (!initialTable && orderType !== "togo" && orderType !== "bar") { setTableNum(""); }
         if (orderType === "togo") { setToGoName(""); setToGoSlot(null); }
         if (orderType === "bar") setBarSeat("");
@@ -3623,15 +3738,20 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
         {/* RIGHT: cart */}
         <div style={{ ...S.cartPanel, ...(mainHeight ? { height: mainHeight, maxHeight: mainHeight } : {}) }}>
           <div style={S.cartTitle}>{t.orderSummary}</div>
-          {(orderType === "table" || orderType === "patio") && (
+          {canTagToGo && (
             <div style={S.seatChipRow}>
-              <button style={{ ...S.seatChip, ...(activeSeat === null ? S.seatChipActive : {}) }} onClick={() => setActiveSeat(null)}>{t.shared}</button>
-              {Array.from({ length: seatCount }, (_, i) => i + 1).map(n => (
-                <button key={n} style={{ ...S.seatChip, ...(activeSeat === n ? S.seatChipActive : {}) }} onClick={() => setActiveSeat(n)}>{t.guest} {n}</button>
-              ))}
-              {seatCount < MAX_SEATS && (
-                <button style={S.seatChipAdd} onClick={() => { const next = seatCount + 1; setSeatCount(next); setActiveSeat(next); }}>+</button>
+              {(orderType === "table" || orderType === "patio") && (
+                <>
+                  <button style={{ ...S.seatChip, ...(activeSeat === null ? S.seatChipActive : {}) }} onClick={() => setActiveSeat(null)}>{t.shared}</button>
+                  {Array.from({ length: seatCount }, (_, i) => i + 1).map(n => (
+                    <button key={n} style={{ ...S.seatChip, ...(activeSeat === n ? S.seatChipActive : {}) }} onClick={() => setActiveSeat(n)}>{t.guest} {n}</button>
+                  ))}
+                  {seatCount < MAX_SEATS && (
+                    <button style={S.seatChipAdd} onClick={() => { const next = seatCount + 1; setSeatCount(next); setActiveSeat(next); }}>+</button>
+                  )}
+                </>
               )}
+              <button style={{ ...S.seatChip, ...(activeToGo ? S.toGoChipActive : S.toGoChipIdle) }} onClick={() => setActiveToGo(v => !v)}>🥡 {t.toGoLabel}</button>
             </div>
           )}
           <div style={{ ...S.cartScrollArea, paddingBottom: footerHeight + 14 }}>
@@ -3655,14 +3775,14 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                       </div>
                     )}
                     {group.items.map(item => {
-                      const lineKey = cartLineKey(item.id, item.seat, item.modifiers, item.specialNote);
+                      const lineKey = cartLineKey(item.id, item.seat, item.modifiers, item.specialNote, item.toGo);
                       const isSwapTarget = swapTargetKey === lineKey;
                       return (
                       <div key={lineKey} style={{ ...S.cartRow, opacity: item.qty === 0 ? 0.4 : 1, textDecoration: item.qty === 0 ? "line-through" : "none", ...(isSwapTarget ? S.cartRowSwapping : {}) }}>
                         <div
                           style={{ flex: 1, cursor: item.qty > 0 ? "pointer" : "default" }}
                           onClick={() => {
-                            if (item.qty === 0) return;
+                            if (item.qty === 0 || item.autoChips) return;
                             if (isSwapTarget) {
                               setSwapTargetKey(null);
                             } else {
@@ -3673,8 +3793,9 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
                         >
                           <span style={S.cartName}>
                             {item.emoji} {item.displayName || item.name}
+                            {item.toGo && <span style={S.cartToGoTag}>🥡 {t.toGoLabel}</span>}
                             {ITEM_DISPLAY_OVERRIDES[item.name] && item.catName && <span style={S.cartCatTag}>{item.catName}</span>}
-                            {item.qty > 0 && <span style={S.cartSwapHint}>✎</span>}
+                            {item.qty > 0 && !item.autoChips && <span style={S.cartSwapHint}>✎</span>}
                           </span>
                           {item.modifiers && item.modifiers.length > 0 && (
                             <div style={S.cartModifiers}>
@@ -4158,7 +4279,9 @@ const S = {
 
   // TICKET
   ticket: { background: "#FFFDF7", border: "1px solid #E0D8C4", borderRadius: 3, overflow: "hidden", transition: "all 0.3s", fontFamily: "'DM Sans', 'Segoe UI', sans-serif" },
-  cancelledBanner: { background: "#BE202E", color: "#fff", fontWeight: 900, fontSize: "clamp(24px, calc(21.635cqw - 49.81px), 80px)", padding: "8px 14px", textAlign: "center", letterSpacing: "0.08em", textTransform: "uppercase" },
+  cancelledBanner: { background: "#111827", color: "#fff", fontWeight: 900, fontSize: "clamp(24px, calc(21.635cqw - 49.81px), 80px)", padding: "8px 14px", textAlign: "center", letterSpacing: "0.08em", textTransform: "uppercase" },
+  toGoBlock: { border: "4px solid #DC2626", background: "#FEE2E2", margin: "8px 6px", borderRadius: 6 },
+  toGoBlockHeader: { background: "#DC2626", color: "#fff", fontWeight: 900, fontSize: "clamp(20px, calc(11.539cqw - 19.23px), 50px)", padding: "3px 10px", textAlign: "center", letterSpacing: "0.06em" },
   toGoBanner: { background: "#0369A1", color: "#fff", fontWeight: 900, fontSize: "clamp(20px, calc(17.308cqw - 38.85px), 65px)", padding: "6px 14px", textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" },
   modifiedBanner: { background: "#7C3AED", color: "#fff", fontWeight: 900, fontSize: "clamp(24px, calc(13.942cqw - 23.65px), 60px)", padding: "5px 14px", textAlign: "center", letterSpacing: "0.05em", textTransform: "uppercase" },
   ticketTop: { display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", padding: "10px 14px 8px 14px", background: "#F5EFE0" },
@@ -4248,6 +4371,9 @@ const S = {
   cartSwapHint: { fontSize: 11, color: "#AAA" },
   seatChipRow: { display: "flex", gap: 4, flexWrap: "wrap", padding: "0 14px 10px", flexShrink: 0 },
   seatChip: { background: "#F5F3F0", border: "1px solid #DDD", borderRadius: 8, padding: "4px 9px", fontSize: 11, fontWeight: 700, color: "#888", cursor: "pointer", whiteSpace: "nowrap" },
+  cartToGoTag: { marginLeft: 6, background: "#DC2626", color: "#fff", borderRadius: 5, padding: "1px 6px", fontSize: 10, fontWeight: 800, textTransform: "uppercase" },
+  toGoChipIdle: { color: "#DC2626", borderColor: "#DC2626", background: "#fff" },
+  toGoChipActive: { background: "#DC2626", color: "#fff", borderColor: "#DC2626" },
   seatChipActive: { background: "#BE202E", color: "#fff", borderColor: "#BE202E" },
   seatChipAdd: { background: "#F5F3F0", border: "1px dashed #AAA", borderRadius: 8, padding: "4px 11px", fontSize: 13, fontWeight: 900, color: "#555", cursor: "pointer", whiteSpace: "nowrap" },
   cartGroupHeader: { fontSize: 10, fontWeight: 800, color: "#9B8B72", letterSpacing: "0.1em", textTransform: "uppercase", padding: "10px 0 2px", display: "flex", justifyContent: "space-between" },
