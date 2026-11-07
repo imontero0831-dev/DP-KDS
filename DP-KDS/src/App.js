@@ -3340,15 +3340,24 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   // top and this screen's own top edge, and size to exactly what's left.
   // No body-scroll locking here — if this is ever off by a few px, the
   // page can still fall back to scrolling instead of getting stuck.
+  // 2026-11-07: the bottom-right (note box / total / Send button) was getting
+  // cut off on the tablet. Sizing this screen as `innerHeight - top`, measured
+  // once and on body resizes, overshot whenever innerHeight wasn't the truly
+  // visible height (or the nav changed height later). Now the screen is
+  // position:fixed -- its bottom edge is pinned to the viewport by CSS, so it
+  // can't overrun -- and only the top (the sticky nav's bottom edge) is
+  // measured. Panel heights come from the root's real rendered height.
+  const [rootTop, setRootTop] = useState(null);
   useEffect(() => {
+    const nav = document.querySelector("[data-app-nav]");
     function recalc() {
-      if (!rootRef.current) return;
-      const top = rootRef.current.getBoundingClientRect().top;
-      setRootHeight(Math.max(300, window.innerHeight - top));
+      setRootTop(nav ? Math.round(nav.getBoundingClientRect().bottom) : null);
+      if (rootRef.current) setRootHeight(rootRef.current.getBoundingClientRect().height);
     }
     recalc();
     const ro = new ResizeObserver(recalc);
-    ro.observe(document.body);
+    if (nav) ro.observe(nav);
+    if (rootRef.current) ro.observe(rootRef.current);
     window.addEventListener("resize", recalc);
     window.addEventListener("orientationchange", recalc);
     return () => {
@@ -3568,7 +3577,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   }
 
   return (
-    <div ref={rootRef} style={{ ...S.waiterRoot, ...(rootHeight ? { height: rootHeight } : {}) }}>
+    <div ref={rootRef} style={{ ...S.waiterRoot, ...(rootTop != null ? { position: "fixed", left: 0, right: 0, bottom: 0, top: rootTop, height: "auto", zIndex: 70 } : {}) }}>
       {modModalItem && (
         <ModifierModal
           item={modModalItem}
@@ -4089,7 +4098,7 @@ export default function App() {
   return (
     <div style={S.appRoot}>
       {pinOpen && <PinModal onSuccess={() => { setPinOpen(false); setView("history"); }} onClose={() => setPinOpen(false)} />}
-      <div style={S.nav}>
+      <div data-app-nav style={S.nav}>
         <div style={S.navLeft}>
           <button style={{ ...S.navBtn, ...((view === "tables" || view === "waiter") ? S.navBtnActive : {}) }} onClick={() => { setOrderContext(null); setView("tables"); }}>🍽️ {t.orderStation}</button>
           <button style={{ ...S.navBtn, ...(view === "kitchen" ? S.navBtnActive : {}) }} onClick={() => setView("kitchen")}>
@@ -4359,7 +4368,7 @@ const S = {
   // CART
   cartPanel: { width: 300, flexShrink: 0, background: "#FFFFFF", borderLeft: "2px solid #E5E0D8", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, position: "relative" },
   cartScrollArea: { flex: 1, overflowY: "auto", padding: "0 14px", minHeight: 0 },
-  cartFooterArea: { borderTop: "1px solid #E5E0D8", padding: "10px 14px", position: "absolute", left: 0, right: 0, bottom: 0, background: "#FFFFFF", zIndex: 2, boxShadow: "0 -2px 8px rgba(0,0,0,0.06)" },
+  cartFooterArea: { borderTop: "1px solid #E5E0D8", padding: "10px 14px calc(14px + env(safe-area-inset-bottom, 0px))", position: "absolute", left: 0, right: 0, bottom: 0, background: "#FFFFFF", zIndex: 2, boxShadow: "0 -2px 8px rgba(0,0,0,0.06)" },
   cartTitle: { fontSize: 10, fontWeight: 800, color: "#AAA", letterSpacing: "0.12em", textTransform: "uppercase", padding: "12px 14px 8px", flexShrink: 0 },
   cartEmpty: { color: "#BBB", fontSize: 13, textAlign: "center", padding: "6px 0" },
   cartCancelWarning: { color: "#BE202E", fontSize: 13, fontWeight: 700, textAlign: "center", padding: "8px", background: "#FFF1F2", borderRadius: 8, marginBottom: 8 },
