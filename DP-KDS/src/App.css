@@ -63,13 +63,3 @@
   60% { transform: translateX(-6px); }
   80% { transform: translateX(6px); }
 }
-
-/* Modified tickets flash purple/yellow until the cook bumps them. */
-@keyframes modified-flash {
-  0%, 100% { background: #7C3AED; color: #fff; }
-  50% { background: #FACC15; color: #1A1A1A; }
-}
-
-.modified-flash {
-  animation: modified-flash 0.9s steps(1, end) infinite;
-}

@@ -11,3 +11,14 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* Modified tickets flash purple/yellow until the cook bumps them.
+   Lives here, not App.css: App.css is never imported, so nothing in it loads. */
+@keyframes modified-flash {
+  0%, 100% { background: #7C3AED; color: #fff; }
+  50% { background: #FACC15; color: #1A1A1A; }
+}
+
+.modified-flash {
+  animation: modified-flash 0.9s steps(1, end) infinite;
+}
