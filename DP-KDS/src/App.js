@@ -3299,7 +3299,11 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   // clip against no matter how that's implemented.
   useEffect(() => {
     if (!headerRef.current) return;
-    const ro = new ResizeObserver(([entry]) => setHeaderHeight(entry.contentRect.height));
+    // Border-box height, NOT entry.contentRect: contentRect leaves out the
+    // header's padding + border (~21px), which made mainHeight that much too
+    // tall, so the cart panel overran the screen and its footer (total + Send
+    // button) got clipped at the bottom.
+    const ro = new ResizeObserver(([entry]) => setHeaderHeight(entry.target.getBoundingClientRect().height));
     ro.observe(headerRef.current);
     return () => ro.disconnect();
   }, []);
