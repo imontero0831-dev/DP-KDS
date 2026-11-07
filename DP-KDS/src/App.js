@@ -3318,7 +3318,7 @@ function WaiterScreen({ menu, onOrderSent, lang, initialTable, initialOrderType,
   // scroll area instead.
   useEffect(() => {
     if (!footerRef.current) return;
-    const ro = new ResizeObserver(([entry]) => setFooterHeight(entry.contentRect.height));
+    const ro = new ResizeObserver(([entry]) => setFooterHeight(entry.target.getBoundingClientRect().height));
     ro.observe(footerRef.current);
     return () => ro.disconnect();
   }, []);
