@@ -3019,6 +3019,19 @@ function toGoLayout(n) {
   return { cols: 8, gap: 6, density: "tiny" };
 }
 
+// Look of the + / − tiles in the Para Llevar grid: same footprint and corner
+// radius as a slot tile, dashed outline so they read as controls, not slots.
+function toGoControlStyle(density, color, enabled) {
+  const d = TILE_DENSITY[density] || { card: {} };
+  const minHeight = density === "tiny" ? 56 : density === "compact" ? 84 : 110;
+  return {
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+    background: "transparent", color, border: `2px dashed ${color}`, borderRadius: d.card.borderRadius || 16,
+    minWidth: 0, minHeight, padding: 0,
+    opacity: enabled ? 1 : 0.35, cursor: enabled ? "pointer" : "not-allowed",
+  };
+}
+
 // Tile style overrides per density; "normal" is the stock S.tableCard look.
 const TILE_DENSITY = {
   compact: {
@@ -3233,26 +3246,30 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
       <div style={S.floorDivider} />
 
       <div style={{ ...S.sectionLabel, color: TOGO_COLOR }}>🥡 Para Llevar</div>
-      <div style={S.toGoRow}>
-        <div style={{ ...S.tableGrid, flex: 1, minWidth: 0, margin: 0, gridTemplateColumns: `repeat(${toGoGrid.cols}, minmax(0, 1fr))`, gap: toGoGrid.gap }}>
-          {toGoSlots.map(num => renderFloorTile(num, activeByToGoSlot, {
-            onSelect: onSelectToGo, onDetail: setDetailToGo, closeLabel: "✓ Cerrar", freeStyle: S.tableCardFreeToGo,
-            getSubtitle: (order) => order.toGoName, density: toGoGrid.density,
-          }))}
-        </div>
-        <div style={S.toGoBtnCol}>
-          {toGoSlotCount < TOGO_MAX_SLOTS && (
-            <button style={S.toGoAddBtn} onClick={addToGoSlot} aria-label="Agregar espacio para llevar">+</button>
-          )}
-          {toGoSlotCount > TOGO_SLOTS.length && (
-            <button
-              style={{ ...S.toGoAddBtn, flex: "0 0 44px", borderStyle: "solid", opacity: canRemoveToGoSlot ? 1 : 0.35, cursor: canRemoveToGoSlot ? "pointer" : "not-allowed" }}
-              onClick={removeToGoSlot}
-              disabled={!canRemoveToGoSlot}
-              aria-label={`Quitar espacio para llevar ${toGoSlotCount}`}
-            >−</button>
-          )}
-        </div>
+      <div style={{ ...S.tableGrid, gridTemplateColumns: `repeat(${toGoGrid.cols}, minmax(0, 1fr))`, gap: toGoGrid.gap }}>
+        {toGoSlots.map(num => renderFloorTile(num, activeByToGoSlot, {
+          onSelect: onSelectToGo, onDetail: setDetailToGo, closeLabel: "✓ Cerrar", freeStyle: S.tableCardFreeToGo,
+          getSubtitle: (order) => order.toGoName, density: toGoGrid.density,
+        }))}
+        {/* Add / remove controls ride in the grid as tiles, so they auto-flow
+            into the free cells after the last slot and wrap with it. */}
+        {toGoSlotCount < TOGO_MAX_SLOTS && (
+          <button style={toGoControlStyle(toGoGrid.density, TOGO_COLOR, true)} onClick={addToGoSlot} aria-label="Agregar espacio para llevar">
+            <span style={S.toGoCtlGlyph}>+</span>
+            {toGoGrid.density !== "tiny" && <span style={S.toGoCtlLabel}>Agregar</span>}
+          </button>
+        )}
+        {toGoSlotCount > TOGO_SLOTS.length && (
+          <button
+            style={toGoControlStyle(toGoGrid.density, "#6B7280", canRemoveToGoSlot)}
+            onClick={removeToGoSlot}
+            disabled={!canRemoveToGoSlot}
+            aria-label={`Quitar espacio para llevar ${toGoSlotCount}`}
+          >
+            <span style={S.toGoCtlGlyph}>−</span>
+            {toGoGrid.density !== "tiny" && <span style={S.toGoCtlLabel}>Quitar {toGoSlotCount}</span>}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -4291,9 +4308,8 @@ const S = {
   tableSelectTitle: { fontSize: 26, fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em" },
   tableSelectSub: { display: "block", fontSize: 13, color: "#888", marginTop: 4 },
   sectionLabel: { fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", color: "#999", textTransform: "uppercase", maxWidth: 600, width: "100%", margin: "22px auto 10px", textAlign: "left" },
-  toGoRow: { display: "flex", alignItems: "stretch", gap: 10, maxWidth: 600, margin: "0 auto", width: "100%" },
-  toGoBtnCol: { flex: "0 0 44px", display: "flex", flexDirection: "column", gap: 8 },
-  toGoAddBtn: { flex: 1, width: "100%", background: "#fff", color: TOGO_COLOR, border: `2px dashed ${TOGO_COLOR}`, borderRadius: 12, fontSize: 28, fontWeight: 900, cursor: "pointer", padding: 0, lineHeight: 1 },
+  toGoCtlGlyph: { fontSize: 40, fontWeight: 300, lineHeight: 1 },
+  toGoCtlLabel: { fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" },
   floorDivider: { height: 1, background: "#E5E0D8", maxWidth: 600, width: "100%", margin: "24px auto 0" },
   tableGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18, maxWidth: 600, margin: "0 auto", width: "100%" },
   tableCard: { borderRadius: 16, padding: "24px 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", border: "2px solid transparent", transition: "all 0.15s", userSelect: "none" },
