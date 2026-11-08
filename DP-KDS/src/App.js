@@ -3007,18 +3007,44 @@ const TABLES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const PATIO_TABLES = [1, 2, 3, 4];
 const BAR_SEATS = [1, 2, 3, 4];
 const TOGO_SLOTS = [1, 2, 3, 4];
+const TOGO_MAX_SLOTS = 24;
+const TOGO_COUNT_KEY = "dpkds.toGoSlotCount";
+
+// Auto-layout for the Para Llevar grid. Up to 8 slots it stays full-size and
+// just wraps onto a new row of 4; past that it packs more, thinner tiles per
+// row (6, then 8) with a denser tile so a rush doesn't push the list off screen.
+function toGoLayout(n) {
+  if (n <= 8) return { cols: 4, gap: 18, density: "normal" };
+  if (n <= 12) return { cols: 6, gap: 10, density: "compact" };
+  return { cols: 8, gap: 6, density: "tiny" };
+}
+
+// Tile style overrides per density; "normal" is the stock S.tableCard look.
+const TILE_DENSITY = {
+  compact: {
+    card: { padding: "12px 6px", borderRadius: 12, gap: 3, minWidth: 0 },
+    num: { fontSize: 32 }, sub: { fontSize: 11 }, small: { fontSize: 10 },
+    btn: { padding: "4px 8px", fontSize: 10, marginTop: 3 },
+  },
+  tiny: {
+    card: { padding: "8px 3px", borderRadius: 10, gap: 2, minWidth: 0 },
+    num: { fontSize: 24 }, sub: { fontSize: 10 }, small: { fontSize: 9 },
+    btn: { padding: "3px 5px", fontSize: 9, marginTop: 2 },
+  },
+};
 
 // Shared tile for a single table/seat, reused by the Mesas, Patio, and
 // Barra sections — they all follow the same open/occupied/close pattern,
 // just against a different orders-by-key map and free-state accent color.
-function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onClose, closeLabel, freeStyle, subtitle, syncWarning }) {
+function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onClose, closeLabel, freeStyle, subtitle, syncWarning, density = "normal" }) {
+  const d = TILE_DENSITY[density] || { card: {}, num: {}, sub: {}, small: {}, btn: {} };
   return (
     <div
-      style={{ ...S.tableCard, ...(occupied ? S.tableCardOccupied : (freeStyle || S.tableCardFree)) }}
+      style={{ ...S.tableCard, ...(occupied ? S.tableCardOccupied : (freeStyle || S.tableCardFree)), ...d.card }}
       onClick={onOpen}
     >
-      <div style={S.tableCardNum}>{num}</div>
-      <div style={{ ...S.tableCardLabel, color: occupied ? "#92400E" : "#15803D" }}>
+      <div style={{ ...S.tableCardNum, ...d.num }}>{num}</div>
+      <div style={{ ...S.tableCardLabel, ...d.small, color: occupied ? "#92400E" : "#15803D" }}>
         {occupied ? "OCUPADA" : "LIBRE"}
       </div>
       {occupied && syncWarning && (
@@ -3028,11 +3054,11 @@ function FloorTile({ num, occupied, itemCount, earliest, isClosing, onOpen, onCl
       )}
       {occupied && (
         <>
-          {subtitle && <div style={S.tableCardSubtitle}>{subtitle}</div>}
-          <div style={S.tableCardItems}>{itemCount} artículo{itemCount !== 1 ? "s" : ""}</div>
-          <div style={S.tableCardTimer}>{elapsed(earliest)}</div>
+          {subtitle && <div style={{ ...S.tableCardSubtitle, ...d.sub, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subtitle}</div>}
+          <div style={{ ...S.tableCardItems, ...d.small }}>{itemCount} artículo{itemCount !== 1 ? "s" : ""}</div>
+          <div style={{ ...S.tableCardTimer, ...d.small }}>{elapsed(earliest)}</div>
           <button
-            style={{ ...S.tableCardCloseBtn, opacity: isClosing ? 0.5 : 1 }}
+            style={{ ...S.tableCardCloseBtn, ...d.btn, opacity: isClosing ? 0.5 : 1 }}
             onClick={onClose}
             disabled={isClosing}
           >
@@ -3052,6 +3078,16 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
   const [detailBarSeat, setDetailBarSeat] = useState(null);
   const [detailPatio, setDetailPatio] = useState(null);
   const [detailToGo, setDetailToGo] = useState(null);
+  // How many Para Llevar slots to show. Starts at 4, "+" adds one when they
+  // run out. Remembered per device; never shows fewer than the highest slot
+  // that still has an open order, so a live order can't vanish from the grid.
+  const [toGoCount, setToGoCount] = useState(() => {
+    try {
+      const n = parseInt(localStorage.getItem(TOGO_COUNT_KEY), 10);
+      if (n >= TOGO_SLOTS.length && n <= TOGO_MAX_SLOTS) return n;
+    } catch (e) { /* storage unavailable -- default is fine */ }
+    return TOGO_SLOTS.length;
+  });
 
   useEffect(() => {
     const q = query(collection(db, "orders"), orderBy("timestamp", "asc"));
@@ -3082,6 +3118,16 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
     activeByToGoSlot[o.toGoSlot].push(o);
   });
 
+  const highestActiveToGo = Math.max(0, ...Object.keys(activeByToGoSlot).map(Number).filter(Number.isFinite));
+  const toGoSlotCount = Math.min(TOGO_MAX_SLOTS, Math.max(toGoCount, highestActiveToGo));
+  const toGoSlots = Array.from({ length: toGoSlotCount }, (_, i) => i + 1);
+  const toGoGrid = toGoLayout(toGoSlotCount);
+  function addToGoSlot() {
+    const next = Math.min(TOGO_MAX_SLOTS, toGoSlotCount + 1);
+    setToGoCount(next);
+    try { localStorage.setItem(TOGO_COUNT_KEY, String(next)); } catch (e) { /* ignore */ }
+  }
+
   async function handleClose(key, ordersByKey, e) {
     e.stopPropagation();
     setClosing(key);
@@ -3089,7 +3135,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
     setClosing(null);
   }
 
-  function renderFloorTile(num, ordersByKey, { onSelect, onDetail, closeLabel, freeStyle, getSubtitle }) {
+  function renderFloorTile(num, ordersByKey, { onSelect, onDetail, closeLabel, freeStyle, getSubtitle, density }) {
     const key = num.toString();
     const tileOrders = ordersByKey[key] || [];
     const occupied = tileOrders.length > 0;
@@ -3110,6 +3156,7 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
         freeStyle={freeStyle}
         subtitle={occupied && getSubtitle ? getSubtitle(tileOrders[0]) : null}
         syncWarning={syncWarning}
+        density={density}
       />
     );
   }
@@ -3180,11 +3227,16 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
 
       <div style={S.floorDivider} />
 
-      <div style={{ ...S.sectionLabel, color: TOGO_COLOR }}>🥡 Para Llevar</div>
-      <div style={{ ...S.tableGrid, gridTemplateColumns: "repeat(4, 1fr)" }}>
-        {TOGO_SLOTS.map(num => renderFloorTile(num, activeByToGoSlot, {
+      <div style={{ ...S.sectionLabel, color: TOGO_COLOR, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>🥡 Para Llevar</span>
+        {toGoSlotCount < TOGO_MAX_SLOTS && (
+          <button style={S.toGoAddBtn} onClick={addToGoSlot}>+ Agregar</button>
+        )}
+      </div>
+      <div style={{ ...S.tableGrid, gridTemplateColumns: `repeat(${toGoGrid.cols}, minmax(0, 1fr))`, gap: toGoGrid.gap }}>
+        {toGoSlots.map(num => renderFloorTile(num, activeByToGoSlot, {
           onSelect: onSelectToGo, onDetail: setDetailToGo, closeLabel: "✓ Cerrar", freeStyle: S.tableCardFreeToGo,
-          getSubtitle: (order) => order.toGoName,
+          getSubtitle: (order) => order.toGoName, density: toGoGrid.density,
         }))}
       </div>
     </div>
@@ -4224,6 +4276,7 @@ const S = {
   tableSelectTitle: { fontSize: 26, fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em" },
   tableSelectSub: { display: "block", fontSize: 13, color: "#888", marginTop: 4 },
   sectionLabel: { fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", color: "#999", textTransform: "uppercase", maxWidth: 600, width: "100%", margin: "22px auto 10px", textAlign: "left" },
+  toGoAddBtn: { background: "#fff", color: TOGO_COLOR, border: `2px solid ${TOGO_COLOR}`, borderRadius: 8, padding: "4px 12px", fontSize: 12, fontWeight: 900, cursor: "pointer", letterSpacing: "0.04em", textTransform: "none" },
   floorDivider: { height: 1, background: "#E5E0D8", maxWidth: 600, width: "100%", margin: "24px auto 0" },
   tableGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18, maxWidth: 600, margin: "0 auto", width: "100%" },
   tableCard: { borderRadius: 16, padding: "24px 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", border: "2px solid transparent", transition: "all 0.15s", userSelect: "none" },
