@@ -666,6 +666,17 @@ async function editKitchenOrder(orderId, oldItems, newItems, newNote) {
       needs: existing.isToGo ? adds.length > 0 : adds.some(i => getDrinksRule(i.name, i.catName)),
     },
   ];
+
+  // Which stations this edit actually touched (any change -- add, remove, more,
+  // less -- to an item that station makes). The MODIFICADA banner and the
+  // modified chime key off this so a station isn't flagged for an edit that
+  // has nothing to do with it. Sticky per station via kitchenModified /
+  // drinksModified; lastEdit is just this edit, for the chime.
+  const kitchenTouched = changes.some(i => !isKitchenDimmed(i.name, i.catName || ""));
+  const drinksTouched = existing.isToGo ? changes.length > 0 : changes.some(i => getDrinksRule(i.name, i.catName));
+  updates.kitchenModified = (existing.kitchenModified ?? !!existing.modified) || kitchenTouched;
+  updates.drinksModified = (existing.drinksModified ?? !!existing.modified) || drinksTouched;
+  updates.lastEdit = { kitchen: kitchenTouched, drinks: drinksTouched };
   stations.forEach(({ flag, field, hadItems, needs }) => {
     if (existing[flag] || !hadItems) {
       // Bumped (or first time this station is involved): only comes back --
@@ -1049,7 +1060,14 @@ function playDrinksAlertTone() {
 // order it flags true for also gets playDrinksAlertTone layered on after
 // the normal chime (see playDrinksAlertTone above for why that lives here
 // instead of on KDS2 itself).
-function useOrderChimes(orders, needsDrinksAlert) {
+//
+// `byEdit` (KDS1 only) makes an edit chime by what it actually touched:
+// the modified chime only if it changed a kitchen item, the drinks alert only
+// if it changed a drink/side -- so a food-only edit doesn't also page Ausencia
+// just because the order has a drink on it, and a drinks-only edit doesn't
+// sound like a kitchen change. Orders edited before `lastEdit` existed (and
+// edits that changed neither, e.g. a note) keep the old always-chime behavior.
+function useOrderChimes(orders, needsDrinksAlert, byEdit = false) {
   const prevMapRef = useRef(null);
   const key = orders.map(o => `${o.firestoreId}:${o.lastModified || o.timestamp}`).join(",");
   useEffect(() => {
@@ -1069,10 +1087,15 @@ function useOrderChimes(orders, needsDrinksAlert) {
           setTimeout(playCancelledTone, delay);
           delay += 400;
         } else if (isModified) {
-          setTimeout(playOrderModifiedChime, delay);
-          delay += 400;
+          const le = byEdit ? orderById.get(id)?.lastEdit : null;
+          if (!le || le.kitchen || !le.drinks) {
+            setTimeout(playOrderModifiedChime, delay);
+            delay += 400;
+          }
         }
-        if ((isNew || isModified) && !isCancelled && needsDrinksAlert?.(orderById.get(id))) {
+        const le = isModified && byEdit ? orderById.get(id)?.lastEdit : null;
+        const drinksRelevant = !le || le.drinks || !le.kitchen;
+        if ((isNew || isModified) && !isCancelled && drinksRelevant && needsDrinksAlert?.(orderById.get(id))) {
           setTimeout(playDrinksAlertTone, delay);
           delay += 400;
         }
@@ -1419,6 +1442,16 @@ function orderNeedsDrinksStation(order) {
 // the ticket.
 function isKitchenDimmed(itemName, catName = "") {
   return isBeverageItem(itemName, catName);
+}
+
+// Whether the order's edit(s) touched this station's items (see
+// editKitchenOrder). Orders edited before these flags existed fall back to the
+// old behavior: any edit counts for every station.
+function kitchenWasModified(order) {
+  return !!order.modified && (order.kitchenModified ?? true);
+}
+function drinksWasModified(order) {
+  return !!order.modified && (order.drinksModified ?? true);
 }
 
 function orderHasKitchenItems(order) {
@@ -1837,7 +1870,7 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
       {order.isBar && <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>{t.barLabel} {order.table}{isContinuation ? " CONT." : ""}</div>}
       {order.isPatio && <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>{t.patioLabel} {order.table}{isContinuation ? " CONT." : ""}</div>}
       {!order.isToGo && !order.isBar && !order.isPatio && <div style={{ ...S.toGoBanner, background: DINEIN_COLOR }}>{t.table2} {order.table}{isContinuation ? " CONT." : ""}</div>}
-      {order.modified && !order.cancelled && <div className="modified-flash" style={S.modifiedBanner}>{t.modified}</div>}
+      {kitchenWasModified(order) && !order.cancelled && <div className="modified-flash" style={S.modifiedBanner}>{t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket */}
       {isFocused && !isQueue && (
@@ -1935,8 +1968,8 @@ function GuestCheckTicket({ order, cardIndex = 0, t, isQueue, isFocused, catName
       <div style={{ ...S.ruledLine, borderColor: "#B8A88A", borderWidth: 2 }} />
 
       <div style={S.ticketFooter}>
-        <div style={{ ...S.statusStamp, borderColor: order.cancelled ? "#BE202E" : order.modified ? "#7C3AED" : STATUS_COLORS[order.status], color: order.cancelled ? "#BE202E" : order.modified ? "#7C3AED" : STATUS_COLORS[order.status] }}>
-          {order.cancelled ? "CANCELLED" : order.modified ? t.modified : order.status === "new" ? t.new : t.inProgress}
+        <div style={{ ...S.statusStamp, borderColor: order.cancelled ? "#BE202E" : kitchenWasModified(order) ? "#7C3AED" : STATUS_COLORS[order.status], color: order.cancelled ? "#BE202E" : kitchenWasModified(order) ? "#7C3AED" : STATUS_COLORS[order.status] }}>
+          {order.cancelled ? "CANCELLED" : kitchenWasModified(order) ? t.modified : order.status === "new" ? t.new : t.inProgress}
         </div>
         {!isQueue && !order.cancelled && (
           <div style={S.ticketBtns}>
@@ -2020,7 +2053,7 @@ function KitchenScreen({ lang, menu }) {
   // sound anywhere. Revisit once KDS2/Drinks gets its own speaker. Orders
   // that also need Drinks/Sides get playDrinksAlertTone layered on top so
   // Chuy knows to flag Ausencia.
-  useOrderChimes(orders, orderHasDrinksItems);
+  useOrderChimes(orders, orderHasDrinksItems, true);
 
   // Keep focused index in bounds when orders change
   useEffect(() => {
@@ -2255,7 +2288,7 @@ function DrinksTicket({ order, cardIndex = 0, t, catNameById, isFocused }) {
           PATIO {order.table}{isContinuation ? " CONT." : ""}
         </div>
       )}
-      {order.modified && !order.cancelled && <div className="modified-flash" style={S.modifiedBanner}>{t.modified}</div>}
+      {drinksWasModified(order) && !order.cancelled && <div className="modified-flash" style={S.modifiedBanner}>{t.modified}</div>}
 
       {/* Keyboard shortcut hint — only shown on focused ticket, matches Kitchen's hint bar */}
       {isFocused && (
