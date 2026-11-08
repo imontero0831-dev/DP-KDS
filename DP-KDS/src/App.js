@@ -3227,17 +3227,17 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
 
       <div style={S.floorDivider} />
 
-      <div style={{ ...S.sectionLabel, color: TOGO_COLOR, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span>🥡 Para Llevar</span>
+      <div style={{ ...S.sectionLabel, color: TOGO_COLOR }}>🥡 Para Llevar</div>
+      <div style={S.toGoRow}>
+        <div style={{ ...S.tableGrid, flex: 1, minWidth: 0, margin: 0, gridTemplateColumns: `repeat(${toGoGrid.cols}, minmax(0, 1fr))`, gap: toGoGrid.gap }}>
+          {toGoSlots.map(num => renderFloorTile(num, activeByToGoSlot, {
+            onSelect: onSelectToGo, onDetail: setDetailToGo, closeLabel: "✓ Cerrar", freeStyle: S.tableCardFreeToGo,
+            getSubtitle: (order) => order.toGoName, density: toGoGrid.density,
+          }))}
+        </div>
         {toGoSlotCount < TOGO_MAX_SLOTS && (
-          <button style={S.toGoAddBtn} onClick={addToGoSlot}>+ Agregar</button>
+          <button style={S.toGoAddBtn} onClick={addToGoSlot} aria-label="Agregar espacio para llevar">+</button>
         )}
-      </div>
-      <div style={{ ...S.tableGrid, gridTemplateColumns: `repeat(${toGoGrid.cols}, minmax(0, 1fr))`, gap: toGoGrid.gap }}>
-        {toGoSlots.map(num => renderFloorTile(num, activeByToGoSlot, {
-          onSelect: onSelectToGo, onDetail: setDetailToGo, closeLabel: "✓ Cerrar", freeStyle: S.tableCardFreeToGo,
-          getSubtitle: (order) => order.toGoName, density: toGoGrid.density,
-        }))}
       </div>
     </div>
   );
@@ -4276,7 +4276,8 @@ const S = {
   tableSelectTitle: { fontSize: 26, fontWeight: 900, color: "#1A1A1A", letterSpacing: "-0.02em" },
   tableSelectSub: { display: "block", fontSize: 13, color: "#888", marginTop: 4 },
   sectionLabel: { fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", color: "#999", textTransform: "uppercase", maxWidth: 600, width: "100%", margin: "22px auto 10px", textAlign: "left" },
-  toGoAddBtn: { background: "#fff", color: TOGO_COLOR, border: `2px solid ${TOGO_COLOR}`, borderRadius: 8, padding: "4px 12px", fontSize: 12, fontWeight: 900, cursor: "pointer", letterSpacing: "0.04em", textTransform: "none" },
+  toGoRow: { display: "flex", alignItems: "stretch", gap: 10, maxWidth: 600, margin: "0 auto", width: "100%" },
+  toGoAddBtn: { flex: "0 0 44px", background: "#fff", color: TOGO_COLOR, border: `2px dashed ${TOGO_COLOR}`, borderRadius: 12, fontSize: 28, fontWeight: 900, cursor: "pointer", padding: 0, lineHeight: 1 },
   floorDivider: { height: 1, background: "#E5E0D8", maxWidth: 600, width: "100%", margin: "24px auto 0" },
   tableGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18, maxWidth: 600, margin: "0 auto", width: "100%" },
   tableCard: { borderRadius: 16, padding: "24px 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", border: "2px solid transparent", transition: "all 0.15s", userSelect: "none" },
