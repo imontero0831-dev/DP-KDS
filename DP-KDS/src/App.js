@@ -3122,11 +3122,16 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
   const toGoSlotCount = Math.min(TOGO_MAX_SLOTS, Math.max(toGoCount, highestActiveToGo));
   const toGoSlots = Array.from({ length: toGoSlotCount }, (_, i) => i + 1);
   const toGoGrid = toGoLayout(toGoSlotCount);
-  function addToGoSlot() {
-    const next = Math.min(TOGO_MAX_SLOTS, toGoSlotCount + 1);
+  function setToGoSlotCount(next) {
     setToGoCount(next);
     try { localStorage.setItem(TOGO_COUNT_KEY, String(next)); } catch (e) { /* ignore */ }
   }
+  const addToGoSlot = () => setToGoSlotCount(Math.min(TOGO_MAX_SLOTS, toGoSlotCount + 1));
+  // Undo an add: drops the LAST slot, only once it's free, and never below the
+  // original 4. An occupied last slot has to be closed first.
+  const lastToGoSlotBusy = (activeByToGoSlot[String(toGoSlotCount)] || []).length > 0;
+  const canRemoveToGoSlot = toGoSlotCount > TOGO_SLOTS.length && !lastToGoSlotBusy;
+  const removeToGoSlot = () => { if (canRemoveToGoSlot) setToGoSlotCount(toGoSlotCount - 1); };
 
   async function handleClose(key, ordersByKey, e) {
     e.stopPropagation();
@@ -3235,9 +3240,19 @@ function TableSelectScreen({ lang, onSelectTable, onSelectToGo, onSelectBar, onS
             getSubtitle: (order) => order.toGoName, density: toGoGrid.density,
           }))}
         </div>
-        {toGoSlotCount < TOGO_MAX_SLOTS && (
-          <button style={S.toGoAddBtn} onClick={addToGoSlot} aria-label="Agregar espacio para llevar">+</button>
-        )}
+        <div style={S.toGoBtnCol}>
+          {toGoSlotCount < TOGO_MAX_SLOTS && (
+            <button style={S.toGoAddBtn} onClick={addToGoSlot} aria-label="Agregar espacio para llevar">+</button>
+          )}
+          {toGoSlotCount > TOGO_SLOTS.length && (
+            <button
+              style={{ ...S.toGoAddBtn, flex: "0 0 44px", borderStyle: "solid", opacity: canRemoveToGoSlot ? 1 : 0.35, cursor: canRemoveToGoSlot ? "pointer" : "not-allowed" }}
+              onClick={removeToGoSlot}
+              disabled={!canRemoveToGoSlot}
+              aria-label={`Quitar espacio para llevar ${toGoSlotCount}`}
+            >−</button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -4277,7 +4292,8 @@ const S = {
   tableSelectSub: { display: "block", fontSize: 13, color: "#888", marginTop: 4 },
   sectionLabel: { fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", color: "#999", textTransform: "uppercase", maxWidth: 600, width: "100%", margin: "22px auto 10px", textAlign: "left" },
   toGoRow: { display: "flex", alignItems: "stretch", gap: 10, maxWidth: 600, margin: "0 auto", width: "100%" },
-  toGoAddBtn: { flex: "0 0 44px", background: "#fff", color: TOGO_COLOR, border: `2px dashed ${TOGO_COLOR}`, borderRadius: 12, fontSize: 28, fontWeight: 900, cursor: "pointer", padding: 0, lineHeight: 1 },
+  toGoBtnCol: { flex: "0 0 44px", display: "flex", flexDirection: "column", gap: 8 },
+  toGoAddBtn: { flex: 1, width: "100%", background: "#fff", color: TOGO_COLOR, border: `2px dashed ${TOGO_COLOR}`, borderRadius: 12, fontSize: 28, fontWeight: 900, cursor: "pointer", padding: 0, lineHeight: 1 },
   floorDivider: { height: 1, background: "#E5E0D8", maxWidth: 600, width: "100%", margin: "24px auto 0" },
   tableGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18, maxWidth: 600, margin: "0 auto", width: "100%" },
   tableCard: { borderRadius: 16, padding: "24px 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", border: "2px solid transparent", transition: "all 0.15s", userSelect: "none" },
